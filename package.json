@@ -1,0 +1,29 @@
+{
+  "name": "agent-demo",
+  "version": "1.0.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsc && node dist/server.js",
+    "watch": "tsc -w"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "一个使用 @mariozechner/pi-agent-core 的简单 Node.js 对话应用",
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.51.5",
+    "@mariozechner/pi-ai": "^0.51.5",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.2.0",
+    "typescript": "^5.9.3"
+  }
+}

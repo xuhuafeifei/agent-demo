@@ -1,14 +1,15 @@
 # Agent Demo
 
-一个使用 `@mariozechner/pi-agent-core` 框架的简单 Node.js 对话应用。
+一个使用 `@mariozechner/pi-agent-core` 框架的简单 Node.js 对话应用，支持流式输出。
 
 ## 项目介绍
 
-这是一个非常简陋的对话应用，包含：
+这是一个简陋的对话应用，包含：
 - 前端 HTML 页面，包含输入对话框和消息显示区域
 - 后端使用 Express 服务器
 - 使用 `@mariozechner/pi-agent-core` 框架处理大模型交互
 - 集成 OpenAI GPT 模型（需要配置 API 密钥）
+- **支持流式输出**：实时显示大模型返回的增量数据
 
 ## 框架使用示例
 
@@ -36,7 +37,7 @@
 - `turn_start`: 新一轮对话开始
 - `turn_end`: 对话轮次结束
 - `message_start`: 新消息开始
-- `message_update`: 消息更新
+- `message_update`: **消息更新（流式输出事件）** - 大模型返回的增量数据会触发这个事件
 - `message_end`: 消息结束
 - `tool_execution_start`: 工具执行开始
 - `tool_execution_update`: 工具执行更新
@@ -49,6 +50,89 @@
 - `AgentTool`: 工具定义
 - `AgentToolResult`: 工具执行结果
 - `AgentToolUpdateCallback`: 工具更新回调
+
+## 流式输出实现
+
+### 服务器端 (src/server.ts)
+
+使用 SSE (Server-Sent Events) 实现流式输出：
+
+```typescript
+// 1. 监听 Agent 的 message_update 事件
+agent.subscribe((event) => {
+  switch (event.type) {
+    case 'message_update':
+      // 这是一个流式输出事件！大模型返回的增量数据会触发这个事件
+      // event.assistantMessageEvent 包含详细的信息，比如新增的文本 delta
+      console.log('消息更新 - 流式输出事件');
+
+      // 发送通过 SSE 到客户端
+      streamCallbacks.forEach((callback) => {
+        callback({
+          type: 'message_update',
+          message: event.message,
+          assistantMessageEvent: event.assistantMessageEvent,
+        });
+      });
+      break;
+  }
+});
+
+// 2. 设置 SSE 响应头
+app.post('/api/chat', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // 注册流式回调
+  const callback = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+  streamCallbacks.set(requestId, callback);
+
+  // 启动 Agent 循环，这将触发流式事件
+  await agent.prompt(message);
+});
+```
+
+### 客户端 (src/public/index.html)
+
+使用 Fetch API 读取流式响应：
+
+```javascript
+// 处理流式响应
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+
+while (true) {
+  const { done, value } = await reader.read();
+
+  if (done) {
+    break;
+  }
+
+  buffer += decoder.decode(value, { stream: true });
+
+  // 分割 SSE 事件
+  const events = buffer.split('\n\n');
+  buffer = events.pop();
+
+  for (const event of events) {
+    if (!event.startsWith('data: ')) continue;
+
+    const data = JSON.parse(event.slice(6));
+
+    switch (data.type) {
+      case 'message_update':
+        // 处理流式更新
+        const { message: assistantMessage } = data;
+        updateMessage(assistantMessageId, getMessageContent(assistantMessage));
+        break;
+    }
+  }
+}
+```
 
 ## 安装依赖
 
@@ -91,12 +175,12 @@ npm run watch
 1. 启动服务器后，在浏览器中访问：http://localhost:3000
 2. 在输入框中输入消息
 3. 点击发送按钮或按 Enter 发送消息
-4. 查看 AI 的回复
+4. **实时查看 AI 的流式回复**
 
 ## API 接口
 
 ### POST /api/chat
-发送消息给 AI 并获取回复
+发送消息给 AI 并获取流式回复
 
 请求体：
 ```json
@@ -105,14 +189,12 @@ npm run watch
 }
 ```
 
-响应：
+响应（SSE 流式事件）：
 ```json
 {
-  "success": true,
-  "reply": "AI 回复内容",
-  "messages": [
-    // 最近两条消息（用户和助手）
-  ]
+  "type": "message_update",
+  "message": { ... },
+  "assistantMessageEvent": { ... }
 }
 ```
 
@@ -161,4 +243,16 @@ agent-demo/
 - 项目需要 Node.js v18 或更高版本
 - 必须配置有效的 OpenAI API 密钥才能正常使用
 - 框架文档：https://github.com/mariozechner/pi-agent
-- 更多示例：https://github.com/mariozechner/pi-agent-examples# agent-demo
+- 更多示例：https://github.com/mariozechner/pi-agent-examples
+
+## 关于 sessionManager 和 AgentSession
+
+在 `@mariozechner/pi-agent-core` 的当前版本中，**没有 `sessionManager` 或 `AgentSession` 类**。
+
+框架通过以下方式实现会话管理：
+
+1. **Agent 类本身**：每个 Agent 实例维护自己的状态（消息、工具、系统提示等）
+2. **sessionId 属性**：Agent 支持设置 sessionId，用于提供商的会话缓存
+3. **subscribe 方法**：监听 Agent 事件，包括流式输出事件
+
+如需管理多个会话，可以创建多个 Agent 实例，每个实例代表一个独立的会话。
