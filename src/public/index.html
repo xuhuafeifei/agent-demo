@@ -225,20 +225,46 @@
             margin-bottom: 12px;
         }
 
-        .streaming-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #007bff;
-            animation: pulse 1.5s infinite;
-            margin-right: 5px;
+        .message.assistant .content.is-streaming {
+            background: linear-gradient(90deg, #f0f0f0 0%, #f4f8ff 50%, #f0f0f0 100%);
+            background-size: 220% 100%;
+            animation: breathe 2.2s ease-in-out infinite;
         }
 
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+        @keyframes breathe {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .streaming-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .streaming-indicator span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #0d6efd;
+            opacity: 0.35;
+            animation: dotWave 1s infinite ease-in-out;
+        }
+
+        .streaming-indicator span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .streaming-indicator span:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        @keyframes dotWave {
+            0%, 100% { transform: translateY(0); opacity: 0.35; }
+            50% { transform: translateY(-3px); opacity: 1; }
         }
 
         @media (max-width: 600px) {
@@ -318,8 +344,35 @@
             messageInput.style.height = 'auto';
 
             // 添加助手回复容器（用于流式显示）
-            const assistantMessageId = Date.now().toString();
+            const assistantMessageId = `msg-${Date.now()}`;
             addMessage('', 'assistant', assistantMessageId, true);
+            const streamState = {
+                fullText: '',
+                displayedText: '',
+                frameId: null,
+                llmStartedAt: 0,
+                llmEndedAt: 0
+            };
+
+            const pumpStream = () => {
+                if (streamState.displayedText.length >= streamState.fullText.length) {
+                    streamState.frameId = null;
+                    return;
+                }
+                const remain = streamState.fullText.length - streamState.displayedText.length;
+                const step = Math.max(1, Math.ceil(remain / 24));
+                streamState.displayedText += streamState.fullText.slice(
+                    streamState.displayedText.length,
+                    streamState.displayedText.length + step
+                );
+                updateMessage(assistantMessageId, streamState.displayedText, true);
+                streamState.frameId = requestAnimationFrame(pumpStream);
+            };
+
+            const schedulePump = () => {
+                if (streamState.frameId !== null) return;
+                streamState.frameId = requestAnimationFrame(pumpStream);
+            };
 
             try {
                 // 发送流式请求到服务器
@@ -355,30 +408,80 @@
 
                     for (const event of events) {
                         if (!event.startsWith('data: ')) continue;
-
-                        const data = JSON.parse(event.slice(6));
+                        let data;
+                        try {
+                            data = JSON.parse(event.slice(6));
+                        } catch (e) {
+                            continue;
+                        }
 
                         switch (data.type) {
+                            case 'message_start':
+                                // 检查是否是错误消息
+                                if (data.message && data.message.errorMessage) {
+                                    updateMessage(assistantMessageId, '错误：' + data.message.errorMessage);
+                                    removeStreamingIndicator(assistantMessageId);
+                                } else {
+                                    streamState.llmStartedAt = performance.now();
+                                }
+                                break;
                             case 'message_update':
-                                // 处理流式更新
-                                const { message: assistantMessage } = data;
-                                updateMessage(assistantMessageId, getMessageContent(assistantMessage));
+                                // 累积全文并逐帧渲染，视觉上更平滑，避免块状跳变。
+                                if (typeof data.delta === 'string' && data.delta) {
+                                    streamState.fullText += data.delta;
+                                    schedulePump();
+                                } else if (typeof data.text === 'string') {
+                                    streamState.fullText = data.text;
+                                    schedulePump();
+                                } else {
+                                    streamState.fullText = getMessageContent(data.message || {});
+                                    schedulePump();
+                                }
                                 break;
                             case 'message_end':
-                                // 添加时间戳
-                                const timestampDiv = document.createElement('div');
-                                timestampDiv.className = 'timestamp';
-                                timestampDiv.textContent = new Date().toLocaleTimeString('zh-CN');
-                                const contentDiv = document.querySelector(`#${assistantMessageId} .content`);
-                                if (contentDiv && !contentDiv.querySelector('.timestamp')) {
-                                    contentDiv.appendChild(timestampDiv);
+                                // 检查是否有错误消息
+                                if (data.message && data.message.errorMessage) {
+                                    streamState.fullText = '错误：' + data.message.errorMessage;
+                                } else if (typeof data.text === 'string' && data.text) {
+                                    streamState.fullText = data.text;
+                                } else {
+                                    streamState.fullText = getMessageContent(data.message || {});
                                 }
+                                streamState.displayedText = streamState.fullText;
+                                updateMessage(assistantMessageId, streamState.displayedText, true);
+                                streamState.llmEndedAt = performance.now();
+                                removeStreamingIndicator(assistantMessageId);
+                                appendTimestamp(
+                                    assistantMessageId,
+                                    streamState.llmStartedAt && streamState.llmEndedAt
+                                        ? Math.max(0, streamState.llmEndedAt - streamState.llmStartedAt)
+                                        : undefined
+                                );
                                 break;
                             case 'error':
                                 updateMessage(assistantMessageId, '错误：' + data.error);
+                                if (!streamState.llmEndedAt && streamState.llmStartedAt) {
+                                    streamState.llmEndedAt = performance.now();
+                                }
+                                removeStreamingIndicator(assistantMessageId);
+                                appendTimestamp(
+                                    assistantMessageId,
+                                    streamState.llmStartedAt && streamState.llmEndedAt
+                                        ? Math.max(0, streamState.llmEndedAt - streamState.llmStartedAt)
+                                        : undefined
+                                );
                                 break;
                             case 'done':
-                                console.log('流式响应完成');
+                                if (!streamState.llmEndedAt && streamState.llmStartedAt) {
+                                    streamState.llmEndedAt = performance.now();
+                                }
+                                removeStreamingIndicator(assistantMessageId);
+                                appendTimestamp(
+                                    assistantMessageId,
+                                    streamState.llmStartedAt && streamState.llmEndedAt
+                                        ? Math.max(0, streamState.llmEndedAt - streamState.llmStartedAt)
+                                        : undefined
+                                );
                                 break;
                         }
                     }
@@ -410,7 +513,7 @@
         }
 
         // 添加消息到聊天界面
-        function addMessage(content, role, id = Date.now().toString(), isStreaming = false) {
+        function addMessage(content, role, id = `msg-${Date.now()}`, isStreaming = false) {
             const messageElement = document.createElement('div');
             messageElement.className = `message ${role}`;
             messageElement.id = id;
@@ -430,7 +533,9 @@
             if (isStreaming && role === 'assistant') {
                 const indicator = document.createElement('span');
                 indicator.className = 'streaming-indicator';
+                indicator.innerHTML = '<span></span><span></span><span></span>';
                 contentDiv.appendChild(indicator);
+                contentDiv.classList.add('is-streaming');
             }
 
             const timestamp = document.createElement('div');
@@ -453,18 +558,84 @@
             return messageElement;
         }
 
-        // 更新消息内容
-        function updateMessage(id, content) {
-            const contentDiv = document.querySelector(`#${id} .content`);
+        // 更新消息内容（整段替换）
+        function updateMessage(id, content, keepStreaming = false) {
+            const messageEl = document.getElementById(id);
+            const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
             if (contentDiv) {
-                // 保留时间戳
                 const timestamp = contentDiv.querySelector('.timestamp');
+                const metrics = contentDiv.querySelector('.llm-metrics');
+                const indicator = keepStreaming ? contentDiv.querySelector('.streaming-indicator') : null;
                 contentDiv.textContent = content;
                 if (timestamp) {
                     contentDiv.appendChild(timestamp);
                 }
+                if (metrics) {
+                    contentDiv.appendChild(metrics);
+                }
+                if (indicator) {
+                    contentDiv.appendChild(indicator);
+                }
             }
             scrollToBottom();
+        }
+
+        // 追加消息内容（流式 delta）
+        function appendMessageContent(id, delta) {
+            const messageEl = document.getElementById(id);
+            const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
+            if (contentDiv) {
+                const timestamp = contentDiv.querySelector('.timestamp');
+                const indicator = contentDiv.querySelector('.streaming-indicator');
+                if (indicator) indicator.remove();
+                const textNode = contentDiv.childNodes.length && contentDiv.lastChild.nodeType === Node.TEXT_NODE
+                    ? contentDiv.lastChild
+                    : null;
+                if (textNode) {
+                    textNode.textContent += delta;
+                } else {
+                    contentDiv.appendChild(document.createTextNode(delta));
+                }
+                if (timestamp) contentDiv.appendChild(timestamp);
+            }
+            scrollToBottom();
+        }
+
+        function removeStreamingIndicator(id) {
+            const messageEl = document.getElementById(id);
+            const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
+            if (contentDiv) {
+                const indicator = contentDiv.querySelector('.streaming-indicator');
+                if (indicator) indicator.remove();
+                contentDiv.classList.remove('is-streaming');
+            }
+        }
+
+        function appendTimestamp(id, llmElapsedMs) {
+            const messageEl = document.getElementById(id);
+            const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
+            if (contentDiv && !contentDiv.querySelector('.timestamp')) {
+                const timestampDiv = document.createElement('div');
+                timestampDiv.className = 'timestamp';
+                timestampDiv.textContent = new Date().toLocaleTimeString('zh-CN');
+                contentDiv.appendChild(timestampDiv);
+            }
+            if (contentDiv) {
+                const oldMetrics = contentDiv.querySelector('.llm-metrics');
+                if (oldMetrics) oldMetrics.remove();
+                if (typeof llmElapsedMs === 'number') {
+                    const metricsDiv = document.createElement('div');
+                    metricsDiv.className = 'timestamp llm-metrics';
+                    metricsDiv.textContent = `LLM耗时 ${formatDuration(llmElapsedMs)}`;
+                    contentDiv.appendChild(metricsDiv);
+                }
+            }
+        }
+
+        function formatDuration(ms) {
+            if (!Number.isFinite(ms) || ms < 0) return '0ms';
+            if (ms < 1000) return `${Math.round(ms)}ms`;
+            return `${(ms / 1000).toFixed(2)}s`;
         }
 
         // 滚动到底部
