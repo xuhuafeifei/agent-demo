@@ -1,15 +1,15 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
-import fs from "fs";
 import { Agent } from "@mariozechner/pi-agent-core";
 import dotenv from "dotenv";
 import {
+  getGlobalModelConfigPath,
+  getResolvedApiKey,
   normalizeProviderId,
-  parseModelRef,
-  resolveApiKeyForProvider,
-  resolveModel,
-} from "./model-selection";
+} from "./agent/model-config";
+import { resolveModel } from "./agent/pi-embedded-runner/model";
+import { selectModelForRuntime } from "./model-selection";
 
 // 加载环境变量
 dotenv.config();
@@ -26,235 +26,267 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(publicDir));
 
-// ========== 从 JSON 配置文件读取大模型配置 ==========
-const configPath = path.join(__dirname, "..", "config", "model.json");
-type ModelConfig = {
-  model?: {
-    provider?: string;
-    model?: string;
-    contextTokens?: number;
-  };
-  apiKey?: Record<string, string>;
-};
-let modelConfig: ModelConfig = {};
-
-try {
-  const configContent = fs.readFileSync(configPath, "utf-8");
-  modelConfig = JSON.parse(configContent);
-} catch (error) {
-  // 使用默认配置或环境变量
-}
-
-const defaultProvider = normalizeProviderId(modelConfig.model?.provider ?? "minimax");
-const defaultModel = modelConfig.model?.model ?? "MiniMax-M2.1";
-const modelRef = parseModelRef(`${defaultProvider}/${defaultModel}`, defaultProvider) ?? {
-  provider: defaultProvider,
-  model: defaultModel,
-};
-
-// 统一通过 model-selection 解析模型与 API key，避免 server.ts 写 provider 分支。
-const resolved = resolveModel(modelRef.provider, modelRef.model, { apiKey: modelConfig.apiKey });
-const model = resolved.model;
-const modelError = resolved.error;
-const defaultApiKey = resolveApiKeyForProvider({
-  provider: modelRef.provider,
-  config: { apiKey: modelConfig.apiKey },
-});
-
-if (defaultApiKey) {
-  // API Key 已配置
-} else {
-  console.warn(`警告：未配置 ${modelRef.provider.toUpperCase()}_API_KEY，模型可能无法工作`);
-}
-if (!model) {
-  console.error(`模型初始化失败: ${modelError ?? "unknown error"}`);
-}
-if (model && modelRef.provider === "minimax") {
-  // MiniMax 文档推荐 Anthropic 兼容地址：https://api.minimaxi.com/anthropic
-  // 覆盖库内置的历史地址，避免命中旧域名导致鉴权失败。
-  (model as { baseUrl?: string }).baseUrl =
-    process.env.MINIMAX_ANTHROPIC_BASE_URL?.trim() || "https://api.minimaxi.com/anthropic";
-  // 与 MiniMax 官方文档保持一致：同步设置 Anthropic 兼容环境变量。
-  if (!(process.env.ANTHROPIC_BASE_URL || "").trim()) {
-    process.env.ANTHROPIC_BASE_URL = (model as { baseUrl?: string }).baseUrl;
-  }
-  if (defaultApiKey && !(process.env.ANTHROPIC_API_KEY || "").trim()) {
-    process.env.ANTHROPIC_API_KEY = defaultApiKey;
-  }
-}
-
-// 初始化 Agent（按 provider 动态读取 API Key）
-const agent = new Agent({
-  getApiKey: (provider) => {
-    const normalized = normalizeProviderId(provider);
-    const resolvedKey = resolveApiKeyForProvider({
-      provider: normalized,
-      config: { apiKey: modelConfig.apiKey },
-    });
-    // minimax 走 anthropic 兼容接口时，部分调用链可能按 anthropic provider 取 key。
-    if (!resolvedKey && modelRef.provider === "minimax" && normalized === "anthropic") {
-      return defaultApiKey;
-    }
-    return resolvedKey;
-  },
-  initialState: {
-    model: model ?? undefined,
-    systemPrompt: "你是一个友好的助手。请使用简单的语言回答用户的问题。",
-    thinkingLevel: "medium",
-    tools: [],
-    messages: [],
-    isStreaming: false,
-    streamMessage: null,
-    pendingToolCalls: new Set(),
-  },
-});
+let modelRef: { provider: string; model: string } | undefined;
+let model: ReturnType<typeof resolveModel>["model"];
+let modelError: string | undefined;
 
 // 存储每个请求的流式回调
-const streamCallbacks = new Map<string, (data: any) => void>();
+const streamCallbacks = new Map<string, (data: unknown) => void>();
 
-// ========== 大模型请求与返回值 ==========
-// 1. 请求入口：下方 POST /api/chat 里的 await agent.prompt(message) 会触发请求。
-// 2. 真正发 HTTP 请求在库内部：pi-agent-core 的 agent-loop 调用 streamFn（默认 pi-ai 的 streamSimple），
-//    向 Minimax 发流式请求，见 node_modules/@mariozechner/pi-agent-core/dist/agent-loop.js 约 150 行。
-// 3. 返回值不通过 prompt() 的 return，而是通过本 subscribe 回调的事件流捕获：
-//    - message_update：流式片段（event.message / event.assistantMessageEvent）
-//    - message_end：最终完整回复（event.message）
-// ==========
+function buildAgent() {
+  return new Agent({
+    getApiKey: (provider) => {
+      // 动态按 provider 解析 apiKey，避免调用侧写 if-else。
+      return getResolvedApiKey({
+        provider: normalizeProviderId(provider),
+      });
+    },
+    initialState: {
+      model: model ?? undefined,
+      systemPrompt: "你是一个友好的人,能快速回复别人信息",
+      thinkingLevel: "off",
+      tools: [],
+      messages: [],
+      isStreaming: false,
+      streamMessage: null,
+      pendingToolCalls: new Set(),
+    },
+  });
+}
 
-// 监听 Agent 事件（这里就是“捕获大模型返回值”的地方）
-agent.subscribe((event) => {
-  switch (event.type) {
-    case "agent_start":
-      break;
-    case "agent_end":
-      // 发送结束事件到所有活跃的流
-      streamCallbacks.forEach((callback) => {
-        callback({ type: "agent_end" });
-      });
-      streamCallbacks.clear();
-      break;
-    case "turn_start":
-      break;
-    case "turn_end":
-      break;
-    case "message_start":
-      // 只把 assistant 消息推给前端流式卡片，避免 user 事件污染 assistant 渲染状态。
-      if (event.message?.role !== "assistant") {
+let agent = buildAgent();
+
+function extractAssistantText(content: unknown[] | undefined): string {
+  if (!content || !Array.isArray(content)) return "";
+
+  // 仅拼接文本块，忽略 thinking/tool 等非文本内容。
+  return (content as { type?: string; text?: string }[])
+    .filter((item) => item.type === "text")
+    .map((item) => item.text || "")
+    .join("");
+}
+
+function attachAgentSubscription() {
+  agent.subscribe((event) => {
+    switch (event.type) {
+      case "agent_start":
+      case "turn_start":
+      case "turn_end":
+      case "tool_execution_start":
+      case "tool_execution_update":
+      case "tool_execution_end":
         break;
-      }
-      // 发送消息开始事件
-      streamCallbacks.forEach((callback) => {
-        callback({ type: "message_start", message: event.message });
-      });
-      break;
-    case "message_update":
-      // 只处理 assistant 的增量文本事件。
-      if (event.message?.role !== "assistant") {
+      case "agent_end":
+        // Agent 结束时通知所有 SSE 客户端并清理回调。
+        streamCallbacks.forEach((callback) => callback({ type: "agent_end" }));
+        streamCallbacks.clear();
         break;
-      }
-      // 流式输出：发送 delta（若有）和当前完整 partial，便于前端逐字或整段显示
-      const ev = event.assistantMessageEvent as {
-        type?: string;
-        delta?: string;
-        partial?: { content?: unknown[] };
-      };
-      const textDelta =
-        ev.type === "text_delta" && typeof ev.delta === "string"
-          ? ev.delta
-          : undefined;
-      const fullText =
-        ev.partial?.content && Array.isArray(ev.partial.content)
-          ? (ev.partial.content as { type?: string; text?: string }[])
-              .filter((c) => c.type === "text")
-              .map((c) => c.text || "")
-              .join("")
-          : undefined;
-      streamCallbacks.forEach((callback) => {
-        callback({
-          type: "message_update",
-          message: event.message,
-          delta: textDelta,
-          text: fullText,
+      case "message_start":
+        // 只把 assistant 消息推给前端，避免 user 事件干扰渲染。
+        if (event.message?.role !== "assistant") break;
+        streamCallbacks.forEach((callback) => {
+          callback({ type: "message_start", message: event.message });
         });
-      });
-      break;
-    case "message_end":
-      // 只把 assistant 结束事件返回给前端，避免用户消息覆盖 assistant 输出。
-      if (event.message?.role !== "assistant") {
+        break;
+      case "message_update": {
+        // 只处理 assistant 的增量文本事件。
+        if (event.message?.role !== "assistant") break;
+
+        const assistantEvent = event.assistantMessageEvent as {
+          type?: string;
+          delta?: string;
+          partial?: { content?: unknown[] };
+        };
+
+        const textDelta =
+          assistantEvent.type === "text_delta" &&
+          typeof assistantEvent.delta === "string"
+            ? assistantEvent.delta
+            : undefined;
+
+        const fullText = extractAssistantText(assistantEvent.partial?.content);
+
+        streamCallbacks.forEach((callback) => {
+          callback({
+            type: "message_update",
+            message: event.message,
+            delta: textDelta,
+            text: fullText || undefined,
+          });
+        });
         break;
       }
-      // 发送结束事件并带上完整内容（非流式时前端依赖此处显示）
-      const msg = event.message as { content?: unknown[] };
-      const endText =
-        msg.content && Array.isArray(msg.content)
-          ? (msg.content as { type?: string; text?: string }[])
-              .filter((c) => c.type === "text")
-              .map((c) => c.text || "")
-              .join("")
-          : "";
-      streamCallbacks.forEach((callback) => {
-        callback({
-          type: "message_end",
-          message: event.message,
-          text: endText,
+      case "message_end": {
+        // 只把 assistant 的结束消息发给前端。
+        if (event.message?.role !== "assistant") break;
+
+        const message = event.message as { content?: unknown[] };
+        streamCallbacks.forEach((callback) => {
+          callback({
+            type: "message_end",
+            message: event.message,
+            text: extractAssistantText(message.content),
+          });
         });
-      });
-      break;
-    case "tool_execution_start":
-      break;
-    case "tool_execution_update":
-      break;
-    case "tool_execution_end":
-      break;
+        break;
+      }
+    }
+  });
+}
+
+async function bootstrapModel() {
+  const globalConfigPath = getGlobalModelConfigPath();
+  console.log(`全局配置路径: ${globalConfigPath}`);
+
+  // 统一选模入口：全局默认 -> 项目回退 -> 代码兜底，然后 resolveModel。
+  const selected = await selectModelForRuntime();
+  modelRef = selected.modelRef;
+  model = selected.model;
+  modelError = selected.modelError;
+
+  if (selected.discoveryError) {
+    console.error(`模型发现失败: ${selected.discoveryError}`);
   }
-});
+
+  const apiKey = getResolvedApiKey({ provider: modelRef.provider });
+  if (!apiKey && modelRef.provider !== "ollama") {
+    console.warn(`警告：未配置 ${modelRef.provider.toUpperCase()}_API_KEY，模型可能无法工作`);
+  }
+
+  if (!model) {
+    console.error(`模型初始化失败: ${modelError ?? "unknown error"}`);
+  }
+
+  // 模型变更后重建 agent，保证 initialState 使用最新 model。
+  agent = buildAgent();
+  attachAgentSubscription();
+}
 
 // API 路由：与 Agent 对话（流式输出）
 app.post("/api/chat", async (req, res) => {
-  const { message } = req.body;
+  const { message } = req.body as { message?: string };
   const requestId = Date.now().toString();
 
   if (!message) {
     return res.status(400).json({ error: "缺少消息内容" });
   }
 
-  // 未完成模型初始化时直接返回，避免进入 prompt 后才报 provider/auth 错误。
+  // 模型不可用时直接返回，避免进入 prompt 后才报 provider/auth 错误。
   if (!model) {
     return res.status(503).json({
       error: "模型未初始化，请检查 provider/model 与 API Key 配置",
-      provider: modelRef.provider,
-      model: modelRef.model,
+      provider: modelRef?.provider,
+      model: modelRef?.model,
       detail: modelError,
     });
   }
+  // activeRef 仅用于日志打印，避免 modelRef 可空带来的类型问题。
+  const activeRef = modelRef ?? { provider: "unknown", model: "unknown" };
 
-  // 设置 SSE 响应头
+  // 设置 SSE 响应头。
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Access-Control-Allow-Origin", "*");
 
-  // 注册流式回调
-  const callback = (data: any) => {
+  const requestStartedAt = Date.now();
+  let promptStartedAt = 0;
+  let firstAssistantAt = 0;
+  let messageEndAt = 0;
+  let doneAt = 0;
+  let firstAssistantChunkLogged = false;
+
+  // 阶段记录（参考 OpenClaw 的 cacheTrace）
+  const stages = new Map<string, { timestamp: number; note?: string }>();
+  stages.set("request:start", { timestamp: requestStartedAt });
+
+  const logStage = (stage: string, note?: string) => {
+    if (stages.has(stage)) return; // 避免重复记录
+    stages.set(stage, { timestamp: Date.now(), note });
+  };
+
+  const logFirstAssistantLatency = (source: "message_update" | "message_end") => {
+    // 只记录一次首包耗时，避免多段 delta 重复打印。
+    if (firstAssistantChunkLogged || promptStartedAt <= 0) return;
+    firstAssistantChunkLogged = true;
+    firstAssistantAt = Date.now();
+    logStage("prompt:first_assistant", `source=${source}`);
+
+    const promptToFirstMs = firstAssistantAt - promptStartedAt;
+    const requestToFirstMs = firstAssistantAt - requestStartedAt;
+    console.log(
+      `[LLM首包] requestId=${requestId} provider=${activeRef.provider} model=${activeRef.model} promptToFirstMs=${promptToFirstMs} requestToFirstMs=${requestToFirstMs} source=${source}`,
+    );
+  };
+
+  const logRequestTimeline = (status: "done" | "error") => {
+    if (doneAt <= 0) doneAt = Date.now();
+
+    const requestToPromptMs = promptStartedAt > 0 ? promptStartedAt - requestStartedAt : -1;
+    const promptToFirstMs =
+      promptStartedAt > 0 && firstAssistantAt > 0 ? firstAssistantAt - promptStartedAt : -1;
+    const firstToEndMs =
+      firstAssistantAt > 0 && messageEndAt > 0 ? messageEndAt - firstAssistantAt : -1;
+    const promptToEndMs =
+      promptStartedAt > 0 && messageEndAt > 0 ? messageEndAt - promptStartedAt : -1;
+    const totalMs = doneAt - requestStartedAt;
+
+    // 详细阶段报告
+    const stageReport = Array.from(stages.entries())
+      .map(([key, value]) => `${key}=${value.timestamp - requestStartedAt}ms`)
+      .join(" ");
+
+    console.log(
+      `[请求时间线] requestId=${requestId} status=${status} provider=${activeRef.provider} model=${activeRef.model} requestToPromptMs=${requestToPromptMs} promptToFirstMs=${promptToFirstMs} firstToEndMs=${firstToEndMs} promptToEndMs=${promptToEndMs} totalMs=${totalMs} stages=[${stageReport}]`,
+    );
+  };
+
+  const callback = (data: unknown) => {
+    const event = data as { type?: string; delta?: unknown; text?: unknown };
+
+    // 以第一段 assistant 文本作为首包时间点（delta 或 text 任一非空）。
+    if (
+      !firstAssistantChunkLogged &&
+      (event.type === "message_update" || event.type === "message_end")
+    ) {
+      const deltaText =
+        typeof event.delta === "string" ? event.delta.trim() : "";
+      const fullText = typeof event.text === "string" ? event.text.trim() : "";
+      if (deltaText.length > 0 || fullText.length > 0) {
+        logFirstAssistantLatency(event.type);
+      }
+    }
+
+    if (event.type === "message_end" && messageEndAt <= 0) {
+      messageEndAt = Date.now();
+      logStage("prompt:end");
+    }
+
+    // 每个事件都按 SSE 协议写入，前端按行消费。
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
   streamCallbacks.set(requestId, callback);
 
   try {
-    // 添加用户消息到 Agent
     const userMessage = {
       role: "user" as const,
       content: [{ type: "text" as const, text: message }],
       timestamp: Date.now(),
     };
+
+    // 先写入状态，再触发 prompt，保证上下文完整。
     agent.appendMessage(userMessage);
 
-    // 这里会触发对大模型的请求；返回值通过上面的 agent.subscribe() 以事件形式收到
+    // 从真正调用模型开始计时。
+    promptStartedAt = Date.now();
+    logStage("prompt:start");
     await agent.prompt(message);
 
-    // 发送完成信号
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
+    doneAt = Date.now();
+    logStage("request:end");
+    logRequestTimeline("done");
   } catch (error) {
     res.write(
       `data: ${JSON.stringify({
@@ -263,20 +295,20 @@ app.post("/api/chat", async (req, res) => {
       })}\n\n`,
     );
     res.end();
+    doneAt = Date.now();
+    logStage("request:end");
+    logRequestTimeline("error");
   } finally {
-    // 清理回调
+    // 请求结束后清理回调，避免内存泄漏。
     streamCallbacks.delete(requestId);
   }
 });
 
 // API 路由：获取对话历史
-app.get("/api/history", async (req, res) => {
+app.get("/api/history", async (_req, res) => {
   try {
     const history = agent.state.messages;
-    res.json({
-      success: true,
-      history,
-    });
+    res.json({ success: true, history });
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -286,13 +318,10 @@ app.get("/api/history", async (req, res) => {
 });
 
 // API 路由：清除对话历史
-app.post("/api/clear", async (req, res) => {
+app.post("/api/clear", async (_req, res) => {
   try {
     agent.clearMessages();
-    res.json({
-      success: true,
-      message: "对话历史已清除",
-    });
+    res.json({ success: true, message: "对话历史已清除" });
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -301,12 +330,14 @@ app.post("/api/clear", async (req, res) => {
   }
 });
 
-// 启动服务器：先试指定端口，若被占用则自动改用随机可用端口
 function startServer(port: number) {
   const server = app.listen(port, () => {
     const addr = server.address();
     const actualPort =
-      typeof addr === "object" && addr !== null && "port" in addr ? addr.port : port;
+      typeof addr === "object" && addr !== null && "port" in addr
+        ? addr.port
+        : port;
+
     console.log(`服务器正在运行在 http://localhost:${actualPort}`);
     console.log(`请在浏览器中打开 http://localhost:${actualPort} 查看应用`);
     console.log("注意：需要在 .env 文件中配置 MINIMAX_API_KEY");
@@ -316,11 +347,17 @@ function startServer(port: number) {
     if (err.code === "EADDRINUSE" && port !== 0) {
       console.warn(`端口 ${port} 已被占用，正在改用随机可用端口...`);
       server.close(() => startServer(0));
-    } else {
-      console.error("服务器启动失败:", err.message);
-      process.exit(1);
+      return;
     }
+
+    console.error("服务器启动失败:", err.message);
+    process.exit(1);
   });
 }
 
-startServer(PORT);
+async function bootstrap() {
+  await bootstrapModel();
+  startServer(PORT);
+}
+
+void bootstrap();

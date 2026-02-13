@@ -1,0 +1,10 @@
+{
+  "model": {
+    "provider": "minimax",
+    "model": "MiniMax-M2.1",
+    "contextTokens": 200000
+  },
+  "apiKey": {
+    "minimax": "your_minimax_api_key_here"
+  }
+}

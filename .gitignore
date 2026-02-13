@@ -11,6 +11,9 @@ build/
 .env.local
 .env.*.local
 
+# Model configuration (contains API keys)
+config/model.json
+
 # Logs
 logs/
 *.log

@@ -1,0 +1,14 @@
+{
+  "model": {
+    "provider": "minimax",
+    "model": "MiniMax-M2.1",
+    "contextTokens": 200000
+  },
+  "apiKey": {
+    "minimax": "sk-api-xxx",
+    "moonshot": "sk-xxx",
+    "kimi-code": "sk-xxx",
+    "qwen-portal": "sk-xxx",
+    "xiaomi": "sk-xxx"
+  }
+}

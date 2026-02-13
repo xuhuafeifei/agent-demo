@@ -1,14 +1,15 @@
 # Agent Demo
 
-一个使用 `@mariozechner/pi-agent-core` 框架的简单 Node.js 对话应用，支持流式输出。
+一个使用 `@mariozechner/pi-agent-core` 框架的简单 Node.js 对话应用，支持流式输出与多供应商模型配置。
 
 ## 项目介绍
 
-这是一个简陋的对话应用，包含：
+这是一个简洁的对话应用，包含：
 - 前端 HTML 页面，包含输入对话框和消息显示区域
 - 后端使用 Express 服务器
 - 使用 `@mariozechner/pi-agent-core` 框架处理大模型交互
-- 集成 OpenAI GPT 模型（需要配置 API 密钥）
+- 集成多供应商模型（如 Minimax、Moonshot、Kimi Code、Qwen Portal、Xiaomi、Ollama）
+- 支持全局用户配置 `fgbg.json`
 - **支持流式输出**：实时显示大模型返回的增量数据
 
 ## 框架使用示例
@@ -142,15 +143,63 @@ npm install
 
 ## 配置
 
-1. 复制 `.env.example` 为 `.env`：
+配置来源有三层（同字段覆盖优先级）：
+
+1. 环境变量（最高优先，如 `MINIMAX_API_KEY`）
+2. 项目配置 `config/model.json`
+3. 全局配置 `~/.fgbg/fgbg.json`（可通过 `FGBG_CONFIG_PATH` 覆盖）
+
+### 1) 配置环境变量（可选，但优先级最高）
+
+复制 `.env.example` 为 `.env`：
 ```bash
 cp .env.example .env
 ```
 
-2. 编辑 `.env` 文件，配置 OpenAI API 密钥：
+编辑 `.env` 文件，配置你要用的 API Key（示例）：
 ```env
-OPENAI_API_KEY=your_actual_api_key
+MINIMAX_API_KEY=your_minimax_api_key
+MOONSHOT_API_KEY=your_moonshot_api_key
+KIMI_CODE_API_KEY=your_kimi_code_api_key
+QWEN_PORTAL_API_KEY=your_qwen_portal_api_key
+XIAOMI_API_KEY=your_xiaomi_api_key
 ```
+
+### 2) 配置全局用户配置（推荐）
+
+在 `~/.fgbg/fgbg.json` 写入（示例见 `fgbg.json.example`）：
+
+```json
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "minimax": {
+        "apiKey": "sk-api-xxx",
+        "models": [
+          {
+            "id": "MiniMax-M2.1",
+            "contextWindow": 200000
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "minimax/MiniMax-M2.1"
+      }
+    }
+  }
+}
+```
+
+### 3) 配置项目级配置（可覆盖全局）
+
+项目内的 `config/model.json` 会覆盖全局配置中的同名字段。
+
+更多说明见：`docs/fgbg-config.md`
 
 ## 运行项目
 
@@ -228,20 +277,31 @@ npm run watch
 agent-demo/
 ├─ src/
 │  ├─ server.ts          # 服务器端代码（TypeScript）
+│  ├─ agent/             # 模型配置与解析层
+│  │  ├─ agent-path.ts
+│  │  ├─ model-config.ts
+│  │  ├─ types.ts
+│  │  └─ pi-embedded-runner/model.ts
 │  └─ public/
 │     └─ index.html      # 前端页面
+├─ config/
+│  └─ model.json         # 项目级模型配置
+├─ docs/
+│  └─ fgbg-config.md     # 全局配置说明
 ├─ dist/                 # 编译后的 JavaScript 文件（生成）
 ├─ node_modules/         # 依赖包（生成）
 ├─ package.json          # 项目配置
 ├─ tsconfig.json         # TypeScript 配置
 ├─ .env.example          # 环境变量示例
+├─ fgbg.json.example     # 全局配置示例
+├─ 架构设计.md            # 架构设计文档
 └─ README.md             # 项目说明
 ```
 
 ## 注意事项
 
 - 项目需要 Node.js v18 或更高版本
-- 必须配置有效的 OpenAI API 密钥才能正常使用
+- 至少需要配置一个可用 provider 的 API 密钥（本地 Ollama 可无 key）
 - 框架文档：https://github.com/mariozechner/pi-agent
 - 更多示例：https://github.com/mariozechner/pi-agent-examples
 
