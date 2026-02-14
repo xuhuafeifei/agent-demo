@@ -10,6 +10,7 @@ import {
 } from "./agent/model-config";
 import { resolveModel } from "./agent/pi-embedded-runner/model";
 import { selectModelForRuntime } from "./model-selection";
+import { createCacheTrace } from "./agent/utils/cache-trace";
 
 // 加载环境变量
 dotenv.config();
@@ -189,55 +190,22 @@ app.post("/api/chat", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Access-Control-Allow-Origin", "*");
 
-  const requestStartedAt = Date.now();
-  let promptStartedAt = 0;
-  let firstAssistantAt = 0;
-  let messageEndAt = 0;
-  let doneAt = 0;
+  const cacheTrace = createCacheTrace({
+    requestId,
+    provider: activeRef.provider,
+    model: activeRef.model,
+  });
+  cacheTrace.recordStage("request:start");
+
   let firstAssistantChunkLogged = false;
 
-  // 阶段记录（参考 OpenClaw 的 cacheTrace）
-  const stages = new Map<string, { timestamp: number; note?: string }>();
-  stages.set("request:start", { timestamp: requestStartedAt });
-
-  const logStage = (stage: string, note?: string) => {
-    if (stages.has(stage)) return; // 避免重复记录
-    stages.set(stage, { timestamp: Date.now(), note });
-  };
-
   const logFirstAssistantLatency = (source: "message_update" | "message_end") => {
-    // 只记录一次首包耗时，避免多段 delta 重复打印。
-    if (firstAssistantChunkLogged || promptStartedAt <= 0) return;
+    if (firstAssistantChunkLogged) return;
     firstAssistantChunkLogged = true;
-    firstAssistantAt = Date.now();
-    logStage("prompt:first_assistant", `source=${source}`);
-
-    const promptToFirstMs = firstAssistantAt - promptStartedAt;
-    const requestToFirstMs = firstAssistantAt - requestStartedAt;
-    console.log(
-      `[LLM首包] requestId=${requestId} provider=${activeRef.provider} model=${activeRef.model} promptToFirstMs=${promptToFirstMs} requestToFirstMs=${requestToFirstMs} source=${source}`,
-    );
-  };
-
-  const logRequestTimeline = (status: "done" | "error") => {
-    if (doneAt <= 0) doneAt = Date.now();
-
-    const requestToPromptMs = promptStartedAt > 0 ? promptStartedAt - requestStartedAt : -1;
-    const promptToFirstMs =
-      promptStartedAt > 0 && firstAssistantAt > 0 ? firstAssistantAt - promptStartedAt : -1;
-    const firstToEndMs =
-      firstAssistantAt > 0 && messageEndAt > 0 ? messageEndAt - firstAssistantAt : -1;
-    const promptToEndMs =
-      promptStartedAt > 0 && messageEndAt > 0 ? messageEndAt - promptStartedAt : -1;
-    const totalMs = doneAt - requestStartedAt;
-
-    // 详细阶段报告
-    const stageReport = Array.from(stages.entries())
-      .map(([key, value]) => `${key}=${value.timestamp - requestStartedAt}ms`)
-      .join(" ");
+    cacheTrace.recordStage("prompt:first_assistant", `source=${source}`);
 
     console.log(
-      `[请求时间线] requestId=${requestId} status=${status} provider=${activeRef.provider} model=${activeRef.model} requestToPromptMs=${requestToPromptMs} promptToFirstMs=${promptToFirstMs} firstToEndMs=${firstToEndMs} promptToEndMs=${promptToEndMs} totalMs=${totalMs} stages=[${stageReport}]`,
+      `[LLM首包] requestId=${requestId} provider=${activeRef.provider} model=${activeRef.model} source=${source}`,
     );
   };
 
@@ -253,13 +221,12 @@ app.post("/api/chat", async (req, res) => {
         typeof event.delta === "string" ? event.delta.trim() : "";
       const fullText = typeof event.text === "string" ? event.text.trim() : "";
       if (deltaText.length > 0 || fullText.length > 0) {
-        logFirstAssistantLatency(event.type);
+        logFirstAssistantLatency(event.type as "message_update" | "message_end");
       }
     }
 
-    if (event.type === "message_end" && messageEndAt <= 0) {
-      messageEndAt = Date.now();
-      logStage("prompt:end");
+    if (event.type === "message_end") {
+      cacheTrace.recordStage("prompt:end");
     }
 
     // 每个事件都按 SSE 协议写入，前端按行消费。
@@ -278,16 +245,15 @@ app.post("/api/chat", async (req, res) => {
     agent.appendMessage(userMessage);
 
     // 从真正调用模型开始计时。
-    promptStartedAt = Date.now();
-    logStage("prompt:start");
+    cacheTrace.recordStage("prompt:start");
     await agent.prompt(message);
 
+    cacheTrace.recordStage("request:end");
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
-    doneAt = Date.now();
-    logStage("request:end");
-    logRequestTimeline("done");
+    cacheTrace.logTimeline("done");
   } catch (error) {
+    cacheTrace.recordStage("request:end");
     res.write(
       `data: ${JSON.stringify({
         type: "error",
@@ -295,9 +261,7 @@ app.post("/api/chat", async (req, res) => {
       })}\n\n`,
     );
     res.end();
-    doneAt = Date.now();
-    logStage("request:end");
-    logRequestTimeline("error");
+    cacheTrace.logTimeline("error");
   } finally {
     // 请求结束后清理回调，避免内存泄漏。
     streamCallbacks.delete(requestId);
