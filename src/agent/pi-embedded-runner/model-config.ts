@@ -202,133 +202,91 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-type RawModelsConfig = {
-  models?: {
-    providers?: Record<string, ProviderConfig>;
-  };
-};
 
-function normalizeRawModelConfig(raw: unknown): ModelConfigFile {
+/** config/model.json：仅支持扁平结构 { model: { provider, model, contextTokens }, apiKey: { ... } } */
+function normalizeProjectModelConfig(raw: unknown): ModelConfigFile {
   if (!isRecord(raw)) return {};
 
-  const normalized: ModelConfigFile = {};
+  const out: ModelConfigFile = {};
 
-  // 兼容扁平结构：{ model, apiKey }
   if (isRecord(raw.model)) {
-    const provider =
-      typeof raw.model.provider === "string"
-        ? raw.model.provider.trim()
-        : undefined;
-    const model =
-      typeof raw.model.model === "string" ? raw.model.model.trim() : undefined;
-    const contextTokens =
-      typeof raw.model.contextTokens === "number"
-        ? raw.model.contextTokens
-        : undefined;
-    normalized.model = { provider, model, contextTokens };
+    out.model = {
+      provider:
+        typeof raw.model.provider === "string"
+          ? raw.model.provider.trim()
+          : undefined,
+      model:
+        typeof raw.model.model === "string" ? raw.model.model.trim() : undefined,
+      contextTokens:
+        typeof raw.model.contextTokens === "number"
+          ? raw.model.contextTokens
+          : undefined,
+    };
   }
 
   if (isRecord(raw.apiKey)) {
-    const apiKeyMap: Record<string, string> = {};
-    for (const [provider, value] of Object.entries(raw.apiKey)) {
-      if (typeof value === "string" && value.trim()) {
-        apiKeyMap[normalizeProviderId(provider)] = value.trim();
-      }
+    const apiKey: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw.apiKey)) {
+      if (typeof v === "string" && v.trim()) apiKey[normalizeProviderId(k)] = v.trim();
     }
-    if (Object.keys(apiKeyMap).length > 0) {
-      normalized.apiKey = apiKeyMap;
-    }
+    if (Object.keys(apiKey).length > 0) out.apiKey = apiKey;
   }
 
-  // 兼容 OpenClaw 风格：models.providers.*.apiKey
-  const providers =
-    isRecord(raw.models) && isRecord(raw.models.providers)
-      ? raw.models.providers
-      : undefined;
-  if (providers) {
-    const apiKeyMap: Record<string, string> = { ...(normalized.apiKey ?? {}) };
-    for (const [provider, providerEntry] of Object.entries(providers)) {
-      if (!isRecord(providerEntry)) continue;
-      const apiKey =
-        typeof providerEntry.apiKey === "string"
-          ? providerEntry.apiKey.trim()
-          : "";
-      if (apiKey) {
-        apiKeyMap[normalizeProviderId(provider)] = apiKey;
-      }
-    }
-    if (Object.keys(apiKeyMap).length > 0) {
-      normalized.apiKey = apiKeyMap;
-    }
-  }
-
-  // 兼容 OpenClaw 风格：agents.defaults.model.primary
-  const defaults =
-    isRecord(raw.agents) && isRecord(raw.agents.defaults)
-      ? raw.agents.defaults
-      : undefined;
-  const primaryModelRaw = (() => {
-    if (!defaults) return "";
-    if (typeof defaults.model === "string") return defaults.model.trim();
-    if (
-      isRecord(defaults.model) &&
-      typeof defaults.model.primary === "string"
-    ) {
-      return defaults.model.primary.trim();
-    }
-    return "";
-  })();
-
-  if (primaryModelRaw) {
-    const parsed = parseModelRef(primaryModelRaw, MINIMAX_PROVIDER_ID);
-    if (parsed) {
-      const contextTokens =
-        normalized.model?.contextTokens ??
-        (() => {
-          const providerCfgRaw =
-            providers && isRecord(providers[parsed.provider])
-              ? providers[parsed.provider]
-              : undefined;
-          if (!providerCfgRaw) return undefined;
-
-          const providerCfg = providerCfgRaw as Record<string, unknown>;
-          const modelList = Array.isArray(providerCfg.models)
-            ? providerCfg.models
-            : undefined;
-          if (!modelList) return undefined;
-
-          const modelCfg = modelList.find(
-            (item: unknown) =>
-              isRecord(item) &&
-              typeof item.id === "string" &&
-              item.id === parsed.model,
-          ) as Record<string, unknown> | undefined;
-          return modelCfg && typeof modelCfg.contextWindow === "number"
-            ? modelCfg.contextWindow
-            : undefined;
-        })();
-
-      normalized.model = {
-        provider: parsed.provider,
-        model: parsed.model,
-        contextTokens,
-      };
-    }
-  }
-
-  return normalized;
+  return out;
 }
 
+/** ~/.fgbg/fgbg.json：只取 agents.defaults.model（默认模型）和 models.providers 里的 apiKey */
+function normalizeFgbgToModelConfig(raw: unknown): ModelConfigFile {
+  if (!isRecord(raw)) return {};
+
+  const out: ModelConfigFile = {};
+
+  const defaults = isRecord(raw.agents) && isRecord(raw.agents.defaults) ? raw.agents.defaults : null;
+  const primaryRaw = defaults
+    ? typeof defaults.model === "string"
+      ? (defaults.model as string).trim()
+      : isRecord(defaults.model) && typeof (defaults.model as { primary?: string }).primary === "string"
+        ? (defaults.model as { primary: string }).primary.trim()
+        : ""
+    : "";
+  if (primaryRaw) {
+    const parsed = parseModelRef(primaryRaw, MINIMAX_PROVIDER_ID);
+    if (parsed) out.model = { provider: parsed.provider, model: parsed.model };
+  }
+
+  const providers = isRecord(raw.models) && isRecord(raw.models.providers) ? raw.models.providers : null;
+  if (providers && isRecord(providers)) {
+    const apiKey: Record<string, string> = {};
+    for (const [p, entry] of Object.entries(providers)) {
+      if (isRecord(entry) && typeof entry.apiKey === "string" && entry.apiKey.trim()) {
+        apiKey[normalizeProviderId(p)] = (entry.apiKey as string).trim();
+      }
+    }
+    if (Object.keys(apiKey).length > 0) out.apiKey = apiKey;
+  }
+
+  return out;
+}
+
+/**
+ * 解析model.json数据，并转换为ModelConfigFile类型
+ * @returns 
+ */
 function resolveModelConfigFile(): ModelConfigFile {
   try {
     const raw = fs.readFileSync(PROJECT_MODEL_CONFIG_PATH, "utf-8");
     const parsed = JSON.parse(raw) as unknown;
-    return normalizeRawModelConfig(parsed);
+    return normalizeProjectModelConfig(parsed);
   } catch {
     return {};
   }
 }
 
+/**
+ * 合并配置文件 fgbg.json(显示配置) / model.json(隐式配置) 有关模型的配置
+ * @param params 
+ * @returns 
+ */
 function mergeModelConfigs(params: {
   explicitConfig: ModelConfigFile;
   implicitConfig: ModelConfigFile;
@@ -351,7 +309,7 @@ function mergeModelConfigs(params: {
 }
 
 function loadEffectiveModelConfig(): ModelConfigFile {
-  const explicitConfig = normalizeRawModelConfig(
+  const explicitConfig = normalizeFgbgToModelConfig(
     getUserFgbgConfig() as unknown,
   );
   const implicitConfig = resolveModelConfigFile();
@@ -636,6 +594,7 @@ export async function ensureModelJson(): Promise<{
 export async function discoveryModel(config: FgbgUserConfig): Promise<{
   providers: Record<string, ProviderConfig>;
   modelRegistry: ModelRegistry;
+  defaultModelRef: ModelRef;
   error?: string;
 }> {
   // 显示供应商配置来自 fgbg.json
@@ -653,19 +612,25 @@ export async function discoveryModel(config: FgbgUserConfig): Promise<{
   const discovered = discoverModelRegistry(runtimeProviders);
   runtimeModelRegistry = discovered.modelRegistry;
 
+  // 合并后的默认模型 ref，与 discovery 同源配置，避免调用方再读一遍
+  const defaultModelRef = getDefaultModelRef(loadEffectiveModelConfig());
+
   return {
     providers: runtimeProviders,
     modelRegistry: runtimeModelRegistry,
+    defaultModelRef,
     error: discovered.error,
   };
 }
 
+/** 返回当前 provider 配置的快照（浅拷贝），避免调用方篡改内部状态。 */
 export function getRuntimeProviders(): Record<string, ProviderConfig> {
-  return runtimeProviders;
+  return { ...runtimeProviders };
 }
 
+/** 返回当前模型注册表的快照（浅拷贝），避免调用方篡改内部状态。 */
 export function getRuntimeModelRegistry(): ModelRegistry {
-  return runtimeModelRegistry;
+  return { ...runtimeModelRegistry };
 }
 
 export function getDefaultModelRef(config?: ModelConfigFile): ModelRef {
@@ -683,10 +648,6 @@ export function getResolvedApiKey(params: {
   config?: ModelConfigFile;
 }): string | undefined {
   return resolveApiKeyForProvider(params);
-}
-
-export function getEffectiveModelConfig(): ModelConfigFile {
-  return loadEffectiveModelConfig();
 }
 
 export function getGlobalModelConfigPath(): string {

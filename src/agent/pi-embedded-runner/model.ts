@@ -14,10 +14,9 @@ function getModelUnsafe(provider: string, modelId: string): RuntimeModel {
 }
 
 /**
- * 解析模型
- * @param provider - 提供者 ID
- * @param modelId - 模型 ID
- * @returns 模型对象或错误信息
+ * 解析模型：先查 discovery 的 registry，未命中则用 runtimeProviders 的配置校验并动态构建。
+ * 需要 runtimeProviders 的原因：registry 只有 RuntimeModel 实例，provider 级配置（baseUrl/api/headers）
+ * 和 models 列表在 runtimeProviders，用于校验、打补丁和 fallback。
  */
 export function resolveModel(
   provider: string,
@@ -30,15 +29,13 @@ export function resolveModel(
   const normalizedModelId = modelId.trim();
   const modelKey = `${normalizedProvider}/${normalizedModelId}`;
 
-  const runtimeModelRegistry = getRuntimeModelRegistry();
-
-  // 第一优先级：命中启动阶段发现后的 registry。
-  if (runtimeModelRegistry[modelKey]) {
-    return { model: runtimeModelRegistry[modelKey] };
+  const registry = getRuntimeModelRegistry();
+  if (registry[modelKey]) {
+    return { model: registry[modelKey] };
   }
 
-  const runtimeProviders = getRuntimeProviders();
-  const providerConfig = runtimeProviders[normalizedProvider];
+  const providers = getRuntimeProviders();
+  const providerConfig = providers[normalizedProvider];
 
   // provider 不存在时，直接报明确错误。
   if (!providerConfig) {

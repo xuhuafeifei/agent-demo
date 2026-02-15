@@ -1,8 +1,6 @@
 import {
   discoveryModel,
   ensureModelJson,
-  getDefaultModelRef,
-  getEffectiveModelConfig,
   getUserFgbgConfig,
   normalizeProviderId,
   parseModelRef,
@@ -59,11 +57,8 @@ export async function selectModelForRuntime(): Promise<{
     preferred: globalDefaultRef,
   });
 
-  // discovery 为空时，最后才回退到代码默认模型。
-  const finalRef =
-    fromRegistry ??
-    globalDefaultRef ??
-    getDefaultModelRef(getEffectiveModelConfig());
+  // discovery 已合并 fgbg + model 配置并返回 defaultModelRef，无需再读配置。
+  const finalRef = fromRegistry ?? discoveryResult.defaultModelRef;
 
   const resolved = resolveModel(finalRef.provider, finalRef.model);
 
