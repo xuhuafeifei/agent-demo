@@ -1,4 +1,8 @@
-import { getGlobalModelConfigPath, getResolvedApiKey, normalizeProviderId } from "./model-config";
+import {
+  getGlobalModelConfigPath,
+  getResolvedApiKey,
+  normalizeProviderId,
+} from "./pi-embedded-runner/model-config";
 import { resolveModel } from "./pi-embedded-runner/model";
 import {
   createAgentRuntime as createPiAgentRuntime,
@@ -6,7 +10,7 @@ import {
 } from "./pi-embedded-runner/attempt";
 import { selectModelForRuntime } from "../model-selection";
 import { createCacheTrace } from "./utils/cache-trace";
-import type { RuntimeStreamEvent } from "./events";
+import type { RuntimeStreamEvent } from "./utils/events";
 import { createSessionManager } from "./session";
 import type { SessionMessage } from "./session";
 
@@ -58,7 +62,9 @@ export async function getReplyFromAgent(params: {
 
   const apiKey = getResolvedApiKey({ provider: modelRef.provider });
   if (!apiKey && modelRef.provider !== "ollama") {
-    console.warn(`警告：未配置 ${modelRef.provider.toUpperCase()}_API_KEY，模型可能无法工作`);
+    console.warn(
+      `警告：未配置 ${modelRef.provider.toUpperCase()}_API_KEY，模型可能无法工作`,
+    );
   }
 
   if (!model) {
@@ -79,7 +85,8 @@ export async function getReplyFromAgent(params: {
   const agent = createPiAgentRuntime({
     model,
     messages: sessionManager.loadMessages(),
-    getApiKey: (provider) => getResolvedApiKey({ provider: normalizeProviderId(provider) }),
+    getApiKey: (provider) =>
+      getResolvedApiKey({ provider: normalizeProviderId(provider) }),
   });
 
   trace.recordStage("request:start");

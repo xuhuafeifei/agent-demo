@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ensureAgentDir } from "../agent-path";
+import { ensureAgentDir } from "../utils/agent-path";
 import type { SessionMessage, SessionSnapshot } from "./types";
 
 const DEFAULT_SESSION_ID = "main";
@@ -9,11 +9,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function parseSnapshot(raw: string, fallbackSessionId: string): SessionSnapshot {
+function parseSnapshot(
+  raw: string,
+  fallbackSessionId: string,
+): SessionSnapshot {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed)) {
-      return { sessionId: fallbackSessionId, updatedAt: Date.now(), messages: [] };
+      return {
+        sessionId: fallbackSessionId,
+        updatedAt: Date.now(),
+        messages: [],
+      };
     }
 
     const messages = Array.isArray(parsed.messages)
@@ -25,11 +32,16 @@ function parseSnapshot(raw: string, fallbackSessionId: string): SessionSnapshot 
         typeof parsed.sessionId === "string" && parsed.sessionId.trim()
           ? parsed.sessionId
           : fallbackSessionId,
-      updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
+      updatedAt:
+        typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
       messages,
     };
   } catch {
-    return { sessionId: fallbackSessionId, updatedAt: Date.now(), messages: [] };
+    return {
+      sessionId: fallbackSessionId,
+      updatedAt: Date.now(),
+      messages: [],
+    };
   }
 }
 
@@ -78,4 +90,3 @@ export function createSessionManager(sessionId: string = DEFAULT_SESSION_ID) {
 }
 
 export type SessionManager = ReturnType<typeof createSessionManager>;
-

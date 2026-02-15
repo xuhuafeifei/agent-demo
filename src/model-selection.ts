@@ -6,7 +6,7 @@ import {
   getUserFgbgConfig,
   normalizeProviderId,
   parseModelRef,
-} from "./agent/model-config";
+} from "./agent/pi-embedded-runner/model-config";
 import { resolveModel } from "./agent/pi-embedded-runner/model";
 import type { ModelRef } from "./agent/types";
 
@@ -51,15 +51,19 @@ export async function selectModelForRuntime(): Promise<{
 }> {
   await ensureModelJson();
   const discoveryResult = await discoveryModel(getUserFgbgConfig());
-
+  // 全局默认模型
   const globalDefaultRef = resolveGlobalDefaultModelRef();
+  // 从模型注册表中选择模型
   const fromRegistry = pickFromModelRegistry({
     registry: discoveryResult.modelRegistry as Record<string, unknown>,
     preferred: globalDefaultRef,
   });
 
   // discovery 为空时，最后才回退到代码默认模型。
-  const finalRef = fromRegistry ?? globalDefaultRef ?? getDefaultModelRef(getEffectiveModelConfig());
+  const finalRef =
+    fromRegistry ??
+    globalDefaultRef ??
+    getDefaultModelRef(getEffectiveModelConfig());
 
   const resolved = resolveModel(finalRef.provider, finalRef.model);
 

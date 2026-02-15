@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getModel } from "@mariozechner/pi-ai";
-import { ensureAgentDir, resolveGlobalConfigPath } from "./agent-path";
+import { ensureAgentDir, resolveGlobalConfigPath } from "../utils/agent-path";
 import type {
   FgbgUserConfig,
   ModelConfigFile,
@@ -10,7 +10,7 @@ import type {
   ModelRegistry,
   ProviderConfig,
   RuntimeModel,
-} from "./types";
+} from "../types";
 
 const PROJECT_MODEL_CONFIG_PATH = path.join(
   __dirname,
@@ -208,27 +208,6 @@ type RawModelsConfig = {
   };
 };
 
-function readExplicitProvidersFromConfig(
-  filePath: string,
-): Record<string, ProviderConfig> {
-  try {
-    // 直接按约定结构读取 models.providers，避免多层 extract/parse。
-    const raw = JSON.parse(
-      fs.readFileSync(filePath, "utf-8"),
-    ) as RawModelsConfig;
-    const providers = raw.models?.providers;
-    if (!providers) return {};
-
-    const normalized: Record<string, ProviderConfig> = {};
-    for (const [providerId, providerConfig] of Object.entries(providers)) {
-      normalized[normalizeProviderId(providerId)] = providerConfig;
-    }
-    return normalized;
-  } catch {
-    return {};
-  }
-}
-
 function normalizeRawModelConfig(raw: unknown): ModelConfigFile {
   if (!isRecord(raw)) return {};
 
@@ -372,7 +351,9 @@ function mergeModelConfigs(params: {
 }
 
 function loadEffectiveModelConfig(): ModelConfigFile {
-  const explicitConfig = normalizeRawModelConfig(getUserFgbgConfig() as unknown);
+  const explicitConfig = normalizeRawModelConfig(
+    getUserFgbgConfig() as unknown,
+  );
   const implicitConfig = resolveModelConfigFile();
   return mergeModelConfigs({ explicitConfig, implicitConfig });
 }
@@ -473,6 +454,11 @@ function resolveImplicitProviders(
  * 规则：
  * 1. 显式配置优先覆盖同名字段。
  * 2. models 按 id 去重合并，显式模型优先，隐式模型仅补齐缺失项。
+ *
+ * @param params - 参数
+ * @param params.implicit - 隐式提供者配置
+ * @param params.explicit - 显式提供者配置
+ * @returns 合并后的提供者配置
  */
 function mergeProviders(params: {
   implicit: Record<string, ProviderConfig>;
@@ -521,6 +507,11 @@ function mergeProviders(params: {
   return merged;
 }
 
+/**
+ * 规范化提供者配置
+ * @param providers - 提供者配置
+ * @returns 规范化后的提供者配置
+ */
 function normalizeProviders(
   providers: Record<string, ProviderConfig>,
 ): Record<string, ProviderConfig> {
@@ -539,6 +530,13 @@ function normalizeProviders(
   return normalized;
 }
 
+/**
+ * 发现模型注册表
+ * @param providers - 提供者配置
+ * @returns 模型注册表和错误信息
+ * @returns 模型注册表
+ * @returns 错误信息
+ */
 function discoverModelRegistry(providers: Record<string, ProviderConfig>): {
   modelRegistry: ModelRegistry;
   error?: string;
@@ -582,6 +580,12 @@ function discoverModelRegistry(providers: Record<string, ProviderConfig>): {
   };
 }
 
+/**
+ * 确保模型 JSON 文件存在
+ * @returns 目录和是否写入
+ * @returns 目录
+ * @returns 是否写入
+ */
 export async function ensureModelJson(): Promise<{
   agentDir: string;
   wrote: boolean;
@@ -591,7 +595,10 @@ export async function ensureModelJson(): Promise<{
   // 显式 providers 仅来自用户级 fgbg.json 的 models.providers。
   const explicitProviders = getUserFgbgConfig()?.models?.providers ?? {};
   const merged = normalizeProviders(
-    mergeProviders({ implicit: implicitProviders, explicit: explicitProviders }),
+    mergeProviders({
+      implicit: implicitProviders,
+      explicit: explicitProviders,
+    }),
   );
   const agentDir = ensureAgentDir();
 
@@ -618,6 +625,14 @@ export async function ensureModelJson(): Promise<{
   return { agentDir, wrote: true };
 }
 
+/**
+ * 发现模型
+ * @param config - 配置
+ * @returns 提供者配置和模型注册表
+ * @returns 提供者配置
+ * @returns 模型注册表
+ * @returns 错误信息
+ */
 export async function discoveryModel(config: FgbgUserConfig): Promise<{
   providers: Record<string, ProviderConfig>;
   modelRegistry: ModelRegistry;
@@ -690,9 +705,4 @@ export function getUserFgbgConfig(): FgbgUserConfig {
   } catch {
     return {};
   }
-}
-
-// 兼容旧调用方命名：当前返回“全局+项目合并后”的有效配置。
-export function getProjectModelConfig(): ModelConfigFile {
-  return getEffectiveModelConfig();
 }

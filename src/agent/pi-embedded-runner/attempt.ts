@@ -1,6 +1,6 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { RuntimeStreamEvent } from "../events";
+import type { RuntimeStreamEvent } from "../utils/events";
 import type { RuntimeModel } from "../types";
 import type { SessionMessage } from "../session";
 
@@ -20,6 +20,14 @@ function extractAssistantText(content: unknown[] | undefined): string {
     .join("");
 }
 
+/**
+ * 运行嵌入式 Pi Agent
+ * @param params - 参数
+ * @param params.agent - Agent 实例
+ * @param params.message - 消息
+ * @param params.onEvent - 事件回调
+ * @returns
+ */
 export async function runEmbeddedPiAgent(params: {
   agent: Agent;
   message: string;
@@ -41,9 +49,11 @@ export async function runEmbeddedPiAgent(params: {
         // 只处理 assistant 的增量文本事件。
         if (event.message?.role !== "assistant") break;
 
-        const assistantEvent = event.assistantMessageEvent as AssistantMessageEvent;
+        const assistantEvent =
+          event.assistantMessageEvent as AssistantMessageEvent;
         const textDelta =
-          assistantEvent.type === "text_delta" && typeof assistantEvent.delta === "string"
+          assistantEvent.type === "text_delta" &&
+          typeof assistantEvent.delta === "string"
             ? assistantEvent.delta
             : undefined;
         const fullText = extractAssistantText(assistantEvent.partial?.content);

@@ -5,7 +5,7 @@ import {
   getReplyFromAgent,
   ModelUnavailableError,
 } from "../agent/run";
-import type { RuntimeStreamEvent } from "../agent/events";
+import type { RuntimeStreamEvent } from "../agent/utils/events";
 
 function writeSse(res: Response, data: RuntimeStreamEvent): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);

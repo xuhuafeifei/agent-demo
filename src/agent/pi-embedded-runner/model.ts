@@ -3,14 +3,26 @@ import {
   getRuntimeModelRegistry,
   getRuntimeProviders,
   normalizeProviderId,
-} from "../model-config";
+} from "./model-config";
 import type { RuntimeModel } from "../types";
 
 function getModelUnsafe(provider: string, modelId: string): RuntimeModel {
-  return (getModel as unknown as (p: string, m: string) => RuntimeModel)(provider, modelId);
+  return (getModel as unknown as (p: string, m: string) => RuntimeModel)(
+    provider,
+    modelId,
+  );
 }
 
-export function resolveModel(provider: string, modelId: string): {
+/**
+ * 解析模型
+ * @param provider - 提供者 ID
+ * @param modelId - 模型 ID
+ * @returns 模型对象或错误信息
+ */
+export function resolveModel(
+  provider: string,
+  modelId: string,
+): {
   model?: RuntimeModel;
   error?: string;
 } {
@@ -33,7 +45,9 @@ export function resolveModel(provider: string, modelId: string): {
     return { error: `Unknown provider: ${normalizedProvider}` };
   }
 
-  const configuredModel = providerConfig.models.find((item) => item.id === normalizedModelId);
+  const configuredModel = providerConfig.models.find(
+    (item) => item.id === normalizedModelId,
+  );
 
   // provider 存在但模型不在配置里，返回可定位错误。
   if (!configuredModel) {
@@ -50,7 +64,8 @@ export function resolveModel(provider: string, modelId: string): {
       (model as { api?: string }).api = providerConfig.api;
     }
     if (providerConfig.headers) {
-      (model as { headers?: Record<string, string> }).headers = providerConfig.headers;
+      (model as { headers?: Record<string, string> }).headers =
+        providerConfig.headers;
     }
 
     return { model };
