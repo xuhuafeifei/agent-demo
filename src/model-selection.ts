@@ -4,9 +4,9 @@ import {
   getUserFgbgConfig,
   normalizeProviderId,
   parseModelRef,
-} from "./agent/pi-embedded-runner/model-config";
-import { resolveModel } from "./agent/pi-embedded-runner/model";
-import type { ModelRef } from "./agent/types";
+} from "./agent/pi-embedded-runner/model-config.js";
+import { resolveModel } from "./agent/pi-embedded-runner/model.js";
+import type { ModelRef } from "./agent/types.js";
 
 function resolveGlobalDefaultModelRef(): ModelRef | null {
   const raw = getUserFgbgConfig();
@@ -49,15 +49,11 @@ export async function selectModelForRuntime(): Promise<{
 }> {
   await ensureModelJson();
   const discoveryResult = await discoveryModel(getUserFgbgConfig());
-  // 全局默认模型
   const globalDefaultRef = resolveGlobalDefaultModelRef();
-  // 从模型注册表中选择模型
   const fromRegistry = pickFromModelRegistry({
     registry: discoveryResult.modelRegistry as Record<string, unknown>,
     preferred: globalDefaultRef,
   });
-
-  // discovery 已合并 fgbg + model 配置并返回 defaultModelRef，无需再读配置。
   const finalRef = fromRegistry ?? discoveryResult.defaultModelRef;
 
   const resolved = resolveModel(finalRef.provider, finalRef.model);
@@ -66,6 +62,6 @@ export async function selectModelForRuntime(): Promise<{
     modelRef: finalRef,
     model: resolved.model,
     modelError: resolved.error,
-    discoveryError: discoveryResult.error,
+    discoveryError: undefined, // discovery 阶段已做 fallback，不再返回错误
   };
 }

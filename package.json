@@ -1,6 +1,7 @@
 {
   "name": "agent-demo",
   "version": "1.0.0",
+  "type": "module",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
@@ -15,6 +16,7 @@
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.51.5",
     "@mariozechner/pi-ai": "^0.51.5",
+    "@mariozechner/pi-coding-agent": "^0.51.5",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^5.2.1"

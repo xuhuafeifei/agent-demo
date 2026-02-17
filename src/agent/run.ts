@@ -1,18 +1,23 @@
+import fs from "node:fs";
 import {
   getGlobalModelConfigPath,
   getResolvedApiKey,
-  normalizeProviderId,
-} from "./pi-embedded-runner/model-config";
-import { resolveModel } from "./pi-embedded-runner/model";
+} from "./pi-embedded-runner/model-config.js";
+import { resolveModel } from "./pi-embedded-runner/model.js";
+import { runEmbeddedPiAgent } from "./pi-embedded-runner/attempt.js";
+import { createCacheTrace } from "./utils/cache-trace.js";
+import type { RuntimeStreamEvent } from "./utils/events.js";
 import {
-  createAgentRuntime as createPiAgentRuntime,
-  runEmbeddedPiAgent,
-} from "./pi-embedded-runner/attempt";
-import { selectModelForRuntime } from "../model-selection";
-import { createCacheTrace } from "./utils/cache-trace";
-import type { RuntimeStreamEvent } from "./utils/events";
-import { createSessionManager } from "./session";
-import type { SessionMessage } from "./session";
+  loadSessionIndexEntry,
+  resolveSessionIndexPath,
+  type SessionMessage,
+  resolveSessionDir,
+} from "./session/index.js";
+import {
+  SessionManager,
+  type SessionMessageEntry,
+} from "@mariozechner/pi-coding-agent";
+import { prepareBeforeGetReply } from "./pre-run.js";
 
 export class ModelUnavailableError extends Error {
   provider?: string;
@@ -29,17 +34,31 @@ export class ModelUnavailableError extends Error {
 }
 
 export function logRuntimePaths(): void {
-  const sessionManager = createSessionManager("main");
   console.log(`全局配置路径: ${getGlobalModelConfigPath()}`);
-  console.log(`会话文件路径: ${sessionManager.sessionFile}`);
+  const entry = loadSessionIndexEntry("agent:main:main");
+  console.log(`会话索引路径: ${resolveSessionIndexPath()}`);
+  console.log(`会话文件路径: ${entry?.sessionFile ?? "未创建"}`);
 }
 
 export function getHistory(): SessionMessage[] {
-  return createSessionManager("main").loadMessages();
+  const entry = loadSessionIndexEntry("agent:main:main");
+  if (!entry?.sessionFile) return [];
+  if (!fs.existsSync(entry.sessionFile)) return [];
+  const sessionManager = SessionManager.open(entry.sessionFile, resolveSessionDir());
+  const entries = sessionManager.getEntries();
+  return entries
+    .filter((entryItem): entryItem is SessionMessageEntry => entryItem.type === "message")
+    .map((entryItem) => entryItem.message);
 }
 
 export function clearHistory(): void {
-  createSessionManager("main").clearMessages();
+  const entry = loadSessionIndexEntry("agent:main:main");
+  if (!entry?.sessionFile) return;
+  try {
+    fs.unlinkSync(entry.sessionFile);
+  } catch {
+    // ignore missing file
+  }
 }
 
 export async function getReplyFromAgent(params: {
@@ -47,14 +66,13 @@ export async function getReplyFromAgent(params: {
   onEvent: (event: RuntimeStreamEvent) => void;
 }): Promise<void> {
   const { message, onEvent } = params;
-  const sessionManager = createSessionManager("main");
 
-  // 每次请求都动态选模型，run 层不持有任何状态对象。
-  const selected = await selectModelForRuntime();
-  const modelRef = selected.modelRef;
-  const model = selected.model;
-  const modelError = selected.modelError;
-  const discoveryError = selected.discoveryError;
+  // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
+  const prepared = await prepareBeforeGetReply({ sessionKey: "agent:main:main" });
+  const modelRef = prepared.modelRef;
+  const model = prepared.model;
+  const modelError = prepared.modelError;
+  const discoveryError = prepared.discoveryError;
 
   if (discoveryError) {
     console.error(`模型发现失败: ${discoveryError}`);
@@ -82,12 +100,14 @@ export async function getReplyFromAgent(params: {
     model: modelRef.model,
   });
 
-  const agent = createPiAgentRuntime({
-    model,
-    messages: sessionManager.loadMessages(),
-    getApiKey: (provider) =>
-      getResolvedApiKey({ provider: normalizeProviderId(provider) }),
-  });
+  const session = prepared.session;
+  if (!session) {
+    throw new ModelUnavailableError({
+      provider: modelRef.provider,
+      model: modelRef.model,
+      detail: modelError ?? "session 初始化失败",
+    });
+  }
 
   trace.recordStage("request:start");
   trace.recordStage("prompt:start");
@@ -122,12 +142,10 @@ export async function getReplyFromAgent(params: {
 
   try {
     await runEmbeddedPiAgent({
-      agent,
+      session,
       message,
       onEvent: emit,
     });
-    // 成功返回后把最新会话历史落盘，供下次请求恢复。
-    sessionManager.saveMessages(agent.state.messages as SessionMessage[]);
     trace.recordStage("request:end");
     emit({ type: "done" });
     trace.logTimeline("done");
@@ -138,6 +156,8 @@ export async function getReplyFromAgent(params: {
       error: error instanceof Error ? error.message : "服务器内部错误",
     });
     trace.logTimeline("error");
+  } finally {
+    session.dispose();
   }
 }
 

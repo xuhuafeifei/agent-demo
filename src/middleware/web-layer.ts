@@ -4,8 +4,8 @@ import {
   getHistory,
   getReplyFromAgent,
   ModelUnavailableError,
-} from "../agent/run";
-import type { RuntimeStreamEvent } from "../agent/utils/events";
+} from "../agent/run.js";
+import type { RuntimeStreamEvent } from "../agent/utils/events.js";
 
 function writeSse(res: Response, data: RuntimeStreamEvent): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -31,11 +31,12 @@ export function createWebLayer() {
     try {
       await getReplyFromAgent({
         message,
-        onEvent: (event) => {
+        onEvent: (event: RuntimeStreamEvent) => {
           writeSse(res, event);
         },
       });
     } catch (error) {
+      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
       if (error instanceof ModelUnavailableError) {
         return res.status(503).json({
           error: error.message,
@@ -47,7 +48,7 @@ export function createWebLayer() {
 
       writeSse(res, {
         type: "error",
-        error: error instanceof Error ? error.message : "服务器内部错误",
+        error: runtimeError.message,
       });
     } finally {
       res.end();
@@ -59,10 +60,11 @@ export function createWebLayer() {
     try {
       const history = getHistory();
       res.json({ success: true, history });
-    } catch (error) {
+    } catch (error: unknown) {
+      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器内部错误",
+        error: runtimeError.message,
       });
     }
   });
@@ -72,10 +74,11 @@ export function createWebLayer() {
     try {
       clearHistory();
       res.json({ success: true, message: "对话历史已清除" });
-    } catch (error) {
+    } catch (error: unknown) {
+      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : "服务器内部错误",
+        error: runtimeError.message,
       });
     }
   });

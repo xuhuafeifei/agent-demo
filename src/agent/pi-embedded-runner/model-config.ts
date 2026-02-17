@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getModel } from "@mariozechner/pi-ai";
-import { ensureAgentDir, resolveGlobalConfigPath } from "../utils/agent-path";
+import { fileURLToPath } from "node:url";
+import { ensureAgentDir, resolveGlobalConfigPath } from "../utils/agent-path.js";
 import type {
   FgbgUserConfig,
   ModelConfigFile,
@@ -10,7 +11,17 @@ import type {
   ModelRegistry,
   ProviderConfig,
   RuntimeModel,
-} from "../types";
+} from "../types.js";
+
+function getModelUnsafe(provider: string, modelId: string): RuntimeModel {
+  return (getModel as unknown as (p: string, m: string) => RuntimeModel)(
+    provider,
+    modelId,
+  );
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PROJECT_MODEL_CONFIG_PATH = path.join(
   __dirname,
@@ -70,13 +81,6 @@ export function parseModelRef(
   if (!provider || !model) return null;
 
   return { provider, model };
-}
-
-function getModelUnsafe(provider: string, modelId: string): RuntimeModel {
-  return (getModel as unknown as (p: string, m: string) => RuntimeModel)(
-    provider,
-    modelId,
-  );
 }
 
 function buildMinimaxProvider(): ProviderConfig {
@@ -442,12 +446,12 @@ function mergeProviders(params: {
     const explicitModels = explicitProvider.models ?? [];
     // 隐式模型列表：仅用于补齐显式里没有的模型。
     const implicitModels = implicitProvider.models ?? [];
-    const seen = new Set(explicitModels.map((item) => item.id));
+    const seen = new Set(explicitModels.map((item: ModelDefinitionConfig) => item.id));
 
     // 显式模型优先，隐式模型只补齐未定义的 id。
     const models: ModelDefinitionConfig[] = [
       ...explicitModels,
-      ...implicitModels.filter((item) => {
+      ...implicitModels.filter((item: ModelDefinitionConfig) => {
         if (seen.has(item.id)) return false;
         seen.add(item.id);
         return true;
@@ -495,27 +499,18 @@ function normalizeProviders(
  * @returns 模型注册表
  * @returns 错误信息
  */
-function discoverModelRegistry(providers: Record<string, ProviderConfig>): {
-  modelRegistry: ModelRegistry;
-  error?: string;
-} {
+function discoverModelRegistry(providers: Record<string, ProviderConfig>): ModelRegistry {
   const modelRegistry: ModelRegistry = {};
-  const errors: string[] = [];
 
   for (const [providerId, providerConfig] of Object.entries(providers)) {
     for (const modelDefinition of providerConfig.models) {
       const modelKey = `${providerId}/${modelDefinition.id}`;
 
       try {
-        // 优先从 pi-ai 的内置注册拿模型。
         const model = getModelUnsafe(providerId, modelDefinition.id);
-
-        // 某些模型在当前 pi-ai 版本可能未内置，发现阶段直接跳过。
         if (!model) {
           continue;
         }
-
-        // 对模型打上 provider 级配置覆盖。
         (model as { baseUrl?: string }).baseUrl = providerConfig.baseUrl;
         if (providerConfig.api) {
           (model as { api?: string }).api = providerConfig.api;
@@ -524,18 +519,33 @@ function discoverModelRegistry(providers: Record<string, ProviderConfig>): {
           (model as { headers?: Record<string, string> }).headers =
             providerConfig.headers;
         }
-
         modelRegistry[modelKey] = model;
-      } catch (error) {
-        errors.push(`discover ${modelKey} failed: ${(error as Error).message}`);
+      } catch (err) {
+        // pi-ai 未内置时用配置拼 fallback，保证 registry 完整，resolveModel 只做查表。
+        console.warn(
+          `[discovery] 模型 ${modelKey} 未在 pi-ai 内置，已用配置 fallback 注册:`,
+          (err as Error).message,
+        );
+        const fallback: RuntimeModel = {
+          id: modelDefinition.id,
+          name: modelDefinition.name,
+          provider: providerId,
+          api: (providerConfig.api ?? modelDefinition.api ?? "openai-completions") as RuntimeModel["api"],
+          baseUrl: providerConfig.baseUrl,
+          reasoning: modelDefinition.reasoning,
+          input: modelDefinition.input,
+          cost: modelDefinition.cost,
+          contextWindow: modelDefinition.contextWindow,
+          maxTokens: modelDefinition.maxTokens,
+          headers: providerConfig.headers,
+          compat: modelDefinition.compat,
+        } as RuntimeModel;
+        modelRegistry[modelKey] = fallback;
       }
     }
   }
 
-  return {
-    modelRegistry,
-    error: errors.length > 0 ? errors.join("; ") : undefined,
-  };
+  return modelRegistry;
 }
 
 /**
@@ -595,7 +605,6 @@ export async function discoveryModel(config: FgbgUserConfig): Promise<{
   providers: Record<string, ProviderConfig>;
   modelRegistry: ModelRegistry;
   defaultModelRef: ModelRef;
-  error?: string;
 }> {
   // 显示供应商配置来自 fgbg.json
   const explicitProviders = config?.models?.providers ?? {};
@@ -609,17 +618,14 @@ export async function discoveryModel(config: FgbgUserConfig): Promise<{
       explicit: explicitProviders,
     }),
   );
-  const discovered = discoverModelRegistry(runtimeProviders);
-  runtimeModelRegistry = discovered.modelRegistry;
+  runtimeModelRegistry = discoverModelRegistry(runtimeProviders);
 
-  // 合并后的默认模型 ref，与 discovery 同源配置，避免调用方再读一遍
   const defaultModelRef = getDefaultModelRef(loadEffectiveModelConfig());
 
   return {
     providers: runtimeProviders,
     modelRegistry: runtimeModelRegistry,
     defaultModelRef,
-    error: discovered.error,
   };
 }
 

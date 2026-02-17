@@ -1,4 +1,4 @@
-import type { getModel } from "@mariozechner/pi-ai";
+import type { Model } from "@mariozechner/pi-ai";
 
 export type ModelApi =
   | "openai-completions"
@@ -69,5 +69,5 @@ export type FgbgUserConfig = {
   };
 };
 
-export type RuntimeModel = ReturnType<typeof getModel>;
+export type RuntimeModel = Model<any>;
 export type ModelRegistry = Record<string, RuntimeModel>;

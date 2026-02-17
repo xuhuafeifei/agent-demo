@@ -1,9 +1,10 @@
 import express from "express";
-import path from "path";
+import path from "node:path";
 import cors from "cors";
 import dotenv from "dotenv";
-import { logRuntimePaths } from "./agent/run";
-import { createWebLayer } from "./middleware/web-layer";
+import { logRuntimePaths } from "./agent/run.js";
+import { createWebLayer } from "./middleware/web-layer.js";
+import { fileURLToPath } from "node:url";
 
 // 加载环境变量
 dotenv.config();
@@ -13,6 +14,8 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
 
 // 静态文件目录：编译后 __dirname 为 dist/，页面在 src/public
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "..", "src", "public");
 
 // 中间件

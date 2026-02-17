@@ -1,8 +1,5 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { RuntimeStreamEvent } from "../utils/events";
-import type { RuntimeModel } from "../types";
-import type { SessionMessage } from "../session";
+import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { RuntimeStreamEvent } from "../utils/events.js";
 
 type AssistantMessageEvent = {
   type?: string;
@@ -23,19 +20,19 @@ function extractAssistantText(content: unknown[] | undefined): string {
 /**
  * 运行嵌入式 Pi Agent
  * @param params - 参数
- * @param params.agent - Agent 实例
+ * @param params.session - Agent Session 实例
  * @param params.message - 消息
  * @param params.onEvent - 事件回调
  * @returns
  */
 export async function runEmbeddedPiAgent(params: {
-  agent: Agent;
+  session: AgentSession;
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
 }): Promise<void> {
-  const { agent, message, onEvent } = params;
+  const { session, message, onEvent } = params;
 
-  const unsubscribe = agent.subscribe((event) => {
+  const unsubscribe = session.subscribe((event) => {
     switch (event.type) {
       case "agent_end":
         onEvent({ type: "agent_end" });
@@ -50,7 +47,8 @@ export async function runEmbeddedPiAgent(params: {
         if (event.message?.role !== "assistant") break;
 
         const assistantEvent =
-          event.assistantMessageEvent as AssistantMessageEvent;
+          event.assistantMessageEvent as AssistantMessageEvent | undefined;
+        if (!assistantEvent) break;
         const textDelta =
           assistantEvent.type === "text_delta" &&
           typeof assistantEvent.delta === "string"
@@ -82,39 +80,8 @@ export async function runEmbeddedPiAgent(params: {
   });
 
   try {
-    const userMessage = {
-      role: "user" as const,
-      content: [{ type: "text" as const, text: message }],
-      timestamp: Date.now(),
-    };
-
-    // 先写入状态，再触发 prompt，保证上下文完整。
-    agent.appendMessage(userMessage);
-    await agent.prompt(message);
+    await session.prompt(message);
   } finally {
     unsubscribe();
   }
-}
-
-export function createAgentRuntime(params: {
-  model: RuntimeModel;
-  getApiKey: (provider: string) => string | undefined;
-  messages?: SessionMessage[];
-}): Agent {
-  const { model, getApiKey, messages = [] } = params;
-
-  // 每次请求创建轻量 Agent runtime，避免把 runtime 作为全局重对象长期持有。
-  return new Agent({
-    getApiKey,
-    initialState: {
-      model,
-      systemPrompt: "你是一个友好的人,能快速回复别人信息",
-      thinkingLevel: "off",
-      tools: [],
-      messages: messages as AgentMessage[],
-      isStreaming: false,
-      streamMessage: null,
-      pendingToolCalls: new Set(),
-    },
-  });
 }

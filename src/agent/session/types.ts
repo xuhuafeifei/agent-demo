@@ -1,12 +1,17 @@
-export type SessionMessage = {
-  role?: string;
-  content?: unknown;
-  timestamp?: number;
-};
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 
-export type SessionSnapshot = {
+export type SessionMessage = AgentMessage;
+
+export type SessionIndexEntry = {
   sessionId: string;
   updatedAt: number;
-  messages: SessionMessage[];
+  sessionFile: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  modelProvider: string;
+  model: string;
+  contextTokens: number;
 };
 
+export type SessionIndex = Record<string, SessionIndexEntry>;
