@@ -6,6 +6,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Generated JS declaration shims
+src/**/*.js.d.ts
+
 # Environment variables (keep .env.example as template)
 .env
 .env.local

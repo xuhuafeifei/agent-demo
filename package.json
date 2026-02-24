@@ -4,6 +4,11 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
+    "generate-js-dts": "node scripts/generate-js-dts.js",
+    "prebuild": "npm run generate-js-dts",
+    "predev": "npm run generate-js-dts",
+    "pretsc": "npm run generate-js-dts",
+    "prewatch": "npm run generate-js-dts",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsc && node dist/server.js",

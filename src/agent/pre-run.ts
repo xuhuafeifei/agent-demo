@@ -50,6 +50,10 @@ function openSessionManager(params: {
   return SessionManager.open(sessionFile, sessionDir);
 }
 
+/**
+ * 在处理「获取回复」请求前做统一准备：选模型、建目录、刷新模型与鉴权、初始化会话状态并可选创建 Agent 会话。
+ * 若当前无可用 runtime 模型则只返回 modelRef/session 信息；否则创建 session 并返回，供后续 prompt 使用。
+ */
 export async function prepareBeforeGetReply(params?: {
   sessionKey?: string;
 }): Promise<{
