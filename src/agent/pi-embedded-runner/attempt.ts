@@ -1,5 +1,18 @@
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import {
+  AuthStorage,
+  createAgentSession,
+  ModelRegistry,
+  SessionManager,
+  SettingsManager,
+} from "@mariozechner/pi-coding-agent";
+import type {
+  AgentSession,
+  AgentSessionEvent,
+} from "@mariozechner/pi-coding-agent";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { RuntimeStreamEvent } from "../utils/events.js";
+import path from "node:path";
+import type { RuntimeModel } from "../types.js";
 
 type AssistantMessageEvent = {
   type?: string;
@@ -17,6 +30,54 @@ function extractAssistantText(content: unknown[] | undefined): string {
     .join("");
 }
 
+export async function createRuntimeAgentSession(params: {
+  model: RuntimeModel;
+  sessionDir: string;
+  sessionFile: string;
+  cwd: string;
+  agentDir: string;
+  provider: string;
+  apiKey?: string;
+  thinkingLevel?: ThinkingLevel;
+}): Promise<AgentSession> {
+  const {
+    model,
+    sessionDir,
+    sessionFile,
+    cwd,
+    agentDir,
+    provider,
+    apiKey,
+    thinkingLevel = "off",
+  } = params;
+
+  const sessionManager = SessionManager.open(sessionFile, sessionDir);
+  const settingsManager = SettingsManager.create(cwd, agentDir);
+  const authStorage = new AuthStorage(path.join(agentDir, "auth.json"));
+  if (apiKey) {
+    authStorage.setRuntimeApiKey(provider, apiKey);
+  }
+
+  const modelRegistry = new ModelRegistry(
+    authStorage,
+    path.join(agentDir, "models.json"),
+  );
+  modelRegistry.refresh();
+
+  const { session } = await createAgentSession({
+    model,
+    sessionManager,
+    settingsManager,
+    authStorage,
+    modelRegistry,
+    cwd,
+    agentDir,
+    thinkingLevel,
+  });
+
+  return session;
+}
+
 /**
  * 运行嵌入式 Pi Agent
  * @param params - 参数
@@ -32,7 +93,7 @@ export async function runEmbeddedPiAgent(params: {
 }): Promise<void> {
   const { session, message, onEvent } = params;
 
-  const unsubscribe = session.subscribe((event) => {
+  const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     switch (event.type) {
       case "agent_end":
         onEvent({ type: "agent_end" });
