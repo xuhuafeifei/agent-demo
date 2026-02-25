@@ -4,7 +4,10 @@ import {
   getResolvedApiKey,
 } from "./pi-embedded-runner/model-config.js";
 import { resolveModel } from "./pi-embedded-runner/model.js";
-import { runEmbeddedPiAgent } from "./pi-embedded-runner/attempt.js";
+import {
+  createRuntimeAgentSession,
+  runEmbeddedPiAgent,
+} from "./pi-embedded-runner/attempt.js";
 import { createCacheTrace } from "./utils/cache-trace.js";
 import type { RuntimeStreamEvent } from "./utils/events.js";
 import {
@@ -18,6 +21,7 @@ import {
   type SessionMessageEntry,
 } from "@mariozechner/pi-coding-agent";
 import { prepareBeforeGetReply } from "./pre-run.js";
+import { buildSystemPrompt } from "./system-prompt.js";
 
 export class ModelUnavailableError extends Error {
   provider?: string;
@@ -100,8 +104,7 @@ export async function getReplyFromAgent(params: {
     model: modelRef.model,
   });
 
-  const session = prepared.session;
-  if (!session) {
+  if (!prepared.model) {
     throw new ModelUnavailableError({
       provider: modelRef.provider,
       model: modelRef.model,
@@ -109,34 +112,25 @@ export async function getReplyFromAgent(params: {
     });
   }
 
+  const session = await createRuntimeAgentSession({
+    model: prepared.model,
+    sessionDir: prepared.sessionDir,
+    sessionFile: prepared.sessionFile,
+    cwd: prepared.cwd,
+    agentDir: prepared.agentDir,
+    provider: prepared.normalizedProvider,
+    apiKey: prepared.apiKey,
+    thinkingLevel: prepared.thinkingLevel,
+  });
+  session.agent.setSystemPrompt(buildSystemPrompt());
+
   trace.recordStage("request:start");
   trace.recordStage("prompt:start");
 
-  let firstAssistantChunkLogged = false;
   const emit = (event: RuntimeStreamEvent) => {
-    // 以第一段 assistant 文本作为首包时间点（delta 或 text 任一非空）。
-    if (
-      !firstAssistantChunkLogged &&
-      (event.type === "message_update" || event.type === "message_end")
-    ) {
-      const deltaText =
-        event.type === "message_update" && typeof event.delta === "string"
-          ? event.delta.trim()
-          : "";
-      const fullText = typeof event.text === "string" ? event.text.trim() : "";
-      if (deltaText.length > 0 || fullText.length > 0) {
-        firstAssistantChunkLogged = true;
-        trace.recordStage("prompt:first_assistant", `source=${event.type}`);
-        console.log(
-          `[LLM首包] requestId=${requestId} provider=${modelRef.provider} model=${modelRef.model} source=${event.type}`,
-        );
-      }
-    }
-
     if (event.type === "message_end") {
       trace.recordStage("prompt:end");
     }
-
     onEvent(event);
   };
 

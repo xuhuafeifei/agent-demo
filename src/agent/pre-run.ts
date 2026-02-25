@@ -1,4 +1,3 @@
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import { ensureAgentDir } from "./utils/agent-path.js";
 import {
   getResolvedApiKey,
@@ -14,6 +13,7 @@ import {
 import type { RuntimeModel } from "./types.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { createRuntimeAgentSession } from "./pi-embedded-runner/attempt.js";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
 
@@ -40,7 +40,9 @@ function getContextTokens(model?: RuntimeModel): number | undefined {
 export async function prepareBeforeGetReply(params?: {
   sessionKey?: string;
 }): Promise<{
-  session?: AgentSession;
+  cwd: string;
+  agentDir: string;
+  sessionDir: string;
   modelRef: { provider: string; model: string };
   model?: RuntimeModel;
   modelError?: string;
@@ -48,6 +50,9 @@ export async function prepareBeforeGetReply(params?: {
   sessionKey: string;
   sessionId: string;
   sessionFile: string;
+  normalizedProvider: string;
+  apiKey?: string;
+  thinkingLevel: ThinkingLevel;
 }> {
   const sessionKey = params?.sessionKey ?? DEFAULT_SESSION_KEY;
   const selected = await selectModelForRuntime();
@@ -60,6 +65,7 @@ export async function prepareBeforeGetReply(params?: {
 
   const normalizedProvider = normalizeProviderId(modelRef.provider);
   const apiKey = getResolvedApiKey({ provider: modelRef.provider });
+  const thinkingLevel: ThinkingLevel = "off";
 
   const runtimeModel = model;
 
@@ -76,6 +82,9 @@ export async function prepareBeforeGetReply(params?: {
 
   if (!runtimeModel) {
     return {
+      cwd,
+      agentDir,
+      sessionDir,
       modelRef,
       model,
       modelError: selected.modelError,
@@ -83,32 +92,25 @@ export async function prepareBeforeGetReply(params?: {
       sessionKey,
       sessionId: sessionInfo.sessionId,
       sessionFile: sessionInfo.sessionFile,
+      normalizedProvider,
+      apiKey,
+      thinkingLevel,
     };
   }
 
-  const session = await createRuntimeAgentSession({
-    model: runtimeModel,
-    sessionDir,
-    sessionFile: sessionInfo.sessionFile,
+  return {
     cwd,
     agentDir,
-    provider: normalizedProvider,
-    apiKey,
-    thinkingLevel: "off",
-  });
-  session.agent.setSystemPrompt(buildSystemPrompt());
-
-  const sessionId = sessionInfo.sessionId;
-  const sessionFile = sessionInfo.sessionFile;
-
-  return {
-    session,
+    sessionDir,
     modelRef,
     model: runtimeModel,
     modelError: selected.modelError,
     discoveryError: selected.discoveryError,
     sessionKey,
-    sessionId,
-    sessionFile,
+    sessionId: sessionInfo.sessionId,
+    sessionFile: sessionInfo.sessionFile,
+    normalizedProvider,
+    apiKey,
+    thinkingLevel,
   };
 }
