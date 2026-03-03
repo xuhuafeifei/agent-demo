@@ -2,7 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { getModel } from "@mariozechner/pi-ai";
 import { fileURLToPath } from "node:url";
-import { ensureAgentDir, resolveGlobalConfigPath } from "../utils/agent-path.js";
+import {
+  getUserFgbgConfig,
+  resolveGlobalConfigPath,
+} from "../../utils/app-path.js";
+import { ensureAgentDir } from "../utils/agent-path.js";
 import type {
   FgbgUserConfig,
   ModelConfigFile,
@@ -660,16 +664,5 @@ export function getGlobalModelConfigPath(): string {
   return resolveGlobalConfigPath();
 }
 
-/**
- * 读取用户级 fgbg.json，并返回原始配置对象。
- * 该方法不做裁剪和合并，适合给外部直接查看用户配置内容。
- */
-export function getUserFgbgConfig(): FgbgUserConfig {
-  const filePath = resolveGlobalConfigPath();
-  try {
-    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
-    return isRecord(raw) ? (raw as FgbgUserConfig) : {};
-  } catch {
-    return {};
-  }
-}
+/** 从 app-path 统一导出，便于调用方从 model-config 获取用户配置。 */
+export { getUserFgbgConfig } from "../../utils/app-path.js";

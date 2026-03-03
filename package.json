@@ -5,10 +5,6 @@
   "main": "dist/server.js",
   "scripts": {
     "generate-js-dts": "node scripts/generate-js-dts.js",
-    "prebuild": "npm run generate-js-dts",
-    "predev": "npm run generate-js-dts",
-    "pretsc": "npm run generate-js-dts",
-    "prewatch": "npm run generate-js-dts",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsc && node dist/server.js",
@@ -22,9 +18,12 @@
     "@mariozechner/pi-agent-core": "^0.51.5",
     "@mariozechner/pi-ai": "^0.51.5",
     "@mariozechner/pi-coding-agent": "^0.51.5",
+    "chokidar": "^5.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "node-llama-cpp": "^3.17.1",
+    "sqlite-vec": "^0.1.7-alpha.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

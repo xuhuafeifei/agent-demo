@@ -1,5 +1,5 @@
 import path from "node:path";
-import { resolveStateDir } from "../utils/agent-path.js";
+import { resolveStateDir } from "../../utils/app-path.js";
 
 export function resolveSessionDir(): string {
   return path.join(resolveStateDir(), "sessions");

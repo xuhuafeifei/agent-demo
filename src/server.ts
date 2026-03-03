@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { logRuntimePaths } from "./agent/run.js";
 import { createWebLayer } from "./middleware/web-layer.js";
 import { fileURLToPath } from "node:url";
+import { getMemoryIndexManager } from "./memory/index.js";
 
 // 加载环境变量
 dotenv.config();
@@ -52,6 +53,12 @@ function startServer(port: number) {
 
 async function bootstrap() {
   logRuntimePaths();
+  try {
+    await getMemoryIndexManager().start();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[memory] disabled: ${message}`);
+  }
   startServer(PORT);
 }
 

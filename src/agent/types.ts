@@ -67,6 +67,14 @@ export type FgbgUserConfig = {
       workspace?: string;
     };
   };
+  agent?: {
+    memorySearch?: {
+      mode?: "local" | "remote";
+      model?: string;
+      endpoint?: string;
+      apiKey?: string;
+    };
+  };
 };
 
 export type RuntimeModel = Model<any>;

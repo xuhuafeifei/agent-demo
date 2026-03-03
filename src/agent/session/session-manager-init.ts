@@ -75,6 +75,18 @@ function createSessionEntry(params: {
   };
 }
 
+/**
+ * 在创建 SessionManager 之前完成会话目录、索引与当前会话的准备工作。
+ * 若该 sessionKey 无有效会话或会话文件超过大小阈值，会新建会话并写入索引；
+ * 否则复用已有会话信息。
+ *
+ * @param params.sessionKey - 会话键，用于在索引中唯一标识该会话
+ * @param params.modelProvider - 模型提供商
+ * @param params.model - 模型名
+ * @param params.contextTokens - 可选，上下文 token 数
+ * @param params.cwd - 当前工作目录，用于 SessionManager
+ * @returns 当前会话的 sessionId、sessionFile 及索引条目
+ */
 export function prepareBeforeSessionManager(params: {
   sessionKey: string;
   modelProvider: string;
@@ -86,13 +98,16 @@ export function prepareBeforeSessionManager(params: {
   sessionFile: string;
   entry: SessionIndexEntry;
 } {
+  // 确保会话根目录存在（不存在则创建，权限 0o700）
   const sessionDir = ensureSessionDir();
+  // 从磁盘加载会话索引（sessionKey -> SessionIndexEntry）
   const index = loadSessionIndex();
   const existing = index[params.sessionKey];
 
   let nextEntry = existing;
   let shouldWrite = false;
 
+  // 无已有会话或缺少 sessionFile/sessionId 时，创建新会话
   if (!existing?.sessionFile || !existing.sessionId) {
     const manager = SessionManager.create(params.cwd, sessionDir);
     const sessionFile = ensureSessionFile(manager);
@@ -107,6 +122,7 @@ export function prepareBeforeSessionManager(params: {
     });
     shouldWrite = true;
   } else {
+    // 已有会话时，检查会话文件是否超过大小阈值需要轮转
     const resolvedFile = path.resolve(existing.sessionFile);
     if (shouldRotateSessionFile(resolvedFile)) {
       const manager = SessionManager.create(params.cwd, sessionDir);
@@ -128,6 +144,7 @@ export function prepareBeforeSessionManager(params: {
     throw new Error("session entry init failed");
   }
 
+  // 有新条目或索引文件不存在时，写回索引
   if (shouldWrite || !fs.existsSync(resolveSessionIndexPath())) {
     index[params.sessionKey] = nextEntry;
     saveSessionIndex(index);

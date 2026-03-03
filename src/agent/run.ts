@@ -22,6 +22,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { prepareBeforeGetReply } from "./pre-run.js";
 import { buildSystemPrompt } from "./system-prompt.js";
+import { getMemoryIndexManager } from "../memory/index.js";
 
 export class ModelUnavailableError extends Error {
   provider?: string;
@@ -151,6 +152,7 @@ export async function getReplyFromAgent(params: {
     });
     trace.logTimeline("error");
   } finally {
+    getMemoryIndexManager().onMemorySourceChanged("session", prepared.sessionFile);
     session.dispose();
   }
 }
