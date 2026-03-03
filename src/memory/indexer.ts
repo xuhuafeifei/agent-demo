@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createDebugTrace } from "../utils/log-trace.js";
 import { batchEmbeddingText } from "./embedding/embedding-provider.js";
 import {
   deleteByPath,
@@ -8,13 +9,18 @@ import {
   replacePathChunks,
 } from "./store.js";
 import type { MemorySource, SyncResult, SyncSummary } from "./types.js";
+import { getMemorySearchConfig } from "./memory-search-config.js";
 import { chunkTextWithLines } from "./utils/chunk.js";
+import { extractSessionDialogueText } from "./utils/session-content.js";
 import { sha256 } from "./utils/hash.js";
+import { getUserFgbgConfig } from "../utils/app-path.js";
 import {
   ensureDirSync,
   resolveUserMemoryDir,
   resolveWorkspaceMemoryPath,
 } from "./utils/path.js";
+
+const memoryDebug = createDebugTrace("memory");
 
 /**
  * 根据路径推断来源类型，用于缺省 source 的场景。
@@ -80,8 +86,13 @@ export async function syncMemoryByPath(params: {
     };
   }
 
-  // 内容有变化：切块 -> 批量 embedding -> 事务替换该 path 的 chunks
-  const chunks = chunkTextWithLines(content);
+  // 内容有变化：session 先清洗（只保留 role+对话正文），再切块 -> embedding
+  const textToChunk =
+    source === "sessions" ? extractSessionDialogueText(content) : content;
+  const chunkMaxChars = getMemorySearchConfig(
+    getUserFgbgConfig(),
+  ).chunkMaxChars;
+  const chunks = chunkTextWithLines(textToChunk, chunkMaxChars);
   const embeddings = await batchEmbeddingText(chunks.map((c) => c.content));
   const count = await replacePathChunks({
     path: filePath,
@@ -142,7 +153,7 @@ export async function syncAllMemorySources(
   const sessionFiles = sessionDir ? listJsonlFiles(sessionDir) : [];
 
   const candidates = new Map<string, MemorySource>();
-  candidates.set(path.resolve(workspaceMemory), "memory");   // 工作区 MEMORY.md 路径 → memory
+  candidates.set(path.resolve(workspaceMemory), "memory"); // 工作区 MEMORY.md 路径 → memory
   for (const p of userMemoryFiles) candidates.set(path.resolve(p), "MEMORY.md"); // 用户 memory 目录 → MEMORY.md
   for (const p of sessionFiles) candidates.set(path.resolve(p), "sessions");
 
@@ -171,7 +182,7 @@ export async function syncAllMemorySources(
     } catch (error) {
       summary.failed += 1;
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[memory] sync failed: ${filePath} - ${message}`);
+      memoryDebug(`[memory] sync failed: ${filePath} - ${message}`);
       // 单文件失败不影响其余，继续下一路径
     }
   }

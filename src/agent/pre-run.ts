@@ -1,9 +1,5 @@
 import { ensureAgentDir } from "./utils/agent-path.js";
-import {
-  getResolvedApiKey,
-  getUserFgbgConfig,
-  normalizeProviderId,
-} from "./pi-embedded-runner/model-config.js";
+import { normalizeProviderId } from "./pi-embedded-runner/model-config.js";
 import { selectModelForRuntime } from "../model-selection.js";
 import {
   initSessionState,
@@ -11,18 +7,10 @@ import {
   resolveSessionDir,
 } from "./session/index.js";
 import type { RuntimeModel } from "./types.js";
-import { buildSystemPrompt } from "./system-prompt.js";
-import { createRuntimeAgentSession } from "./pi-embedded-runner/attempt.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { ensureAgentWorkspace } from "./workspace.js";
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
-
-function resolveWorkspaceDir(): string {
-  const cfg = getUserFgbgConfig();
-  const configured = cfg?.agents?.defaults?.workspace?.trim();
-  if (configured) return configured;
-  return process.cwd();
-}
 
 function getContextTokens(model?: RuntimeModel): number | undefined {
   if (!model) return undefined;
@@ -59,12 +47,12 @@ export async function prepareBeforeGetReply(params?: {
   const modelRef = selected.modelRef;
   const model = selected.model;
 
-  const cwd = resolveWorkspaceDir();
+  const cwd = ensureAgentWorkspace();
   const agentDir = ensureAgentDir();
   const sessionDir = resolveSessionDir();
 
   const normalizedProvider = normalizeProviderId(modelRef.provider);
-  const apiKey = getResolvedApiKey({ provider: modelRef.provider });
+  const apiKey = (model as { apiKey?: string } | undefined)?.apiKey;
   const thinkingLevel: ThinkingLevel = "off";
 
   const runtimeModel = model;

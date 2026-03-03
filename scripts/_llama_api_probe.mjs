@@ -1,0 +1,13 @@
+import path from "node:path";
+import os from "node:os";
+import { getLlama } from "node-llama-cpp";
+const llama = await getLlama();
+const modelPath = path.join(os.homedir(), ".fgbg", "workspace", "embedding", "all-MiniLM-L6-v2-Q5_K_M.gguf");
+const model = await llama.loadModel({ modelPath });
+console.log('model own keys', Object.keys(model).slice(0,80));
+console.log('model proto keys', Object.getOwnPropertyNames(Object.getPrototypeOf(model)).slice(0,120));
+const ctx = await model.createEmbeddingContext();
+console.log('ctx own keys', Object.keys(ctx).slice(0,80));
+console.log('ctx proto keys', Object.getOwnPropertyNames(Object.getPrototypeOf(ctx)).slice(0,120));
+await ctx.dispose?.();
+await model.dispose?.();

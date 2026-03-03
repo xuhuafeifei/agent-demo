@@ -5,12 +5,20 @@ import {
   getMemorySearchConfig,
   type MemorySearchConfig,
 } from "../memory-search-config.js";
-import { ensureDirSync, resolveEmbeddingModelDir } from "../utils/path.js";
+import { ensureDirSync, expandHome, resolveEmbeddingModelDir } from "../utils/path.js";
 import type { FgbgUserConfig } from "../../agent/types.js";
 
 type EmbeddingContextLike = {
   getEmbeddingFor: (text: string) => Promise<{ vector: readonly number[] }>;
 };
+
+/** 多数 GGUF embedding 模型（如 nomic）max 512 tokens，按字符保守截断避免 "Input is longer than the context size"。 */
+const EMBEDDING_MAX_INPUT_CHARS = 500;
+
+function truncateForEmbedding(text: string): string {
+  if (text.length <= EMBEDDING_MAX_INPUT_CHARS) return text;
+  return text.slice(0, EMBEDDING_MAX_INPUT_CHARS);
+}
 
 /**
  * Embedding 策略：按 mode（local / remote）可插拔的实现。
@@ -39,7 +47,12 @@ function resolveConfiguredModelPath(memorySearch: MemorySearchConfig): string {
   const embeddingDir = resolveEmbeddingModelDir();
   ensureDirSync(embeddingDir);
 
-  const maybePath = memorySearch.model.trim();
+  const maybePath = expandHome(memorySearch.model.trim());
+  const normalizeModelName = (value: string): string =>
+    value
+      .toLowerCase()
+      .replace(/\.gguf$/i, "")
+      .replace(/[^a-z0-9]+/g, "");
 
   // 已是绝对路径且文件存在，直接使用
   if (path.isAbsolute(maybePath) && fs.existsSync(maybePath)) {
@@ -56,7 +69,6 @@ function resolveConfiguredModelPath(memorySearch: MemorySearchConfig): string {
     if (fs.existsSync(joined)) return joined;
   }
 
-  // 回退：取 embedding 目录下第一个 .gguf 文件
   const all = fs.readdirSync(embeddingDir, { withFileTypes: true });
   const gguf = all
     .filter(
@@ -64,10 +76,27 @@ function resolveConfiguredModelPath(memorySearch: MemorySearchConfig): string {
         entry.isFile() && entry.name.toLowerCase().endsWith(".gguf"),
     )
     .map((entry) => path.join(embeddingDir, entry.name));
+
+  // 支持“模型名”匹配：先匹配标准化后完全一致，再做包含匹配。
+  const requestedName = normalizeModelName(path.basename(maybePath));
+  if (requestedName) {
+    const exact = gguf.find(
+      (candidate) =>
+        normalizeModelName(path.basename(candidate)) === requestedName,
+    );
+    if (exact) return exact;
+
+    const fuzzy = gguf.find((candidate) =>
+      normalizeModelName(path.basename(candidate)).includes(requestedName),
+    );
+    if (fuzzy) return fuzzy;
+  }
+
+  // 回退：取 embedding 目录下第一个 .gguf 文件
   if (gguf.length > 0) return gguf[0];
 
   throw new Error(
-    `[memory] embedding model not found in ${embeddingDir}. Put a .gguf model there (e.g. bge-small-en-v1.5-q8_0.gguf).`,
+    `[memory] embedding model not found in ${embeddingDir}. Put a .gguf model there (e.g. nomic-embed-text-v1.5.Q4_K_M.gguf).`,
   );
 }
 
@@ -124,13 +153,15 @@ function createLocalStrategy(
   return {
     async embedText(text: string): Promise<number[]> {
       const context = await getContext();
-      const result = await context.getEmbeddingFor(text);
+      const result = await context.getEmbeddingFor(truncateForEmbedding(text));
       return Array.from(result.vector); // 转为可变数组返回
     },
     async embedTextBatch(texts: string[]): Promise<number[][]> {
       const context = await getContext();
       const results = await Promise.all(
-        texts.map((text) => context.getEmbeddingFor(text)),
+        texts.map((text) =>
+          context.getEmbeddingFor(truncateForEmbedding(text)),
+        ),
       );
       return results.map((r) => Array.from(r.vector)); // 每条转为一维向量
     },
@@ -199,7 +230,7 @@ export function ensureEmbeddingProviderReady(): FgbgUserConfig {
   const next = ensureFgbgUserConfigMemorySearchAndWrite();
 
   // 仅 local 模式需要本地 GGUF 模型目录，确保目录存在
-  if ((next.agent?.memorySearch?.mode ?? "local") === "local") {
+  if ((next.agents?.memorySearch?.mode ?? "local") === "local") {
     ensureDirSync(resolveEmbeddingModelDir());
   }
   return next;

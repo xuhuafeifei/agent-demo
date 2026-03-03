@@ -1,6 +1,8 @@
 import { getLoadablePath } from "sqlite-vec";
 import { ensureMemoryPaths, resolveMemoryDbPath } from "./utils/path.js";
 import type { MemorySource } from "./types.js";
+import { getMemorySearchConfig } from "./memory-search-config.js";
+import { getUserFgbgConfig } from "../utils/app-path.js";
 
 type ChunkRow = {
   id: number;
@@ -26,11 +28,16 @@ type DbLike = {
 // 进程级连接复用，避免重复 loadExtension 与建表开销。
 let dbInstance: DbLike | null = null;
 
+function getConfiguredEmbeddingDimensions(): number {
+  return getMemorySearchConfig(getUserFgbgConfig()).embeddingDimensions;
+}
+
 /**
  * 打开并初始化数据库（惰性初始化）。
  */
 async function openDb(): Promise<DbLike> {
   if (dbInstance) return dbInstance;
+  const embeddingDimensions = getConfiguredEmbeddingDimensions();
 
   const sqlite = await import("node:sqlite");
   ensureMemoryPaths();
@@ -85,9 +92,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
 
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
   id INTEGER PRIMARY KEY,
-  embedding float[384]
+  embedding float[${embeddingDimensions}]
 );
 `);
+
+  // 旧库可能是 384 维，配置切到 768 后会在查询时报维度不匹配。
+  // 这里做一次探测，不兼容时清空并重建向量相关索引，交给后续 syncAll 回填。
+  if (!isVectorDimensionCompatible(db, embeddingDimensions)) {
+    console.warn(
+      `[memory] embedding dimension changed, rebuilding memory indexes with ${embeddingDimensions} dimensions`,
+    );
+    await reinitializeIndexesForEmbeddingDimension(db, embeddingDimensions);
+  }
 
   dbInstance = db;
   return db;
@@ -127,6 +143,40 @@ async function transactionCommit<T>(
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function isVectorDimensionCompatible(db: DbLike, dimensions: number): boolean {
+  const probe = JSON.stringify(new Array<number>(dimensions).fill(0));
+  try {
+    db.prepare(
+      `SELECT id, distance
+       FROM chunks_vec
+       WHERE embedding MATCH ? AND k = 1
+       ORDER BY distance ASC`,
+    ).all(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function reinitializeIndexesForEmbeddingDimension(
+  db: DbLike,
+  dimensions: number,
+): Promise<void> {
+  await transactionCommit(db, () => {
+    db.prepare("DELETE FROM chunks_vec").run();
+    db.prepare("DELETE FROM chunks_fts").run();
+    db.prepare("DELETE FROM chunks").run();
+    db.prepare("DELETE FROM files").run();
+    db.exec("DROP TABLE IF EXISTS chunks_vec");
+    db.exec(
+      `CREATE VIRTUAL TABLE chunks_vec USING vec0(
+         id INTEGER PRIMARY KEY,
+         embedding float[${dimensions}]
+       )`,
+    );
+  });
 }
 
 /**

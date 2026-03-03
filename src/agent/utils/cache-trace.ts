@@ -1,3 +1,5 @@
+import { logTrace } from "../../utils/log-trace.js";
+
 export type CacheTraceStage =
   | "request:start"
   | "request:end"
@@ -53,7 +55,7 @@ export function createCacheTrace(params: {
       .map(([key, value]) => `${key}=${value.timestamp - start.timestamp}ms`)
       .join(" ");
 
-    console.log(
+    logTrace("debug",
       `[请求时间线] requestId=${requestId} status=${status} provider=${provider} model=${model} ` +
         `requestToPromptMs=${requestToPromptMs} promptToFirstMs=${promptToFirstMs} ` +
         `firstToEndMs=${firstToEndMs} promptToEndMs=${promptToEndMs} totalMs=${totalMs} ` +

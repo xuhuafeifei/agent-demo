@@ -5,9 +5,11 @@
   "main": "dist/server.js",
   "scripts": {
     "generate-js-dts": "node scripts/generate-js-dts.js",
+    "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
     "build": "tsc",
-    "start": "node dist/server.js",
-    "dev": "tsc && node dist/server.js",
+    "dev:debug": "NODE_DEBUG=memory,agent tsc && node scripts/require-runtime.mjs && node dist/server.js",
+    "start": "node scripts/require-runtime.mjs && node dist/server.js",
+    "dev": "tsc && node scripts/require-runtime.mjs && node dist/server.js",
     "watch": "tsc -w"
   },
   "keywords": [],

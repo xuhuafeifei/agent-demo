@@ -1,9 +1,48 @@
-const DEFAULT_PROMPT = "你是一个友好的人,能快速回复别人信息";
+export type BuildSystemPromptInput = {
+  soul: string;
+  user?: string;
+  nowText: string;
+  language: string;
+  sessionMemory?: string;
+  historyMemory?: string;
+};
+
+function nonEmptyOrFallback(value: string | undefined, fallback: string): string {
+  const trimmed = (value ?? "").trim();
+  return trimmed || fallback;
+}
 
 /**
- * 构建用于 Agent 的系统提示词，目前固定返回默认值，可后续根据配置扩展。
+ * 纯组合器：
+ * - 只接收调用方入参
+ * - 只做模板拼接
+ * - 不做文件/数据库/网络读取
  */
-export function buildSystemPrompt(): string {
-  // TODO: 可引入配置/环境，动态拼接 context
-  return DEFAULT_PROMPT;
+export function buildSystemPrompt(input: BuildSystemPromptInput): string {
+  const soul = nonEmptyOrFallback(input.soul, "N/A");
+  const user = nonEmptyOrFallback(input.user, "N/A");
+  const nowText = nonEmptyOrFallback(input.nowText, "N/A");
+  const language = nonEmptyOrFallback(input.language, "zh-CN");
+  const sessionMemory = nonEmptyOrFallback(input.sessionMemory, "N/A");
+  const historyMemory = nonEmptyOrFallback(input.historyMemory, "N/A");
+
+  return `## who you are
+${soul}
+
+## user
+${user}
+
+## environment
+current date ${nowText}
+
+## language
+current language is ${language}, you need answer in ${language}
+
+## memory recall
+memory from session
+${sessionMemory}
+
+memory from history
+${historyMemory}
+`;
 }

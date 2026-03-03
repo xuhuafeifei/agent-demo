@@ -1,6 +1,6 @@
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
-import { logTrace } from "../utils/log-trace.js";
+import { createDebugTrace, logTrace } from "../utils/log-trace.js";
 import { syncAllMemorySources, syncMemoryByPath } from "./indexer.js";
 import { closeMemoryDb } from "./store.js";
 import type {
@@ -17,8 +17,10 @@ import {
   resolveWorkspaceMemoryPath,
 } from "./utils/path.js";
 import { resolveSessionDir } from "../agent/session/session-path.js";
+import { ensureAgentWorkspace } from "../agent/workspace.js";
 
 const DEBOUNCE_MS = 1500;
+export const memoryDebug = createDebugTrace("memory");
 
 /**
  * 记忆系统门面。
@@ -41,8 +43,8 @@ export class MemoryIndexManager {
     if (this.started) return;
 
     // watcher 启动前确保目录存在，避免监听初始化失败
+    ensureAgentWorkspace();
     const workspaceMemory = resolveWorkspaceMemoryPath();
-    ensureDirSync(path.dirname(workspaceMemory));
     ensureDirSync(resolveUserMemoryDir());
 
     // 两路监听：工作区 MEMORY.md 单文件 + 用户 ~/.fgbg/memory/*.md 目录
@@ -88,8 +90,8 @@ export class MemoryIndexManager {
 
     const normalized = path.resolve(filePath);
     let mapped: MemorySource = "sessions";
-    if (source === "memory") mapped = "MEMORY.md";   // 用户 memory 目录（~/.fgbg/memory/*.md）→ MEMORY.md
-    if (source === "workspace") mapped = "memory";   // 工作区 MEMORY.md 路径 → memory
+    if (source === "memory") mapped = "MEMORY.md"; // 用户 memory 目录（~/.fgbg/memory/*.md）→ MEMORY.md
+    if (source === "workspace") mapped = "memory"; // 工作区 MEMORY.md 路径 → memory
     if (source === "session") mapped = "sessions";
 
     // 同一路径防抖：取消未执行的定时器，只保留最后一次变更
@@ -126,7 +128,7 @@ export class MemoryIndexManager {
   private async syncAllInternal(): Promise<SyncSummary> {
     const sessionDir = resolveSessionDir();
     const summary = await syncAllMemorySources(sessionDir);
-    logTrace(
+    memoryDebug(
       `[memory] syncAll total=${summary.total} create=${summary.create} rebuild=${summary.rebuild} delete=${summary.delete} skip=${summary.skip} failed=${summary.failed} durationMs=${summary.durationMs}ms`,
     );
     return summary;
@@ -137,7 +139,13 @@ export class MemoryIndexManager {
    */
   async search(query: string, options?: SearchOptions): Promise<MemoryHit[]> {
     if (!this.started) return [];
-    return searchMemory(query, options);
+    const startMs = Date.now();
+    const hits = await searchMemory(query, options);
+    const durationMs = Date.now() - startMs;
+    memoryDebug(
+      `[memory] search query="${query.slice(0, 80)}${query.length > 80 ? "…" : ""}" durationMs=${durationMs}ms hits=${hits.length}`,
+    );
+    return hits;
   }
 
   /**
@@ -151,14 +159,17 @@ export class MemoryIndexManager {
     this.timerByPath.delete(filePath);
     try {
       const result = await syncMemoryByPath({ path: filePath, source });
-      logTrace(
+      memoryDebug(
         `[memory] sync path=${result.path} action=${result.action} chunks=${result.chunkCount} costMs=${result.costMs}ms`,
       );
       return result;
     } catch (error) {
       // 单 path 失败不抛给上层，只打日志，保证其他路径继续同步
       const message = error instanceof Error ? error.message : String(error);
-      logTrace("warn", `[memory] sync error path=${filePath} source=${source} error=${message}`);
+      logTrace(
+        "warn",
+        `[memory] sync error path=${filePath} source=${source} error=${message}`,
+      );
       return null;
     }
   }
@@ -174,8 +185,12 @@ export class MemoryIndexManager {
     });
 
     watcher.on("add", () => this.onMemorySourceChanged("workspace", filePath));
-    watcher.on("change", () => this.onMemorySourceChanged("workspace", filePath));
-    watcher.on("unlink", () => this.onMemorySourceChanged("workspace", filePath));
+    watcher.on("change", () =>
+      this.onMemorySourceChanged("workspace", filePath),
+    );
+    watcher.on("unlink", () =>
+      this.onMemorySourceChanged("workspace", filePath),
+    );
     watcher.on("error", (error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[memory] watcher disabled for ${filePath}: ${message}`);

@@ -1,4 +1,4 @@
-import type { Model } from "@mariozechner/pi-ai";
+export type ModelInputType = "text" | "image";
 
 export type ModelApi =
   | "openai-completions"
@@ -12,7 +12,7 @@ export type ModelDefinitionConfig = {
   id: string;
   name: string;
   reasoning: boolean;
-  input: string[];
+  input: ModelInputType[];
   cost: {
     input: number;
     output: number;
@@ -66,16 +66,36 @@ export type FgbgUserConfig = {
       models?: Record<string, { alias?: string }>;
       workspace?: string;
     };
-  };
-  agent?: {
     memorySearch?: {
       mode?: "local" | "remote";
       model?: string;
       endpoint?: string;
       apiKey?: string;
+      chunkMaxChars?: number;
+      embeddingDimensions?: number;
     };
   };
 };
 
-export type RuntimeModel = Model<any>;
+export type RuntimeModel = {
+  id: string;
+  name: string;
+  provider: string;
+  api: ModelApi;
+  baseUrl: string;
+  reasoning: boolean;
+  input: ModelInputType[];
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
+  contextWindow: number;
+  maxTokens: number;
+  headers?: Record<string, string>;
+  compat?: Record<string, unknown>;
+  apiKey?: string;
+};
+
 export type ModelRegistry = Record<string, RuntimeModel>;

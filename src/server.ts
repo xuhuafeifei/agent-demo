@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { logRuntimePaths } from "./agent/run.js";
 import { createWebLayer } from "./middleware/web-layer.js";
 import { fileURLToPath } from "node:url";
+import { logTrace } from "./utils/log-trace.js";
 import { getMemoryIndexManager } from "./memory/index.js";
 
 // 加载环境变量
@@ -57,7 +58,7 @@ async function bootstrap() {
     await getMemoryIndexManager().start();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[memory] disabled: ${message}`);
+    logTrace("error", `[memory] disabled: ${message}`);
   }
   startServer(PORT);
 }

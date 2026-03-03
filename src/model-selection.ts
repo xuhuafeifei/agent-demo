@@ -1,67 +1,57 @@
+import { getUserFgbgConfig } from "./utils/app-path.js";
 import {
-  discoveryModel,
-  ensureModelJson,
-  getUserFgbgConfig,
+  buildRuntimeModelsFromProviders,
+  getMergedProviders,
   normalizeProviderId,
   parseModelRef,
 } from "./agent/pi-embedded-runner/model-config.js";
-import { resolveModel } from "./agent/pi-embedded-runner/model.js";
-import type { ModelRef } from "./agent/types.js";
+import type { ModelRef, RuntimeModel } from "./agent/types.js";
+import { logTrace } from "./utils/log-trace.js";
 
-function resolveGlobalDefaultModelRef(): ModelRef | null {
+function resolvePrimaryModelRef(): ModelRef | null {
   const raw = getUserFgbgConfig();
   const modelEntry = raw.agents?.defaults?.model;
-
   const primaryRaw =
     typeof modelEntry === "string"
       ? modelEntry.trim()
       : typeof modelEntry?.primary === "string"
         ? modelEntry.primary.trim()
         : "";
+
   if (!primaryRaw) return null;
-
-  return parseModelRef(primaryRaw, "minimax");
-}
-
-function pickFromModelRegistry(params: {
-  registry: Record<string, unknown>;
-  preferred?: ModelRef | null;
-}): ModelRef | null {
-  const { registry, preferred } = params;
-
-  // 优先命中全局默认模型（仅当它在 discovery 成功集合里）。
-  if (preferred) {
-    const key = `${normalizeProviderId(preferred.provider)}/${preferred.model}`;
-    if (registry[key]) return preferred;
-  }
-
-  // 否则直接取 discovery 成功集合里的第一个模型。
-  const firstKey = Object.keys(registry)[0];
-  if (!firstKey) return null;
-  return parseModelRef(firstKey, "minimax");
+  return parseModelRef(primaryRaw);
 }
 
 export async function selectModelForRuntime(): Promise<{
   modelRef: ModelRef;
-  model?: ReturnType<typeof resolveModel>["model"];
+  model?: RuntimeModel;
   modelError?: string;
   discoveryError?: string;
 }> {
-  await ensureModelJson();
-  const discoveryResult = await discoveryModel(getUserFgbgConfig());
-  const globalDefaultRef = resolveGlobalDefaultModelRef();
-  const fromRegistry = pickFromModelRegistry({
-    registry: discoveryResult.modelRegistry as Record<string, unknown>,
-    preferred: globalDefaultRef,
-  });
-  const finalRef = fromRegistry ?? discoveryResult.defaultModelRef;
+  const config = getUserFgbgConfig();
+  const mergedProviders = getMergedProviders(config);
+  const modelMap = buildRuntimeModelsFromProviders(mergedProviders);
 
-  const resolved = resolveModel(finalRef.provider, finalRef.model);
+  const preferred = resolvePrimaryModelRef();
+  if (preferred) {
+    const preferredKey = `${normalizeProviderId(preferred.provider)}/${preferred.model}`;
+    const preferredModel = modelMap[preferredKey];
+    if (preferredModel) {
+      return { modelRef: preferred, model: preferredModel };
+    }
+  }
 
+  const firstKey = Object.keys(modelMap)[0];
+  if (firstKey) {
+    const selectedRef = parseModelRef(firstKey)!;
+    return { modelRef: selectedRef, model: modelMap[firstKey] };
+  }
+
+  const fallback = preferred ?? { provider: "", model: "" };
   return {
-    modelRef: finalRef,
-    model: resolved.model,
-    modelError: resolved.error,
-    discoveryError: undefined, // discovery 阶段已做 fallback，不再返回错误
+    modelRef: fallback,
+    modelError:
+      "No provider with apiKey is available. Check models.providers.*.apiKey or *_API_KEY.",
+    discoveryError: undefined,
   };
 }
