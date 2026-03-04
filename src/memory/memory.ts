@@ -1,6 +1,5 @@
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
-import { createDebugTrace, logTrace } from "../utils/log-trace.js";
 import { syncAllMemorySources, syncMemoryByPath } from "./indexer.js";
 import { closeMemoryDb } from "./store.js";
 import type {
@@ -18,9 +17,10 @@ import {
 } from "./utils/path.js";
 import { resolveSessionDir } from "../agent/session/session-path.js";
 import { ensureAgentWorkspace } from "../agent/workspace.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
 const DEBOUNCE_MS = 1500;
-export const memoryDebug = createDebugTrace("memory");
+const memoryLogger = getSubsystemConsoleLogger("memory");
 
 /**
  * 记忆系统门面。
@@ -128,8 +128,8 @@ export class MemoryIndexManager {
   private async syncAllInternal(): Promise<SyncSummary> {
     const sessionDir = resolveSessionDir();
     const summary = await syncAllMemorySources(sessionDir);
-    memoryDebug(
-      `[memory] syncAll total=${summary.total} create=${summary.create} rebuild=${summary.rebuild} delete=${summary.delete} skip=${summary.skip} failed=${summary.failed} durationMs=${summary.durationMs}ms`,
+    memoryLogger.info(
+      `syncAll total=${summary.total} create=${summary.create} rebuild=${summary.rebuild} delete=${summary.delete} skip=${summary.skip} failed=${summary.failed} durationMs=${summary.durationMs}ms`,
     );
     return summary;
   }
@@ -142,8 +142,8 @@ export class MemoryIndexManager {
     const startMs = Date.now();
     const hits = await searchMemory(query, options);
     const durationMs = Date.now() - startMs;
-    memoryDebug(
-      `[memory] search query="${query.slice(0, 80)}${query.length > 80 ? "…" : ""}" durationMs=${durationMs}ms hits=${hits.length}`,
+    memoryLogger.info(
+      `search query="${query.slice(0, 80)}${query.length > 80 ? "…" : ""}" durationMs=${durationMs}ms hits=${hits.length}`,
     );
     return hits;
   }
@@ -159,16 +159,15 @@ export class MemoryIndexManager {
     this.timerByPath.delete(filePath);
     try {
       const result = await syncMemoryByPath({ path: filePath, source });
-      memoryDebug(
-        `[memory] sync path=${result.path} action=${result.action} chunks=${result.chunkCount} costMs=${result.costMs}ms`,
+      memoryLogger.debug(
+        `sync path=${result.path} action=${result.action} chunks=${result.chunkCount} costMs=${result.costMs}ms`,
       );
       return result;
     } catch (error) {
       // 单 path 失败不抛给上层，只打日志，保证其他路径继续同步
       const message = error instanceof Error ? error.message : String(error);
-      logTrace(
-        "warn",
-        `[memory] sync error path=${filePath} source=${source} error=${message}`,
+      memoryLogger.warn(
+        `sync error path=${filePath} source=${source} error=${message}`,
       );
       return null;
     }
@@ -193,7 +192,7 @@ export class MemoryIndexManager {
     );
     watcher.on("error", (error) => {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[memory] watcher disabled for ${filePath}: ${message}`);
+      memoryLogger.warn(`watcher disabled for ${filePath}: ${message}`);
     });
     this.watchers.push(watcher);
   }
@@ -214,7 +213,7 @@ export class MemoryIndexManager {
     watcher.on("unlink", onUpdate);
     watcher.on("error", (error) => {
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[memory] watcher disabled for ${dirPath}: ${message}`);
+      memoryLogger.warn(`watcher disabled for ${dirPath}: ${message}`);
     });
     this.watchers.push(watcher);
   }

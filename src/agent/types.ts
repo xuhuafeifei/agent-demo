@@ -75,6 +75,14 @@ export type FgbgUserConfig = {
       embeddingDimensions?: number;
     };
   };
+  logging?: {
+    cacheTime?: number;
+    level?: "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
+    file?: string;
+    consoleLevel?: "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
+    consoleStyle?: "pretty" | "common" | "json";
+    allowModule?: string[] | string;
+  };
 };
 
 export type RuntimeModel = {

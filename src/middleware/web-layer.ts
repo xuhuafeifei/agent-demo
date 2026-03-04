@@ -6,7 +6,9 @@ import {
   ModelUnavailableError,
 } from "../agent/run.js";
 import type { RuntimeStreamEvent } from "../agent/utils/events.js";
-import { logTrace } from "../utils/log-trace.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
+
+const webLogger = getSubsystemConsoleLogger("web");
 
 function writeSse(res: Response, data: RuntimeStreamEvent): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -38,7 +40,7 @@ export function createWebLayer() {
       });
     } catch (error) {
       const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
-      logTrace("error", `[chat] ${runtimeError.message}`, error);
+      webLogger.error(`[chat] ${runtimeError.message}`, error);
       if (error instanceof ModelUnavailableError) {
         return res.status(503).json({
           error: error.message,

@@ -3,6 +3,7 @@ import { ensureMemoryPaths, resolveMemoryDbPath } from "./utils/path.js";
 import type { MemorySource } from "./types.js";
 import { getMemorySearchConfig } from "./memory-search-config.js";
 import { getUserFgbgConfig } from "../utils/app-path.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
 type ChunkRow = {
   id: number;
@@ -27,6 +28,7 @@ type DbLike = {
 
 // 进程级连接复用，避免重复 loadExtension 与建表开销。
 let dbInstance: DbLike | null = null;
+const memoryLogger = getSubsystemConsoleLogger("memory");
 
 function getConfiguredEmbeddingDimensions(): number {
   return getMemorySearchConfig(getUserFgbgConfig()).embeddingDimensions;
@@ -99,7 +101,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
   // 旧库可能是 384 维，配置切到 768 后会在查询时报维度不匹配。
   // 这里做一次探测，不兼容时清空并重建向量相关索引，交给后续 syncAll 回填。
   if (!isVectorDimensionCompatible(db, embeddingDimensions)) {
-    console.warn(
+    memoryLogger.warn(
       `[memory] embedding dimension changed, rebuilding memory indexes with ${embeddingDimensions} dimensions`,
     );
     await reinitializeIndexesForEmbeddingDimension(db, embeddingDimensions);

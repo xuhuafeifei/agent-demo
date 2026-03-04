@@ -19,11 +19,12 @@ import {
 import { prepareBeforeGetReply } from "./pre-run.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { getMemoryIndexManager } from "../memory/index.js";
-import { createDebugTrace, logTrace } from "../utils/log-trace.js";
 import { readWorkspaceSoul, readWorkspaceUser } from "./workspace.js";
 import type { MemoryHit } from "../memory/index.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
-const memoryDebug = createDebugTrace("memory");
+const agentLogger = getSubsystemConsoleLogger("agent");
+const memoryLogger = getSubsystemConsoleLogger("memory");
 
 export class ModelUnavailableError extends Error {
   provider?: string;
@@ -40,10 +41,10 @@ export class ModelUnavailableError extends Error {
 }
 
 export function logRuntimePaths(): void {
-  console.log(`全局配置路径: ${getGlobalModelConfigPath()}`);
+  agentLogger.info(`全局配置路径: ${getGlobalModelConfigPath()}`);
   const entry = loadSessionIndexEntry("agent:main:main");
-  console.log(`会话索引路径: ${resolveSessionIndexPath()}`);
-  console.log(`会话文件路径: ${entry?.sessionFile ?? "未创建"}`);
+  agentLogger.info(`会话索引路径: ${resolveSessionIndexPath()}`);
+  agentLogger.info(`会话文件路径: ${entry?.sessionFile ?? "未创建"}`);
 }
 
 export function getHistory(): SessionMessage[] {
@@ -89,13 +90,13 @@ function logMemoryHitsForDebug(
   historyHits: MemoryHit[],
 ): void {
   const all = [...sessionHits, ...historyHits];
-  memoryDebug(
+  memoryLogger.debug(
     `[memory] prompt hits query="${query.slice(0, 80)}${query.length > 80 ? "..." : ""}" total=${all.length} session=${sessionHits.length} history=${historyHits.length}`,
   );
   for (const [index, hit] of all.entries()) {
-    const preview = hit.content.replace(/\s+/g, " ").slice(0, 140);
-    memoryDebug(
-      `[memory] hit#${index + 1} source=${hit.source} score=${hit.score.toFixed(6)} path=${hit.path}:${hit.lineStart}-${hit.lineEnd} preview="${preview}${hit.content.length > 140 ? "..." : ""}"`,
+    const preview = hit.content.replace(/\s+/g, " ").slice(0, 160);
+    memoryLogger.debug(
+      `[memory] hit#${index + 1} source=${hit.source} score=${hit.score.toFixed(6)} path=${hit.path}:${hit.lineStart}-${hit.lineEnd} preview=${preview}`,
     );
   }
 }
@@ -116,11 +117,11 @@ export async function getReplyFromAgent(params: {
   const discoveryError = prepared.discoveryError;
 
   if (discoveryError) {
-    console.error(`模型发现失败: ${discoveryError}`);
+    agentLogger.error(`模型发现失败: ${discoveryError}`);
   }
 
   if (!prepared.apiKey && modelRef.provider !== "ollama") {
-    console.warn(
+    agentLogger.warn(
       `警告：未配置 ${modelRef.provider.toUpperCase()}_API_KEY，模型可能无法工作`,
     );
   }
@@ -198,7 +199,7 @@ export async function getReplyFromAgent(params: {
   } catch (error) {
     trace.recordStage("request:end");
     const message = error instanceof Error ? error.message : "服务器内部错误";
-    logTrace("error", `[agent] request failed: ${message}`, error);
+    agentLogger.error(`[agent] request failed: ${message}`, error);
     emit({
       type: "error",
       error: message,

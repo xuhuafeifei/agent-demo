@@ -6,7 +6,6 @@ import {
   parseModelRef,
 } from "./agent/pi-embedded-runner/model-config.js";
 import type { ModelRef, RuntimeModel } from "./agent/types.js";
-import { logTrace } from "./utils/log-trace.js";
 
 function resolvePrimaryModelRef(): ModelRef | null {
   const raw = getUserFgbgConfig();

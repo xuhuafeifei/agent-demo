@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createDebugTrace } from "../utils/log-trace.js";
 import { batchEmbeddingText } from "./embedding/embedding-provider.js";
 import {
   deleteByPath,
@@ -19,8 +18,9 @@ import {
   resolveUserMemoryDir,
   resolveWorkspaceMemoryPath,
 } from "./utils/path.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
-const memoryDebug = createDebugTrace("memory");
+const memoryLogger = getSubsystemConsoleLogger("memory");
 
 /**
  * 根据路径推断来源类型，用于缺省 source 的场景。
@@ -182,7 +182,7 @@ export async function syncAllMemorySources(
     } catch (error) {
       summary.failed += 1;
       const message = error instanceof Error ? error.message : String(error);
-      memoryDebug(`[memory] sync failed: ${filePath} - ${message}`);
+      memoryLogger.warn(`[memory] sync failed: ${filePath} - ${message}`);
       // 单文件失败不影响其余，继续下一路径
     }
   }

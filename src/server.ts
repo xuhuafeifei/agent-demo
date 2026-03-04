@@ -5,8 +5,11 @@ import dotenv from "dotenv";
 import { logRuntimePaths } from "./agent/run.js";
 import { createWebLayer } from "./middleware/web-layer.js";
 import { fileURLToPath } from "node:url";
-import { logTrace } from "./utils/log-trace.js";
 import { getMemoryIndexManager } from "./memory/index.js";
+import {
+  ensureLoggingSetting,
+  getSubsystemConsoleLogger,
+} from "./logger/logger.js";
 
 // 加载环境变量
 dotenv.config();
@@ -19,6 +22,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, "..", "src", "public");
+const serverLogger = getSubsystemConsoleLogger("server");
 
 // 中间件
 app.use(cors());
@@ -35,30 +39,31 @@ function startServer(port: number) {
         ? addr.port
         : port;
 
-    console.log(`服务器正在运行在 http://localhost:${actualPort}`);
-    console.log(`请在浏览器中打开 http://localhost:${actualPort} 查看应用`);
-    console.log("注意：请在 .env 或 ~/.fgbg/fgbg.json 中配置可用模型 API Key");
+    serverLogger.info(`服务器正在运行在 http://localhost:${actualPort}`);
+    serverLogger.info(`请在浏览器中打开 http://localhost:${actualPort} 查看应用`);
+    serverLogger.info("注意：请在 .env 或 ~/.fgbg/fgbg.json 中配置可用模型 API Key");
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE" && port !== 0) {
-      console.warn(`端口 ${port} 已被占用，正在改用随机可用端口...`);
+      serverLogger.warn(`端口 ${port} 已被占用，正在改用随机可用端口...`);
       server.close(() => startServer(0));
       return;
     }
 
-    console.error("服务器启动失败:", err.message);
+    serverLogger.error("服务器启动失败: %s", err.message);
     process.exit(1);
   });
 }
 
 async function bootstrap() {
+  ensureLoggingSetting();
   logRuntimePaths();
   try {
     await getMemoryIndexManager().start();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logTrace("error", `[memory] disabled: ${message}`);
+    serverLogger.error("[memory] disabled: %s", message);
   }
   startServer(PORT);
 }
