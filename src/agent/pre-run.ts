@@ -1,6 +1,6 @@
 import { ensureAgentDir } from "./utils/agent-path.js";
 import { normalizeProviderId } from "./pi-embedded-runner/model-config.js";
-import { selectModelForRuntime } from "../model-selection.js";
+import { selectModelForRuntime } from "./model-selection.js";
 import {
   initSessionState,
   prepareBeforeSessionManager,

@@ -1,11 +1,11 @@
-import { getUserFgbgConfig } from "./utils/app-path.js";
+import { getUserFgbgConfig } from "../utils/app-path.js";
 import {
   buildRuntimeModelsFromProviders,
   getMergedProviders,
   normalizeProviderId,
   parseModelRef,
-} from "./agent/pi-embedded-runner/model-config.js";
-import type { ModelRef, RuntimeModel } from "./agent/types.js";
+} from "./pi-embedded-runner/model-config.js";
+import type { ModelRef, RuntimeModel } from "./types.js";
 
 function resolvePrimaryModelRef(): ModelRef | null {
   const raw = getUserFgbgConfig();
