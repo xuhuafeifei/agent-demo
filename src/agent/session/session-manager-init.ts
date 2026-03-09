@@ -4,7 +4,8 @@ import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { resolveSessionDir, resolveSessionIndexPath } from "./session-path.js";
 import type { SessionIndex, SessionIndexEntry } from "./types.js";
 
-const MAX_SESSION_FILE_SIZE = 4 * 1024;
+// 4MB
+const MAX_SESSION_FILE_SIZE = 4 * 1024 * 1024;
 
 function ensureSessionDir(): string {
   const sessionDir = resolveSessionDir();
@@ -61,7 +62,14 @@ function createSessionEntry(params: {
   contextTokens?: number;
   previous?: SessionIndexEntry;
 }): SessionIndexEntry {
-  const { sessionId, sessionFile, modelProvider, model, contextTokens, previous } = params;
+  const {
+    sessionId,
+    sessionFile,
+    modelProvider,
+    model,
+    contextTokens,
+    previous,
+  } = params;
   return {
     sessionId,
     updatedAt: Date.now(),
@@ -71,7 +79,10 @@ function createSessionEntry(params: {
     totalTokens: previous?.totalTokens ?? 0,
     modelProvider,
     model,
-    contextTokens: typeof contextTokens === "number" ? contextTokens : previous?.contextTokens ?? 0,
+    contextTokens:
+      typeof contextTokens === "number"
+        ? contextTokens
+        : (previous?.contextTokens ?? 0),
   };
 }
 

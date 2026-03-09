@@ -20,11 +20,11 @@ import { prepareBeforeGetReply } from "./pre-run.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { getMemoryIndexManager } from "../memory/index.js";
 import { readWorkspaceSoul, readWorkspaceUser } from "./workspace.js";
-import type { MemoryHit } from "../memory/index.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
+import { resolveWorkspaceDir } from "../utils/app-path.js";
+import { getAgentToolings } from "./tool/index.js";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
-const memoryLogger = getSubsystemConsoleLogger("memory");
 
 export class ModelUnavailableError extends Error {
   provider?: string;
@@ -74,31 +74,29 @@ export function clearHistory(): void {
   }
 }
 
-function formatMemoryHits(hits: MemoryHit[]): string {
-  if (hits.length === 0) return "";
-  return hits
-    .map(
-      (hit, idx) =>
-        `[${idx + 1}] ${hit.path}:${hit.lineStart}-${hit.lineEnd}\n${hit.content}`,
-    )
-    .join("\n\n");
-}
-
-function logMemoryHitsForDebug(
-  query: string,
-  sessionHits: MemoryHit[],
-  historyHits: MemoryHit[],
-): void {
-  const all = [...sessionHits, ...historyHits];
-  memoryLogger.debug(
-    `[memory] prompt hits query="${query.slice(0, 80)}${query.length > 80 ? "..." : ""}" total=${all.length} session=${sessionHits.length} history=${historyHits.length}`,
-  );
-  for (const [index, hit] of all.entries()) {
-    const preview = hit.content.replace(/\s+/g, " ").slice(0, 160);
-    memoryLogger.debug(
-      `[memory] hit#${index + 1} source=${hit.source} score=${hit.score.toFixed(6)} path=${hit.path}:${hit.lineStart}-${hit.lineEnd} preview=${preview}`,
-    );
+/**
+ * 从 session 消息列表剪枝：只保留每条 message 的 role 与文本内容，
+ * 返回 "user: ...\n\nassistant: ..." 格式字符串。
+ */
+function pruneSessionChat(messages: SessionMessage[]): string {
+  const lines: string[] = [];
+  for (const msg of messages) {
+    const raw = msg as { role?: string; content?: unknown[] };
+    const role = raw.role === "assistant" ? "assistant" : "user";
+    const parts: string[] = [];
+    if (Array.isArray(raw.content)) {
+      for (const block of raw.content) {
+        const b = block as { type?: string; text?: string };
+        if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) {
+          parts.push(b.text.trim());
+        }
+      }
+    }
+    if (parts.length > 0) {
+      lines.push(`${role}: ${parts.join("\n")}`);
+    }
   }
+  return lines.join("\n\n");
 }
 
 export async function getReplyFromAgent(params: {
@@ -160,11 +158,9 @@ export async function getReplyFromAgent(params: {
     apiKey: prepared.apiKey,
     thinkingLevel: prepared.thinkingLevel,
   });
-  // 记忆检索
-  const memoryHits = await getMemoryIndexManager().search(message);
-  const sessionHits = memoryHits.filter((hit) => hit.source === "sessions");
-  const historyHits = memoryHits.filter((hit) => hit.source !== "sessions");
-  logMemoryHitsForDebug(message, sessionHits, historyHits);
+
+  // session 获取当前聊天信息，剪枝为仅保留 user/assistant 的文本内容
+  const chatHistoryText = pruneSessionChat(getHistory());
 
   // 提示词函数是纯组合器：数据由调用方准备后传入。
   const prompt = buildSystemPrompt({
@@ -172,9 +168,12 @@ export async function getReplyFromAgent(params: {
     user: readWorkspaceUser(),
     nowText: new Date().toISOString(),
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
-    sessionMemory: formatMemoryHits(sessionHits),
-    historyMemory: formatMemoryHits(historyHits),
+    chatHistory: chatHistoryText,
+    workspace: resolveWorkspaceDir(),
+    toolings: getAgentToolings(),
   });
+  agentLogger.trace(`prompt: ${prompt}`);
+
   session.agent.setSystemPrompt(prompt);
 
   trace.recordStage("request:start");

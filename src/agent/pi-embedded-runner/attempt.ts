@@ -13,6 +13,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { RuntimeStreamEvent } from "../utils/events.js";
 import path from "node:path";
 import type { RuntimeModel } from "../types.js";
+import { createAgentToolBundle } from "../tool/index.js";
 
 type AssistantMessageEvent = {
   type?: string;
@@ -63,6 +64,7 @@ export async function createRuntimeAgentSession(params: {
     path.join(agentDir, "models.json"),
   );
   modelRegistry.refresh();
+  const toolBundle = createAgentToolBundle(cwd);
 
   const { session } = await createAgentSession({
     model,
@@ -73,6 +75,14 @@ export async function createRuntimeAgentSession(params: {
     cwd,
     agentDir,
     thinkingLevel,
+    tools:
+      toolBundle.tools as NonNullable<
+        Parameters<typeof createAgentSession>[0]
+      >["tools"],
+    customTools:
+      (toolBundle.customTools as unknown) as NonNullable<
+        Parameters<typeof createAgentSession>[0]
+      >["customTools"],
   });
 
   return session;
@@ -135,6 +145,32 @@ export async function runEmbeddedPiAgent(params: {
         });
         break;
       }
+      case "tool_execution_start":
+        onEvent({
+          type: "tool_execution_start",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: event.args,
+        });
+        break;
+      case "tool_execution_update":
+        onEvent({
+          type: "tool_execution_update",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: event.args,
+          partialResult: event.partialResult,
+        });
+        break;
+      case "tool_execution_end":
+        onEvent({
+          type: "tool_execution_end",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          result: event.result,
+          isError: event.isError,
+        });
+        break;
       default:
         break;
     }

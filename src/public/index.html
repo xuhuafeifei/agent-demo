@@ -20,15 +20,33 @@
             padding: 20px;
         }
 
-        .container {
+        .app-layout {
             width: 100%;
-            max-width: 800px;
+            max-width: 1100px;
+            height: 80vh;
+            display: flex;
+            gap: 0;
             background-color: white;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .tool-sidebar {
+            width: 280px;
+            flex-shrink: 0;
             display: flex;
             flex-direction: column;
-            height: 80vh;
+            border-right: 1px solid #e0e0e0;
+            background: #fcfdff;
+        }
+
+        .container {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            background-color: white;
         }
 
         .header {
@@ -177,6 +195,59 @@
             justify-content: flex-end;
         }
 
+        .tool-log-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+        }
+
+        .tool-log-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            border-bottom: 1px solid #e9edf3;
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            background: #f6f8fb;
+            flex-shrink: 0;
+        }
+
+        .tool-log-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            list-style: none;
+            padding: 10px 12px;
+        }
+
+        .tool-log-item {
+            font-size: 12px;
+            color: #2d3436;
+            padding: 6px 0;
+            border-bottom: 1px dashed #eef1f6;
+            word-break: break-word;
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+        }
+
+        .tool-log-item:last-child {
+            border-bottom: none;
+        }
+
+        .tool-status-ok {
+            color: #0d7a3e;
+        }
+
+        .tool-status-error {
+            color: #b42318;
+        }
+
         .btn {
             padding: 8px 16px;
             border: none;
@@ -267,12 +338,27 @@
             50% { transform: translateY(-3px); opacity: 1; }
         }
 
-        @media (max-width: 600px) {
-            .container {
+        @media (max-width: 768px) {
+            .app-layout {
+                flex-direction: column;
                 height: 100vh;
+                max-width: 100%;
                 border-radius: 0;
             }
 
+            .tool-sidebar {
+                width: 100%;
+                max-height: 200px;
+                border-right: none;
+                border-bottom: 1px solid #e0e0e0;
+            }
+
+            .tool-log-list {
+                max-height: 140px;
+            }
+        }
+
+        @media (max-width: 600px) {
             .header {
                 border-radius: 0;
             }
@@ -288,32 +374,43 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Agent Demo</h1>
-            <p>使用 @mariozechner/pi-agent-core 的简单对话应用 - 支持流式输出</p>
-        </div>
+    <div class="app-layout">
+        <aside class="tool-sidebar">
+            <div class="tool-log-panel">
+                <div class="tool-log-header">
+                    <span>工具调用日志</span>
+                    <button class="btn btn-secondary" id="clear-tool-log-btn">清空</button>
+                </div>
+                <ul class="tool-log-list" id="tool-log-list"></ul>
+            </div>
+        </aside>
+        <div class="container">
+            <div class="header">
+                <h1>Agent Demo</h1>
+                <p>使用 @mariozechner/pi-agent-core 的简单对话应用 - 支持流式输出</p>
+            </div>
 
-        <div class="chat-container" id="chat-container">
-            <div class="message assistant">
-                <div class="avatar">A</div>
-                <div class="content">
-                    您好！我是您的 AI 助手。有什么我可以帮助您的吗？
+            <div class="chat-container" id="chat-container">
+                <div class="message assistant">
+                    <div class="avatar">A</div>
+                    <div class="content">
+                        您好！我是您的 AI 助手。有什么我可以帮助您的吗？
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div class="input-container">
-            <div class="input-wrapper">
-                <textarea
-                    id="message-input"
-                    placeholder="输入您的消息..."
-                    rows="1"
-                ></textarea>
-                <button id="send-btn">➤</button>
-            </div>
-            <div class="controls">
-                <button class="btn btn-secondary" id="clear-btn">清除历史</button>
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <textarea
+                        id="message-input"
+                        placeholder="输入您的消息..."
+                        rows="1"
+                    ></textarea>
+                    <button id="send-btn">➤</button>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-secondary" id="clear-btn">清除历史</button>
+                </div>
             </div>
         </div>
     </div>
@@ -323,6 +420,8 @@
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
         const clearBtn = document.getElementById('clear-btn');
+        const clearToolLogBtn = document.getElementById('clear-tool-log-btn');
+        const toolLogList = document.getElementById('tool-log-list');
 
         // 自动调整输入框高度
         messageInput.addEventListener('input', function() {
@@ -456,6 +555,27 @@
                                     streamState.llmStartedAt && streamState.llmEndedAt
                                         ? Math.max(0, streamState.llmEndedAt - streamState.llmStartedAt)
                                         : undefined
+                                );
+                                break;
+                            case 'tool_execution_start':
+                                addToolLog(
+                                    `${data.toolName || 'unknown'} 开始`,
+                                    'running',
+                                    data.args
+                                );
+                                break;
+                            case 'tool_execution_update':
+                                addToolLog(
+                                    `${data.toolName || 'unknown'} 更新`,
+                                    'running',
+                                    data.partialResult
+                                );
+                                break;
+                            case 'tool_execution_end':
+                                addToolLog(
+                                    `${data.toolName || 'unknown'} ${data.isError ? '失败' : '完成'}`,
+                                    data.isError ? 'error' : 'ok',
+                                    data.result
                                 );
                                 break;
                             case 'error':
@@ -638,6 +758,44 @@
             return `${(ms / 1000).toFixed(2)}s`;
         }
 
+        function formatToolPayload(payload) {
+            if (payload === null || payload === undefined) return '';
+            try {
+                const text = JSON.stringify(payload);
+                if (text.length <= 180) return text;
+                return text.slice(0, 180) + '...';
+            } catch (_e) {
+                return String(payload);
+            }
+        }
+
+        function addToolLog(title, status = 'running', payload) {
+            if (!toolLogList) return;
+            const item = document.createElement('li');
+            item.className = 'tool-log-item';
+            const now = new Date().toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            let statusText = '[进行中]';
+            let statusClass = '';
+            if (status === 'ok') {
+                statusText = '[成功]';
+                statusClass = 'tool-status-ok';
+            } else if (status === 'error') {
+                statusText = '[失败]';
+                statusClass = 'tool-status-error';
+            }
+            const payloadText = formatToolPayload(payload);
+            item.innerHTML = `<span>${now}</span> <span class="${statusClass}">${statusText}</span> <span>${title}${payloadText ? ' · ' + payloadText : ''}</span>`;
+            toolLogList.prepend(item);
+            while (toolLogList.childElementCount > 50) {
+                toolLogList.removeChild(toolLogList.lastElementChild);
+            }
+        }
+
         // 滚动到底部
         function scrollToBottom() {
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -672,6 +830,9 @@
         // 绑定事件
         sendBtn.addEventListener('click', sendMessage);
         clearBtn.addEventListener('click', clearHistory);
+        clearToolLogBtn.addEventListener('click', function() {
+            toolLogList.innerHTML = '';
+        });
 
         messageInput.addEventListener('keydown', function(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
