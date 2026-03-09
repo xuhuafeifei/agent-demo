@@ -170,7 +170,7 @@ export async function getReplyFromAgent(params: {
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
     chatHistory: chatHistoryText,
     workspace: resolveWorkspaceDir(),
-    toolings: getAgentToolings(),
+    toolings: getAgentToolings(prepared.cwd),
   });
   agentLogger.trace(`prompt: ${prompt}`);
 

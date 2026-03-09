@@ -16,16 +16,7 @@ const memorySearchParameters = Type.Object({
 type MemorySearchInput = Static<typeof memorySearchParameters>;
 
 type MemorySearchOutput = {
-  query: string;
-  hits: Array<{
-    id: number;
-    path: string;
-    source: "MEMORY.md" | "memory" | "sessions";
-    lineStart: number;
-    lineEnd: number;
-    content: string;
-    score: number;
-  }>;
+  hits: Array<{ content: string; score: number }>;
 };
 
 export function createMemorySearchTool(): ToolDefinition<
@@ -64,17 +55,15 @@ export function createMemorySearchTool(): ToolDefinition<
           `tool=memorySearch query="${query.slice(0, 80)}${query.length > 80 ? "..." : ""}" hits=${hits.length} durationMs=${durationMs}`,
         );
 
-        return okResult(`Found ${hits.length} memory hits.`, {
-          query,
-          hits: hits.map((hit) => ({
-            id: hit.id,
-            path: hit.path,
-            source: hit.source,
-            lineStart: hit.lineStart,
-            lineEnd: hit.lineEnd,
-            content: hit.content,
-            score: hit.score,
-          })),
+        const summary =
+          hits.length === 0
+            ? "Found 0 memory hits."
+            : hits
+                .map((hit, i) => `[${i + 1}] score=${hit.score}\n${hit.content}`)
+                .join("\n\n---\n\n");
+
+        return okResult(summary, {
+          hits: hits.map((hit) => ({ content: hit.content, score: hit.score })),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

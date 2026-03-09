@@ -5,6 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "generate-js-dts": "node scripts/generate-js-dts.js",
+    "qwen-auth": "tsc && node dist/scripts/qwen-oauth-login.js",
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
     "build": "tsc",
     "dev:debug": "NODE_DEBUG=memory,agent tsc && node scripts/require-runtime.mjs && node dist/server.js",

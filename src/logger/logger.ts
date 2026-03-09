@@ -1,11 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { format } from "node:util";
-import {
-  getUserFgbgConfig,
-  writeFgbgUserConfig,
-} from "../utils/app-path.js";
-import type { FgbgUserConfig } from "../agent/types.js";
+import { getUserFgbgConfig, writeFgbgUserConfig } from "../utils/app-path.js";
+import type { FgbgUserConfig } from "../types.js";
 
 export type LoggingLevel =
   | "trace"
@@ -110,9 +107,9 @@ function normalizeAllowModule(value: unknown): string[] {
 }
 
 function normalizeLoggingConfig(raw: unknown): LoggingConfig {
-  const source = (raw && typeof raw === "object"
-    ? (raw as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
+  const source = (
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
+  ) as Record<string, unknown>;
 
   const cacheTimeRaw = source.cacheTime;
   const cacheTime =
@@ -161,7 +158,9 @@ function isSameConfig(a: LoggingConfig, b: LoggingConfig): boolean {
 function isLoggingConfigComplete(raw: unknown): boolean {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
   const source = raw as Record<string, unknown>;
-  if (!(typeof source.cacheTime === "number" && Number.isFinite(source.cacheTime)))
+  if (
+    !(typeof source.cacheTime === "number" && Number.isFinite(source.cacheTime))
+  )
     return false;
   if (!isValidLevel(source.level)) return false;
   if (!(typeof source.file === "string" && source.file.trim())) return false;
@@ -210,7 +209,11 @@ function ensureParentDir(filePath: string): void {
   }
 }
 
-function splitPath(filePath: string): { dir: string; name: string; ext: string } {
+function splitPath(filePath: string): {
+  dir: string;
+  name: string;
+  ext: string;
+} {
   return {
     dir: path.dirname(filePath),
     name: path.basename(filePath, path.extname(filePath)),

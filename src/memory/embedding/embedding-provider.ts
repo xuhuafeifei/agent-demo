@@ -5,8 +5,12 @@ import {
   getMemorySearchConfig,
   type MemorySearchConfig,
 } from "../memory-search-config.js";
-import { ensureDirSync, expandHome, resolveEmbeddingModelDir } from "../utils/path.js";
-import type { FgbgUserConfig } from "../../agent/types.js";
+import {
+  ensureDirSync,
+  expandHome,
+  resolveEmbeddingModelDir,
+} from "../utils/path.js";
+import type { FgbgUserConfig } from "../../types.js";
 
 type EmbeddingContextLike = {
   getEmbeddingFor: (text: string) => Promise<{ vector: readonly number[] }>;
@@ -72,8 +76,7 @@ function resolveConfiguredModelPath(memorySearch: MemorySearchConfig): string {
   const all = fs.readdirSync(embeddingDir, { withFileTypes: true });
   const gguf = all
     .filter(
-      (entry) =>
-        entry.isFile() && entry.name.toLowerCase().endsWith(".gguf"),
+      (entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".gguf"),
     )
     .map((entry) => path.join(embeddingDir, entry.name));
 
@@ -108,12 +111,11 @@ async function createLocalContext(
 
   let getLlamaFn:
     | undefined
-    | (() =>
-        Promise<{
-          loadModel: (options: { modelPath: string }) => Promise<{
-            createEmbeddingContext: () => Promise<EmbeddingContextLike>;
-          }>;
-        }>);
+    | (() => Promise<{
+        loadModel: (options: { modelPath: string }) => Promise<{
+          createEmbeddingContext: () => Promise<EmbeddingContextLike>;
+        }>;
+      }>);
 
   // 动态 import，避免未安装 node-llama-cpp 时构建阶段就报错
   try {
@@ -173,7 +175,9 @@ function createLocalStrategy(
 // ---------------------------------------------------------------------------
 
 /** Remote 策略占位：后续可接 endpoint + apiKey 的 HTTP 调用。 */
-function createRemoteStrategy(_memorySearch: MemorySearchConfig): EmbeddingStrategy {
+function createRemoteStrategy(
+  _memorySearch: MemorySearchConfig,
+): EmbeddingStrategy {
   const message =
     "[memory] remote embedding mode is not implemented yet. Use mode: 'local' or implement remote strategy.";
   return {

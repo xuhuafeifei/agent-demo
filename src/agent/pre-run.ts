@@ -6,7 +6,7 @@ import {
   prepareBeforeSessionManager,
   resolveSessionDir,
 } from "./session/index.js";
-import type { RuntimeModel } from "./types.js";
+import type { RuntimeModel } from "../types.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { ensureAgentWorkspace } from "./workspace.js";
 

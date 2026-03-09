@@ -165,6 +165,14 @@ QWEN_PORTAL_API_KEY=your_qwen_portal_api_key
 XIAOMI_API_KEY=your_xiaomi_api_key
 ```
 
+**Qwen Portal 免费额度（OAuth）**：若不想配置 `QWEN_PORTAL_API_KEY`，可使用官方免费 OAuth 额度（约 60 次/分钟、1,000 次/天）。先执行一次登录，凭证会保存到 `~/.fgbg/qwen-oauth.json`，之后直接选 `qwen-portal` 即可：
+
+```bash
+npm run qwen-auth
+```
+
+按提示在浏览器打开链接并用 chat.qwen.ai 账号完成授权即可。默认模型可设为 `qwen-portal/coder-model`。
+
 ### 2) 配置全局用户配置（推荐）
 
 在 `~/.fgbg/fgbg.json` 写入（示例见 `fgbg.json.example`）：

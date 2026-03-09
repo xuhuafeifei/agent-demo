@@ -10,7 +10,7 @@ import type {
   ModelRegistry,
   ProviderConfig,
   RuntimeModel,
-} from "../types.js";
+} from "../../types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,7 +55,9 @@ function normalizeModelConfigFile(raw: unknown): ModelConfigFile {
           ? raw.model.provider.trim()
           : undefined,
       model:
-        typeof raw.model.model === "string" ? raw.model.model.trim() : undefined,
+        typeof raw.model.model === "string"
+          ? raw.model.model.trim()
+          : undefined,
       contextTokens:
         typeof raw.model.contextTokens === "number"
           ? raw.model.contextTokens
@@ -221,7 +223,9 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
   };
 }
 
-function cloneModelDefinition(def: ModelDefinitionConfig): ModelDefinitionConfig {
+function cloneModelDefinition(
+  def: ModelDefinitionConfig,
+): ModelDefinitionConfig {
   return {
     ...def,
     input: [...def.input],
@@ -247,7 +251,9 @@ function mergeModels(
   return Array.from(byId.values());
 }
 
-function buildImplicitProviders(projectConfig: ModelConfigFile): Record<string, ProviderConfig> {
+function buildImplicitProviders(
+  projectConfig: ModelConfigFile,
+): Record<string, ProviderConfig> {
   const templates = buildImplicitProviderTemplates();
   const providers: Record<string, ProviderConfig> = {};
 

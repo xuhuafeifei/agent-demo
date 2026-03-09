@@ -2,6 +2,7 @@ export type RuntimeStreamEvent =
   | { type: "message_start"; message: unknown }
   | { type: "message_update"; message: unknown; delta?: string; text?: string }
   | { type: "message_end"; message: unknown; text?: string }
+  | { type: "thinking_update"; thinking: string }
   | {
       type: "tool_execution_start";
       toolCallId: string;
@@ -24,4 +25,17 @@ export type RuntimeStreamEvent =
     }
   | { type: "agent_end" }
   | { type: "done" }
-  | { type: "error"; error: string };
+  | { type: "error"; error: string }
+  | {
+      type: "auto_retry_start";
+      attempt: number;
+      maxAttempts: number;
+      delayMs: number;
+      errorMessage: string;
+    }
+  | {
+      type: "auto_retry_end";
+      success: boolean;
+      attempt: number;
+      finalError?: string;
+    };

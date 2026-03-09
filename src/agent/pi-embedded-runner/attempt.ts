@@ -12,8 +12,11 @@ import type {
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { RuntimeStreamEvent } from "../utils/events.js";
 import path from "node:path";
-import type { RuntimeModel } from "../types.js";
+import type { RuntimeModel } from "../../types.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { createAgentToolBundle } from "../tool/index.js";
+
+const attemptLogger = getSubsystemConsoleLogger("attempt");
 
 type AssistantMessageEvent = {
   type?: string;
@@ -75,14 +78,12 @@ export async function createRuntimeAgentSession(params: {
     cwd,
     agentDir,
     thinkingLevel,
-    tools:
-      toolBundle.tools as NonNullable<
-        Parameters<typeof createAgentSession>[0]
-      >["tools"],
-    customTools:
-      (toolBundle.customTools as unknown) as NonNullable<
-        Parameters<typeof createAgentSession>[0]
-      >["customTools"],
+    tools: toolBundle.tools as NonNullable<
+      Parameters<typeof createAgentSession>[0]
+    >["tools"],
+    customTools: toolBundle.customTools as unknown as NonNullable<
+      Parameters<typeof createAgentSession>[0]
+    >["customTools"],
   });
 
   return session;
@@ -103,31 +104,46 @@ export async function runEmbeddedPiAgent(params: {
 }): Promise<void> {
   const { session, message, onEvent } = params;
 
+  const eventTrace: { type: string; at: number }[] = [];
+  const wrappedOnEvent = (event: RuntimeStreamEvent) => {
+    // if (eventTrace.length > 0 && eventTrace[eventTrace.length - 1].type === event.type) {
+    //   return;
+    // }
+    eventTrace.push({ type: event.type, at: Date.now() });
+    attemptLogger.info(`event.type=${event.type}`);
+    onEvent(event);
+  };
+
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     switch (event.type) {
       case "agent_end":
-        onEvent({ type: "agent_end" });
+        console.log("[attempt] message_end event:", event);
+        wrappedOnEvent({ type: "agent_end" });
         break;
       case "message_start":
+        console.log("[attempt] message_start event:", event);
         // 只把 assistant 消息推给上层，避免 user 事件干扰前端渲染。
         if (event.message?.role !== "assistant") break;
-        onEvent({ type: "message_start", message: event.message });
+        wrappedOnEvent({ type: "message_start", message: event.message });
         break;
       case "message_update": {
+        console.log("[attempt] message_update event:", );
         // 只处理 assistant 的增量文本事件。
         if (event.message?.role !== "assistant") break;
 
-        const assistantEvent =
-          event.assistantMessageEvent as AssistantMessageEvent | undefined;
+        const assistantEvent = event.assistantMessageEvent as
+          | AssistantMessageEvent
+          | undefined;
         if (!assistantEvent) break;
         const textDelta =
           assistantEvent.type === "text_delta" &&
           typeof assistantEvent.delta === "string"
             ? assistantEvent.delta
             : undefined;
+
         const fullText = extractAssistantText(assistantEvent.partial?.content);
 
-        onEvent({
+        wrappedOnEvent({
           type: "message_update",
           message: event.message,
           delta: textDelta,
@@ -136,9 +152,11 @@ export async function runEmbeddedPiAgent(params: {
         break;
       }
       case "message_end": {
+        console.log("[attempt] message_end event:", event);
+
         if (event.message?.role !== "assistant") break;
         const messageData = event.message as { content?: unknown[] };
-        onEvent({
+        wrappedOnEvent({
           type: "message_end",
           message: event.message,
           text: extractAssistantText(messageData.content),
@@ -146,7 +164,8 @@ export async function runEmbeddedPiAgent(params: {
         break;
       }
       case "tool_execution_start":
-        onEvent({
+        console.log("[attempt] tool_execution_start:", event);
+        wrappedOnEvent({
           type: "tool_execution_start",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -154,7 +173,8 @@ export async function runEmbeddedPiAgent(params: {
         });
         break;
       case "tool_execution_update":
-        onEvent({
+        console.log("[attempt] tool_execution_update:", event);
+        wrappedOnEvent({
           type: "tool_execution_update",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -163,7 +183,8 @@ export async function runEmbeddedPiAgent(params: {
         });
         break;
       case "tool_execution_end":
-        onEvent({
+        console.log("[attempt] tool_execution_end:", event);
+        wrappedOnEvent({
           type: "tool_execution_end",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
@@ -176,9 +197,20 @@ export async function runEmbeddedPiAgent(params: {
     }
   });
 
+  const startedAt = Date.now();
   try {
     await session.prompt(message);
   } finally {
     unsubscribe();
+    // todo fgbg: 暂时不打印 llm 调用链路日志
+    // const trace = {
+    //   run: "runEmbeddedPiAgent",
+    //   startedAt,
+    //   endedAt: Date.now(),
+    //   durationMs: Date.now() - startedAt,
+    //   eventCount: eventTrace.length,
+    //   eventTypes: eventTrace.map((e) => e.type),
+    // };
+    // attemptLogger.info("trace=%o", trace);
   }
 }

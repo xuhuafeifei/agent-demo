@@ -1,8 +1,5 @@
-import {
-  getUserFgbgConfig,
-  writeFgbgUserConfig,
-} from "../utils/app-path.js";
-import type { FgbgUserConfig } from "../agent/types.js";
+import { getUserFgbgConfig, writeFgbgUserConfig } from "../utils/app-path.js";
+import type { FgbgUserConfig } from "../types.js";
 
 /**
  * memory 模块对 fgbg.json 中 agents.memorySearch 的解读类型。
@@ -45,9 +42,7 @@ function normalizeEmbeddingDimensions(value: unknown): number {
 /**
  * 补齐 agents.memorySearch 默认配置，不覆盖用户已配置字段。
  */
-export function ensureMemorySearchConfig(
-  cfg: FgbgUserConfig,
-): FgbgUserConfig {
+export function ensureMemorySearchConfig(cfg: FgbgUserConfig): FgbgUserConfig {
   const next: FgbgUserConfig = { ...cfg };
   const agents = { ...(next.agents ?? {}) };
   const raw = agents.memorySearch ?? {};

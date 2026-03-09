@@ -51,11 +51,21 @@ export type ModelConfigFile = {
   apiKey?: Record<string, string>;
 };
 
+/** toolRegister 中每项可为字符串（逗号分隔）或字符串数组，不支持通配符 */
+export type ToolListConfig = string | string[];
+
+export type ToolRegisterConfig = {
+  tools?: ToolListConfig;
+  customTools?: ToolListConfig;
+  innerTools?: ToolListConfig;
+};
+
 export type FgbgUserConfig = {
   meta?: {
     lastTouchedVersion?: string;
     lastTouchedAt?: string;
   };
+  toolRegister?: ToolRegisterConfig;
   models?: {
     mode?: string;
     providers?: Record<string, ProviderConfig>;
@@ -65,6 +75,12 @@ export type FgbgUserConfig = {
       model?: string | { primary?: string };
       models?: Record<string, { alias?: string }>;
       workspace?: string;
+    };
+    /** 自动重试：baseDelayMs 首次间隔(ms)，maxRetries 最大重试次数，maxDelayMs 单次最大等待(ms) */
+    retry?: {
+      baseDelayMs?: number;
+      maxRetries?: number;
+      maxDelayMs?: number;
     };
     memorySearch?: {
       mode?: "local" | "remote";

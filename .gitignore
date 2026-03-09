@@ -17,6 +17,9 @@ build/
 # Model configuration (contains API keys)
 config/model.json
 
+# Qwen OAuth credentials (stored under ~/.fgbg by default)
+qwen-oauth.json
+
 # Logs
 logs/
 *.log
