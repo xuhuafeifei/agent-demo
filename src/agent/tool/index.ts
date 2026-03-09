@@ -4,6 +4,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { createAppendTool } from "./append.js";
 import { createMemorySearchTool } from "./memory-search.js";
+import { createPersistMemoryTool } from "./persist-memory.js";
 import { createUpdateTool } from "./update.js";
 
 const AGENT_TOOLINGS: string[] = [
@@ -12,6 +13,7 @@ const AGENT_TOOLINGS: string[] = [
   "append(path, content, ensureTrailingNewline?, createIfNotExists?) - append text to file tail",
   "update(path, find, replace, all?, expectedCount?) - literal text replace in file",
   "memorySearch(query, topKFts?, topKVector?, topN?) - retrieve recent memory",
+  "persistMemory(filename, content) - persist as .md: USER.md for user info (name, preferences), memory/xxx.md for topic summaries, MEMORY.md for other; append if exists else create",
 ];
 
 export function getAgentToolings(): string[] {
@@ -24,6 +26,7 @@ export function createAgentToolBundle(cwd: string) {
     createAppendTool(cwd),
     createUpdateTool(cwd),
     createMemorySearchTool(),
+    createPersistMemoryTool(cwd),
   ];
 
   return {

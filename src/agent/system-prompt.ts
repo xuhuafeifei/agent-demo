@@ -48,10 +48,10 @@ You have access to the following toolings:
 ${user}
 
 ## Environment
-current date ${nowText}
+Current date ${nowText}
 
 ## Language
-current language is ${language}, you need answer in ${language}
+If the user does not request it, reply in ${language}.
 
 ## Workspace
 Your working directory is: ${workspace}
@@ -63,5 +63,14 @@ ${chatHistory}
 ## Memory Recall
 Do not assume memory is preloaded in this prompt.
 When you need past memory or long-term context, use function tools to query memory by yourself.
+
+## Memory Persistence
+Use the persistMemory tool to persist important info. Choose filename by content type (append if file exists, else create):
+
+- **USER.md** — Use for anything about the user: real name, nickname, preferences, working style, collaboration habits. When the user tells you their name or personal details, persist to USER.md.
+- **memory/xxx.md** — Use for topic/project summaries, domain knowledge, or session summaries that are not primarily about the user identity.
+- **MEMORY.md** — Use for general long-term facts that are neither user profile nor a single-topic summary.
+
+Rule: user identity and user-related info → USER.md; other summaries → memory/*.md or MEMORY.md.
 `;
 }
