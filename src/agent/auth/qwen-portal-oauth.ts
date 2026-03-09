@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 /**
  * Standalone Qwen Portal device OAuth. No OpenClaw deps, no persistence.
- * Usage: pnpm run qwen-oauth  (or bun/node with tsx)
+ * Usage: pnpm run qwen-oauth  (or bun/node with with tsx)
  * Output: final token JSON to stdout; prompts to stderr.
  */
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { exec } from "node:child_process";
 import { platform } from "node:os";
+import {
+  QwenPortalCredentials,
+  saveQwenPortalCredentials,
+  getQwenPortalCredentials,
+  isQwenPortalCredentialsExpired,
+} from "./oauth-path.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
 const QWEN_OAUTH_BASE_URL = "https://chat.qwen.ai";
 const QWEN_OAUTH_DEVICE_CODE_ENDPOINT = `${QWEN_OAUTH_BASE_URL}/api/v1/oauth2/device/code`;
@@ -15,6 +22,8 @@ const QWEN_OAUTH_TOKEN_ENDPOINT = `${QWEN_OAUTH_BASE_URL}/api/v1/oauth2/token`;
 const QWEN_OAUTH_CLIENT_ID = "f0304373b74a44d2b584a3fb70ca9e56";
 const QWEN_OAUTH_SCOPE = "openid profile email model.completion";
 const QWEN_OAUTH_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+
+const logger = getSubsystemConsoleLogger("auth");
 
 interface DeviceCodeResponse {
   device_code: string;
@@ -58,7 +67,7 @@ function generatePkce(): { verifier: string; challenge: string } {
 }
 
 async function requestDeviceCode(
-  challenge: string,
+challenge: string,
 ): Promise<DeviceCodeResponse> {
   const res = await fetch(QWEN_OAUTH_DEVICE_CODE_ENDPOINT, {
     method: "POST",
@@ -74,11 +83,16 @@ async function requestDeviceCode(
       code_challenge_method: "S256",
     }),
   });
-  if (!res.ok)
-    throw new Error(`Device code failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const errorText = await res.text();
+    logger.error("Device code failed: %s %s", res.status, errorText);
+    throw new Error(`Device code failed: ${res.status}`);
+  }
   const payload = (await res.json()) as DeviceCodeResponse;
   if (!payload.device_code || !payload.user_code || !payload.verification_uri) {
-    throw new Error(payload.error ?? "Incomplete device code response");
+    const errorMsg = payload.error ?? "Incomplete device code response";
+    logger.error("Device code error: %s", errorMsg);
+    throw new Error(errorMsg);
   }
   return payload;
 }
@@ -141,20 +155,34 @@ function openUrl(url: string): Promise<void> {
   });
 }
 
-function log(...args: unknown[]): void {
-  console.error(...args);
-}
-
+/**
+ * 启动 Qwen Portal 的设备授权流程（OAuth Device Authorization Grant）。
+ *
+ * 这是交互式命令行工具，用于首次获取 OAuth Token。
+ * 使用方法：pnpm run qwen-oauth（或 node/bun 直接运行）
+ *
+ * 工作流程：
+ * 1. 生成 PKCE 参数
+ * 2. 请求设备码
+ * 3. 输出授权 URL 和用户码，引导用户浏览器授权
+ * 4. 轮询 Token 接口直到授权完成或超时
+ * 5. 成功后保存凭证到 ~/.fgbg/auth-profile.json
+ *
+ * 注意：该方法会调用 process.exit()，不适合作为库函数在其他流程中使用。
+ *
+ * TODO: 未来计划 - 可以扩展为支持其他 provider 的通用 OAuth 设备授权工具，
+ * 或将交互逻辑与核心授权逻辑分离，方便集成到 GUI 或其他交互界面。
+ */
 export async function resolveQwenPortalOAuth(): Promise<void> {
   const { verifier, challenge } = generatePkce();
   const device = await requestDeviceCode(challenge);
   const verificationUrl =
     device.verification_uri_complete ?? device.verification_uri;
 
-  log("Qwen OAuth — open this URL and enter the code if prompted:");
-  log(verificationUrl);
-  log("Code:", device.user_code);
-  log("");
+  logger.debug("Qwen OAuth — open this URL and enter the code if prompted:");
+  logger.debug(verificationUrl);
+  logger.debug("Code:", device.user_code);
+  logger.debug("");
 
   try {
     await openUrl(verificationUrl);
@@ -167,16 +195,20 @@ export async function resolveQwenPortalOAuth(): Promise<void> {
   const timeoutMs = device.expires_in * 1000;
 
   while (Date.now() - start < timeoutMs) {
-    log("Waiting for approval…");
+    logger.debug("Waiting for approval…");
     const result = await pollDeviceToken(device.device_code, verifier);
 
     if (result.status === "success") {
-      log("Done.");
-      console.log(JSON.stringify(result.token, null, 2));
+      logger.info("Qwen portal OAuth success");
+
+      // 保存到 auth-profile.json
+      saveQwenPortalCredentials(result.token);
+      logger.info("Qwen portal OAuth credentials saved");
+
       process.exit(0);
     }
     if (result.status === "error") {
-      log("Error:", result.message);
+      logger.error("Qwen portal OAuth failed: %s", result.message);
       process.exit(1);
     }
     if (result.status === "pending" && result.slowDown) {
@@ -185,6 +217,94 @@ export async function resolveQwenPortalOAuth(): Promise<void> {
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 
-  log("Timed out.");
+  logger.error("Qwen portal OAuth timed out");
   process.exit(1);
+}
+
+interface RefreshTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
+/**
+ * 刷新 qwen-portal 的 OAuth 凭证
+ * 成功返回新的凭证，失败返回 null
+ */
+export async function refreshQwenPortalCredentials(
+  credentials: QwenPortalCredentials,
+): Promise<QwenPortalCredentials | null> {
+  try {
+    const response = await fetch(QWEN_OAUTH_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: credentials.refresh,
+        client_id: QWEN_OAUTH_CLIENT_ID,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error("Refresh token failed: %s %s", response.status, errorText);
+      return null;
+    }
+
+    const data = (await response.json()) as RefreshTokenResponse;
+
+    if (!data.access_token ||!data.refresh_token || !data.expires_in) {
+      logger.error("Invalid refresh token response");
+      return null;
+    }
+
+    const newCredentials: QwenPortalCredentials = {
+      type: "oauth",
+      provider: "qwen-portal",
+      access: data.access_token,
+      refresh: data.refresh_token,
+      expires: Date.now() + data.expires_in * 1000,
+    };
+
+    // 保存到文件
+    saveQwenPortalCredentials(newCredentials);
+    logger.info("Qwen portal credentials refreshed and saved");
+
+    return newCredentials;
+  } catch (error) {
+    logger.error("Error refreshing token: %s", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+/**
+ * 获取有效的 qwen-portal access token
+ * - 如果凭证不存在，返回 null
+ * - 如果凭证未过期，直接返回 access
+ * - 如果凭证已过期，尝试刷新，成功返回新的 access，失败返回 null
+ */
+export async function getValidQwenPortalAccessToken(): Promise<string | null> {
+  const credentials = getQwenPortalCredentials();
+  if (!credentials) {
+    logger.debug("No qwen-portal credentials found");
+    return null;
+  }
+
+  if (!isQwenPortalCredentialsExpired(credentials)) {
+    logger.debug("Using existing valid qwen-portal token");
+    return credentials.access;
+  }
+
+  logger.info("Qwen-portal token expired, refreshing...");
+  const newCredentials = await refreshQwenPortalCredentials(credentials);
+  if (!newCredentials) {
+    logger.error("Failed to refresh qwen-portal token");
+    return null;
+  }
+
+  logger.info("Qwen-portal token refreshed successfully");
+  return newCredentials.access;
 }

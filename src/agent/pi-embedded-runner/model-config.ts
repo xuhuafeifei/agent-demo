@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveGlobalConfigPath } from "../../utils/app-path.js";
+import {
+  getQwenPortalCredentials,
+  isQwenPortalCredentialsExpired,
+} from "../auth/oauth-path.js";
 import type {
   FgbgUserConfig,
   ModelConfigFile,
@@ -107,6 +111,48 @@ function resolveApiKeyForProvider(params: {
 
   const projectKey = params.projectApiKey?.trim();
   if (projectKey) return projectKey;
+
+  return undefined;
+}
+
+async function resolveApiKeyForProviderAsync(params: {
+  providerId: string;
+  explicitApiKey?: string;
+  projectApiKey?: string;
+}): Promise<string | undefined> {
+  const providerId = normalizeProviderId(params.providerId);
+
+  // 先尝试同步获取
+  const syncResult = resolveApiKeyForProvider(params);
+  if (syncResult) {
+    return syncResult;
+  }
+
+  console.log("providerId:", providerId);
+  // 对于 qwen-portal，如果同步获取失败（可能过期），尝试异步刷新
+  if (providerId === "qwen-portal") {
+    try {
+      const { refreshQwenPortalCredentials } =
+        await import("../auth/qwen-portal-oauth.js");
+      const credentials = getQwenPortalCredentials();
+      if (!credentials) {
+        return undefined;
+      }
+      console.log("credentials:", credentials);
+      if (isQwenPortalCredentialsExpired(credentials)) {
+        console.log("credentials expired, refreshing...");
+        const newCredentials = await refreshQwenPortalCredentials(credentials);
+        if (newCredentials) {
+          return newCredentials.access;
+        }
+      } else {
+        console.log("credentials not expired, using existing token");
+        return credentials.access;
+      }
+    } catch {
+      // 刷新失败，返回 undefined
+    }
+  }
 
   return undefined;
 }
@@ -251,14 +297,14 @@ function mergeModels(
   return Array.from(byId.values());
 }
 
-function buildImplicitProviders(
+async function buildImplicitProviders(
   projectConfig: ModelConfigFile,
-): Record<string, ProviderConfig> {
+): Promise<Record<string, ProviderConfig>> {
   const templates = buildImplicitProviderTemplates();
   const providers: Record<string, ProviderConfig> = {};
 
   for (const [providerId, template] of Object.entries(templates)) {
-    const apiKey = resolveApiKeyForProvider({
+    const apiKey = await resolveApiKeyForProviderAsync({
       providerId,
       projectApiKey: projectConfig.apiKey?.[providerId],
     });
@@ -294,11 +340,11 @@ function normalizeExplicitProviders(
   return out;
 }
 
-export function getMergedProviders(
+export async function getMergedProviders(
   config: FgbgUserConfig,
-): Record<string, ProviderConfig> {
+): Promise<Record<string, ProviderConfig>> {
   const projectConfig = readProjectModelConfig();
-  const implicit = buildImplicitProviders(projectConfig);
+  const implicit = await buildImplicitProviders(projectConfig);
   const explicit = normalizeExplicitProviders(config.models?.providers);
 
   const merged: Record<string, ProviderConfig> = {};
@@ -318,7 +364,7 @@ export function getMergedProviders(
       ...prior,
       ...provider,
       models: mergeModels(prior.models, provider.models),
-      apiKey: resolveApiKeyForProvider({
+      apiKey: await resolveApiKeyForProviderAsync({
         providerId,
         explicitApiKey: provider.apiKey,
         projectApiKey: projectConfig.apiKey?.[providerId],

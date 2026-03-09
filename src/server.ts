@@ -15,8 +15,8 @@ import {
 dotenv.config();
 
 const app = express();
-// 未设置 PORT 时使用 0，由系统分配一个可用端口
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
+// 未设置 PORT 时默认使用 3000
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // 静态文件目录：编译后 __dirname 为 dist/，页面在 src/public
 const __filename = fileURLToPath(import.meta.url);
@@ -32,6 +32,7 @@ app.use(express.static(publicDir));
 app.use("/api", createWebLayer());
 
 function startServer(port: number) {
+  console.log("startServer:", port);
   const server = app.listen(port, () => {
     const addr = server.address();
     const actualPort =
@@ -40,8 +41,12 @@ function startServer(port: number) {
         : port;
 
     serverLogger.info(`服务器正在运行在 http://localhost:${actualPort}`);
-    serverLogger.info(`请在浏览器中打开 http://localhost:${actualPort} 查看应用`);
-    serverLogger.info("注意：请在 .env 或 ~/.fgbg/fgbg.json 中配置可用模型 API Key");
+    serverLogger.info(
+      `请在浏览器中打开 http://localhost:${actualPort} 查看应用`,
+    );
+    serverLogger.info(
+      "注意：请在 .env 或 ~/.fgbg/fgbg.json 中配置可用模型 API Key",
+    );
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {

@@ -7,10 +7,10 @@
     "generate-js-dts": "node scripts/generate-js-dts.js",
     "qwen-auth": "tsc && node dist/scripts/qwen-oauth-login.js",
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
-    "build": "tsc",
-    "dev:debug": "NODE_DEBUG=memory,agent tsc && node scripts/require-runtime.mjs && node dist/server.js",
+    "build": "tsc && node scripts/copy-public.mjs",
+    "dev:debug": "NODE_DEBUG=memory,agent tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
     "start": "node scripts/require-runtime.mjs && node dist/server.js",
-    "dev": "tsc && node scripts/require-runtime.mjs && node dist/server.js",
+    "dev": "tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
     "watch": "tsc -w"
   },
   "keywords": [],
