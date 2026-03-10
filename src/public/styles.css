@@ -311,16 +311,16 @@ body {
 }
 
 .thinking-block {
-    margin-top: 8px;
-    padding: 10px 12px;
+    margin: 0 0 8px 0;
+    padding: 8px 10px;
     font-size: 13px;
-    color: #555;
-    background: #f0f4f8;
-    border-radius: 8px;
-    border-left: 3px solid #94a3b8;
+    color: #4b5563;
+    background: #eef2f7;
+    border-radius: 10px;
+    border: 1px solid #dbe2eb;
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 200px;
+    max-height: 180px;
     overflow-y: auto;
 }
 
@@ -331,6 +331,10 @@ body {
 .message-main {
     flex: 1;
     min-width: 0;
+}
+
+.reply-block {
+    margin-top: 4px;
 }
 
 .btn {

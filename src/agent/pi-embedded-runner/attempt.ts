@@ -113,31 +113,67 @@ export async function runEmbeddedPiAgent(params: {
 }): Promise<void> {
   const { session, message, onEvent } = params;
 
-  const eventTrace: { type: string; at: number }[] = [];
   const wrappedOnEvent = (event: RuntimeStreamEvent) => {
-    // if (eventTrace.length > 0 && eventTrace[eventTrace.length - 1].type === event.type) {
-    //   return;
-    // }
-    eventTrace.push({ type: event.type, at: Date.now() });
     attemptLogger.info(`event.type=${event.type}`);
     onEvent(event);
+  };
+
+  type AssistantSessionEvent = AgentSessionEvent & {
+    message: { role?: string; content?: unknown[] };
+  };
+
+  const isAssistantMessageEvent = (
+    e: AgentSessionEvent,
+  ): e is AssistantSessionEvent =>
+    "message" in e &&
+    !!(e as { message?: { role?: string } }).message &&
+    (e as { message?: { role?: string } }).message?.role === "assistant";
+
+  const handleTextDelta = (
+    assistantEvent: AssistantMessageEvent,
+    agentEvent: AssistantSessionEvent,
+  ) => {
+    const textDelta =
+      assistantEvent.type === "text_delta" &&
+      typeof assistantEvent.delta === "string"
+        ? assistantEvent.delta
+        : undefined;
+
+    const fullText = extractAssistantText(assistantEvent.partial?.content);
+
+    wrappedOnEvent({
+      type: "message_update",
+      message: agentEvent.message,
+      delta: textDelta,
+      text: fullText || undefined,
+    });
+  };
+
+  const handleThinkingDelta = (assistantEvent: AssistantMessageEvent) => {
+    const thinkingDelta =
+      typeof (assistantEvent as { delta?: string }).delta === "string"
+        ? (assistantEvent as { delta: string }).delta
+        : undefined;
+    if (thinkingDelta !== undefined) {
+      wrappedOnEvent({
+        type: "thinking_update",
+        thinkingDelta,
+      });
+    }
   };
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     switch (event.type) {
       case "agent_end":
-        console.log("[attempt] agent_end:", JSON.stringify(event));
         wrappedOnEvent({ type: "agent_end" });
         break;
       case "message_start":
         // 只把 assistant 消息推给上层，避免 user 事件干扰前端渲染。
-        if (event.message?.role !== "assistant") break;
-        console.log("[attempt] message_start:", JSON.stringify(event));
+        if (!isAssistantMessageEvent(event)) break;
         wrappedOnEvent({ type: "message_start", message: event.message });
         break;
       case "message_update": {
-        // 只处理 assistant 的增量文本事件。
-        if (event.message?.role !== "assistant") break;
+        if (!isAssistantMessageEvent(event)) break;
 
         const assistantEvent = event.assistantMessageEvent as
           | AssistantMessageEvent
@@ -145,42 +181,16 @@ export async function runEmbeddedPiAgent(params: {
         if (!assistantEvent) break;
 
         if (assistantEvent.type === "text_delta") {
-          const textDelta =
-            assistantEvent.type === "text_delta" &&
-            typeof assistantEvent.delta === "string"
-              ? assistantEvent.delta
-              : undefined;
-
-          const fullText = extractAssistantText(
-            assistantEvent.partial?.content,
-          );
-
-          wrappedOnEvent({
-            type: "message_update",
-            message: event.message,
-            delta: textDelta,
-            text: fullText || undefined,
-          });
-        }
-
-        // thinking_delta：只发增量 delta，前端累积显示
-        if (assistantEvent.type === "thinking_delta") {
-          const thinkingDelta =
-            typeof (assistantEvent as { delta?: string }).delta === "string"
-              ? (assistantEvent as { delta: string }).delta
-              : undefined;
-          if (thinkingDelta !== undefined) {
-            wrappedOnEvent({
-              type: "thinking_update",
-              thinkingDelta,
-            });
-          }
+          handleTextDelta(assistantEvent, event);
+        } else if (assistantEvent.type === "thinking_delta") {
+          // thinking_delta：只发增量 delta，前端累积显示
+          handleThinkingDelta(assistantEvent);
         }
 
         break;
       }
       case "message_end": {
-        if (event.message?.role !== "assistant") break;
+        if (!isAssistantMessageEvent(event)) break;
         const messageData = event.message as { content?: unknown[] };
         wrappedOnEvent({
           type: "message_end",
@@ -190,7 +200,6 @@ export async function runEmbeddedPiAgent(params: {
         break;
       }
       case "tool_execution_start":
-        console.log("[attempt] tool_execution_start:", JSON.stringify(event));
         wrappedOnEvent({
           type: "tool_execution_start",
           toolCallId: event.toolCallId,
@@ -199,7 +208,6 @@ export async function runEmbeddedPiAgent(params: {
         });
         break;
       case "tool_execution_update":
-        console.log("[attempt] tool_execution_update:", JSON.stringify(event));
         wrappedOnEvent({
           type: "tool_execution_update",
           toolCallId: event.toolCallId,
@@ -222,20 +230,9 @@ export async function runEmbeddedPiAgent(params: {
     }
   });
 
-  const startedAt = Date.now();
   try {
     await session.prompt(message);
   } finally {
     unsubscribe();
-    // todo fgbg: 暂时不打印 llm 调用链路日志
-    // const trace = {
-    //   run: "runEmbeddedPiAgent",
-    //   startedAt,
-    //   endedAt: Date.now(),
-    //   durationMs: Date.now() - startedAt,
-    //   eventCount: eventTrace.length,
-    //   eventTypes: eventTrace.map((e) => e.type),
-    // };
-    // attemptLogger.info("trace=%o", trace);
   }
 }

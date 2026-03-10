@@ -244,16 +244,30 @@ function addMessage(content, role, id = `msg-${Date.now()}`, isStreaming = false
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'content';
+
+    // 保持单一气泡：thinking 与回复放在同一个 content 内部
+    let replyBlock = contentDiv;
+    if (role === 'assistant' && isStreaming) {
+        const thinkingBlock = document.createElement('div');
+        thinkingBlock.className = 'thinking-block';
+        thinkingBlock.setAttribute('data-thinking', '');
+        contentDiv.appendChild(thinkingBlock);
+
+        replyBlock = document.createElement('div');
+        replyBlock.className = 'reply-block';
+        contentDiv.appendChild(replyBlock);
+    }
+
     if (content) {
-        contentDiv.innerHTML = renderMarkdown(content);
+        replyBlock.innerHTML = renderMarkdown(content);
     }
 
     if (isStreaming && role === 'assistant') {
         const indicator = document.createElement('span');
         indicator.className = 'streaming-indicator';
         indicator.innerHTML = '<span></span><span></span><span></span>';
-        contentDiv.appendChild(indicator);
-        contentDiv.classList.add('is-streaming');
+        replyBlock.appendChild(indicator);
+        replyBlock.classList.add('is-streaming');
     }
 
     const timestamp = document.createElement('div');
@@ -263,22 +277,11 @@ function addMessage(content, role, id = `msg-${Date.now()}`, isStreaming = false
         minute: '2-digit',
     });
     if (!isStreaming) {
-        contentDiv.appendChild(timestamp);
+        replyBlock.appendChild(timestamp);
     }
 
     messageElement.appendChild(avatar);
-    if (isStreaming && role === 'assistant') {
-        const mainCol = document.createElement('div');
-        mainCol.className = 'message-main';
-        const thinkingBlock = document.createElement('div');
-        thinkingBlock.className = 'thinking-block';
-        thinkingBlock.setAttribute('data-thinking', '');
-        mainCol.appendChild(thinkingBlock);
-        mainCol.appendChild(contentDiv);
-        messageElement.appendChild(mainCol);
-    } else {
-        messageElement.appendChild(contentDiv);
-    }
+    messageElement.appendChild(contentDiv);
 
     chatContainer.appendChild(messageElement);
     scrollToBottom();
@@ -297,14 +300,16 @@ function updateThinkingBlock(id, thinking) {
 function updateMessage(id, content, keepStreaming = false) {
     const messageEl = document.getElementById(id);
     const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
-    if (contentDiv) {
-        const timestamp = contentDiv.querySelector('.timestamp');
-        const metrics = contentDiv.querySelector('.llm-metrics');
-        const indicator = keepStreaming ? contentDiv.querySelector('.streaming-indicator') : null;
-        contentDiv.innerHTML = renderMarkdown(content);
-        if (timestamp) contentDiv.appendChild(timestamp);
-        if (metrics) contentDiv.appendChild(metrics);
-        if (indicator) contentDiv.appendChild(indicator);
+    const replyBlock = contentDiv ? contentDiv.querySelector('.reply-block') : null;
+    const target = replyBlock || contentDiv;
+    if (target) {
+        const timestamp = target.querySelector('.timestamp');
+        const metrics = target.querySelector('.llm-metrics');
+        const indicator = keepStreaming ? target.querySelector('.streaming-indicator') : null;
+        target.innerHTML = renderMarkdown(content);
+        if (timestamp) target.appendChild(timestamp);
+        if (metrics) target.appendChild(metrics);
+        if (indicator) target.appendChild(indicator);
     }
     scrollToBottom();
 }
@@ -312,20 +317,22 @@ function updateMessage(id, content, keepStreaming = false) {
 function appendMessageContent(id, delta) {
     const messageEl = document.getElementById(id);
     const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
-    if (contentDiv) {
-        const timestamp = contentDiv.querySelector('.timestamp');
-        const indicator = contentDiv.querySelector('.streaming-indicator');
+    const replyBlock = contentDiv ? contentDiv.querySelector('.reply-block') : null;
+    const target = replyBlock || contentDiv;
+    if (target) {
+        const timestamp = target.querySelector('.timestamp');
+        const indicator = target.querySelector('.streaming-indicator');
         if (indicator) indicator.remove();
         const textNode =
-            contentDiv.childNodes.length && contentDiv.lastChild.nodeType === Node.TEXT_NODE
-                ? contentDiv.lastChild
+            target.childNodes.length && target.lastChild.nodeType === Node.TEXT_NODE
+                ? target.lastChild
                 : null;
         if (textNode) {
             textNode.textContent += delta;
         } else {
-            contentDiv.appendChild(document.createTextNode(delta));
+            target.appendChild(document.createTextNode(delta));
         }
-        if (timestamp) contentDiv.appendChild(timestamp);
+        if (timestamp) target.appendChild(timestamp);
     }
     scrollToBottom();
 }
@@ -333,30 +340,34 @@ function appendMessageContent(id, delta) {
 function removeStreamingIndicator(id) {
     const messageEl = document.getElementById(id);
     const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
-    if (contentDiv) {
-        const indicator = contentDiv.querySelector('.streaming-indicator');
+    const replyBlock = contentDiv ? contentDiv.querySelector('.reply-block') : null;
+    const target = replyBlock || contentDiv;
+    if (target) {
+        const indicator = target.querySelector('.streaming-indicator');
         if (indicator) indicator.remove();
-        contentDiv.classList.remove('is-streaming');
+        target.classList.remove('is-streaming');
     }
 }
 
 function appendTimestamp(id, llmElapsedMs) {
     const messageEl = document.getElementById(id);
     const contentDiv = messageEl ? messageEl.querySelector('.content') : null;
-    if (contentDiv && !contentDiv.querySelector('.timestamp')) {
+    const replyBlock = contentDiv ? contentDiv.querySelector('.reply-block') : null;
+    const target = replyBlock || contentDiv;
+    if (target && !target.querySelector('.timestamp')) {
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'timestamp';
         timestampDiv.textContent = new Date().toLocaleTimeString('zh-CN');
-        contentDiv.appendChild(timestampDiv);
+        target.appendChild(timestampDiv);
     }
-    if (contentDiv) {
-        const oldMetrics = contentDiv.querySelector('.llm-metrics');
+    if (target) {
+        const oldMetrics = target.querySelector('.llm-metrics');
         if (oldMetrics) oldMetrics.remove();
         if (typeof llmElapsedMs === 'number') {
             const metricsDiv = document.createElement('div');
             metricsDiv.className = 'timestamp llm-metrics';
             metricsDiv.textContent = `LLM耗时 ${formatDuration(llmElapsedMs)}`;
-            contentDiv.appendChild(metricsDiv);
+            target.appendChild(metricsDiv);
         }
     }
 }
