@@ -2,7 +2,7 @@ export type RuntimeStreamEvent =
   | { type: "message_start"; message: unknown }
   | { type: "message_update"; message: unknown; delta?: string; text?: string }
   | { type: "message_end"; message: unknown; text?: string }
-  | { type: "thinking_update"; thinking: string }
+  | { type: "thinking_update"; thinkingDelta?: string; thinking?: string }
   | {
       type: "tool_execution_start";
       toolCallId: string;

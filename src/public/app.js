@@ -30,6 +30,7 @@ async function sendMessage() {
     const streamState = {
         fullText: '',
         displayedText: '',
+        fullThinking: '',
         frameId: null,
         llmStartedAt: 0,
         llmEndedAt: 0,
@@ -128,9 +129,13 @@ async function sendMessage() {
                         );
                         break;
                     case 'thinking_update':
-                        if (typeof data.thinking === 'string' && data.thinking) {
-                            updateThinkingBlock(assistantMessageId, data.thinking);
+                        if (typeof data.thinkingDelta === 'string') {
+                            streamState.fullThinking += data.thinkingDelta;
                         }
+                        if (typeof data.thinking === 'string') {
+                            streamState.fullThinking = data.thinking;
+                        }
+                        updateThinkingBlock(assistantMessageId, streamState.fullThinking);
                         break;
                     case 'auto_retry_start':
                         if (retryBanner && data.attempt != null && data.maxAttempts != null) {
@@ -265,11 +270,11 @@ function addMessage(content, role, id = `msg-${Date.now()}`, isStreaming = false
     if (isStreaming && role === 'assistant') {
         const mainCol = document.createElement('div');
         mainCol.className = 'message-main';
-        mainCol.appendChild(contentDiv);
         const thinkingBlock = document.createElement('div');
         thinkingBlock.className = 'thinking-block';
         thinkingBlock.setAttribute('data-thinking', '');
         mainCol.appendChild(thinkingBlock);
+        mainCol.appendChild(contentDiv);
         messageElement.appendChild(mainCol);
     } else {
         messageElement.appendChild(contentDiv);

@@ -15,6 +15,9 @@ import type {
   ProviderConfig,
   RuntimeModel,
 } from "../../types.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+
+const logger = getSubsystemConsoleLogger("model-config");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -128,7 +131,6 @@ async function resolveApiKeyForProviderAsync(params: {
     return syncResult;
   }
 
-  console.log("providerId:", providerId);
   // 对于 qwen-portal，如果同步获取失败（可能过期），尝试异步刷新
   if (providerId === "qwen-portal") {
     try {
@@ -136,17 +138,17 @@ async function resolveApiKeyForProviderAsync(params: {
         await import("../auth/qwen-portal-oauth.js");
       const credentials = getQwenPortalCredentials();
       if (!credentials) {
+        logger.debug("No Qwen Portal credentials found");
         return undefined;
       }
-      console.log("credentials:", credentials);
       if (isQwenPortalCredentialsExpired(credentials)) {
-        console.log("credentials expired, refreshing...");
+        logger.debug("Qwen Portal credentials expired, refreshing...");
         const newCredentials = await refreshQwenPortalCredentials(credentials);
         if (newCredentials) {
+          logger.debug("Qwen Portal credentials refreshed");
           return newCredentials.access;
         }
       } else {
-        console.log("credentials not expired, using existing token");
         return credentials.access;
       }
     } catch {

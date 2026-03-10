@@ -1,4 +1,5 @@
 import express from "express";
+import http from "node:http";
 import path from "node:path";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -15,8 +16,9 @@ import {
 dotenv.config();
 
 const app = express();
-// 未设置 PORT 时默认使用 3000
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+// 固定监听 localhost；未设置 PORT 时默认 6727，被占用则改用随机端口
+const HOST = "localhost";
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 6727;
 
 // 静态文件目录：编译后 __dirname 为 dist/，页面在 src/public
 const __filename = fileURLToPath(import.meta.url);
@@ -32,22 +34,11 @@ app.use(express.static(publicDir));
 app.use("/api", createWebLayer());
 
 function startServer(port: number) {
-  console.log("startServer:", port);
-  const server = app.listen(port, () => {
-    const addr = server.address();
-    const actualPort =
-      typeof addr === "object" && addr !== null && "port" in addr
-        ? addr.port
-        : port;
-
-    serverLogger.info(`服务器正在运行在 http://localhost:${actualPort}`);
-    serverLogger.info(
-      `请在浏览器中打开 http://localhost:${actualPort} 查看应用`,
-    );
-    serverLogger.info(
-      "注意：请在 .env 或 ~/.fgbg/fgbg.json 中配置可用模型 API Key",
-    );
-  });
+  const isDefaultPort = port === PORT;
+  serverLogger.info(
+    `尝试监听端口 ${port}${isDefaultPort && process.env.PORT ? "（来自环境变量 PORT）" : isDefaultPort ? "（默认）" : "（随机，因默认端口被占用）"}`,
+  );
+  const server = http.createServer(app);
 
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE" && port !== 0) {
@@ -59,6 +50,20 @@ function startServer(port: number) {
     serverLogger.error("服务器启动失败: %s", err.message);
     process.exit(1);
   });
+
+  server.on("listening", () => {
+    const addr = server.address();
+    const actualPort =
+      typeof addr === "object" && addr !== null && "port" in addr
+        ? addr.port
+        : port;
+
+    serverLogger.info(
+      `服务器正在运行在 http://localhost:${actualPort}（进程 PID: ${process.pid}）`,
+    );
+  });
+
+  server.listen(port, HOST);
 }
 
 async function bootstrap() {

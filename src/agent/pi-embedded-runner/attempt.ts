@@ -34,6 +34,15 @@ function extractAssistantText(content: unknown[] | undefined): string {
     .join("");
 }
 
+/** 从 partial.content 中拼接所有 type===thinking 的 thinking 字段，用于 thinking_start/thinking_delta/thinking_end 时推给前端 */
+function extractAssistantThinking(content: unknown[] | undefined): string {
+  if (!content || !Array.isArray(content)) return "";
+  return (content as { type?: string; thinking?: string }[])
+    .filter((item) => item.type === "thinking")
+    .map((item) => item.thinking || "")
+    .join("");
+}
+
 export async function createRuntimeAgentSession(params: {
   model: RuntimeModel;
   sessionDir: string;
@@ -117,17 +126,16 @@ export async function runEmbeddedPiAgent(params: {
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     switch (event.type) {
       case "agent_end":
-        console.log("[attempt] message_end event:", event);
+        console.log("[attempt] agent_end:", JSON.stringify(event));
         wrappedOnEvent({ type: "agent_end" });
         break;
       case "message_start":
-        console.log("[attempt] message_start event:", event);
         // 只把 assistant 消息推给上层，避免 user 事件干扰前端渲染。
         if (event.message?.role !== "assistant") break;
+        console.log("[attempt] message_start:", JSON.stringify(event));
         wrappedOnEvent({ type: "message_start", message: event.message });
         break;
       case "message_update": {
-        console.log("[attempt] message_update event:", );
         // 只处理 assistant 的增量文本事件。
         if (event.message?.role !== "assistant") break;
 
@@ -135,25 +143,43 @@ export async function runEmbeddedPiAgent(params: {
           | AssistantMessageEvent
           | undefined;
         if (!assistantEvent) break;
-        const textDelta =
-          assistantEvent.type === "text_delta" &&
-          typeof assistantEvent.delta === "string"
-            ? assistantEvent.delta
-            : undefined;
 
-        const fullText = extractAssistantText(assistantEvent.partial?.content);
+        if (assistantEvent.type === "text_delta") {
+          const textDelta =
+            assistantEvent.type === "text_delta" &&
+            typeof assistantEvent.delta === "string"
+              ? assistantEvent.delta
+              : undefined;
 
-        wrappedOnEvent({
-          type: "message_update",
-          message: event.message,
-          delta: textDelta,
-          text: fullText || undefined,
-        });
+          const fullText = extractAssistantText(
+            assistantEvent.partial?.content,
+          );
+
+          wrappedOnEvent({
+            type: "message_update",
+            message: event.message,
+            delta: textDelta,
+            text: fullText || undefined,
+          });
+        }
+
+        // thinking_delta：只发增量 delta，前端累积显示
+        if (assistantEvent.type === "thinking_delta") {
+          const thinkingDelta =
+            typeof (assistantEvent as { delta?: string }).delta === "string"
+              ? (assistantEvent as { delta: string }).delta
+              : undefined;
+          if (thinkingDelta !== undefined) {
+            wrappedOnEvent({
+              type: "thinking_update",
+              thinkingDelta,
+            });
+          }
+        }
+
         break;
       }
       case "message_end": {
-        console.log("[attempt] message_end event:", event);
-
         if (event.message?.role !== "assistant") break;
         const messageData = event.message as { content?: unknown[] };
         wrappedOnEvent({
@@ -164,7 +190,7 @@ export async function runEmbeddedPiAgent(params: {
         break;
       }
       case "tool_execution_start":
-        console.log("[attempt] tool_execution_start:", event);
+        console.log("[attempt] tool_execution_start:", JSON.stringify(event));
         wrappedOnEvent({
           type: "tool_execution_start",
           toolCallId: event.toolCallId,
@@ -173,7 +199,7 @@ export async function runEmbeddedPiAgent(params: {
         });
         break;
       case "tool_execution_update":
-        console.log("[attempt] tool_execution_update:", event);
+        console.log("[attempt] tool_execution_update:", JSON.stringify(event));
         wrappedOnEvent({
           type: "tool_execution_update",
           toolCallId: event.toolCallId,
@@ -183,7 +209,6 @@ export async function runEmbeddedPiAgent(params: {
         });
         break;
       case "tool_execution_end":
-        console.log("[attempt] tool_execution_end:", event);
         wrappedOnEvent({
           type: "tool_execution_end",
           toolCallId: event.toolCallId,
