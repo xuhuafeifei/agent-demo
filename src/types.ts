@@ -99,6 +99,12 @@ export type FgbgUserConfig = {
     consoleStyle?: "pretty" | "common" | "json";
     allowModule?: string[] | string;
   };
+  heartbeat?: {
+    enabled?: boolean;
+    interval_ms?: number;
+    concurrency?: number;
+    allowedScripts?: string[];
+  };
 };
 
 export type RuntimeModel = {

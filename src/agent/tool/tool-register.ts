@@ -8,11 +8,15 @@ import { createAppendTool } from "./append.js";
 import { createMemorySearchTool } from "./memory-search.js";
 import { createPersistMemoryTool } from "./persist-memory.js";
 import { createUpdateTool } from "./update.js";
+import { createListTasksTool, createRunTaskTool } from "./watch-dog.js";
+import { getEventBus, TOPPIC_HEART_BEAT } from "../../event-bus/index.js";
+
+const eventBus = getEventBus();
 
 const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
   tools: [],
   customTools: ["memorySearch", "persistMemory"],
-  innerTools: [],
+  innerTools: ["listTaskSchedules", "runTaskByName"],
 };
 
 type ToolFactory = (cwd: string) => unknown;
@@ -49,6 +53,16 @@ const TOOL_REGISTRY: Record<
     description:
       "persistMemory(filename, content) - persist as .md: USER.md for user info (name, preferences), memory/xxx.md for topic summaries, MEMORY.md for other; append if exists else create",
   },
+  listTaskSchedules: {
+    factory: () => createListTasksTool(),
+    description:
+      "listTaskSchedules() - list all task_schedule entries (status, next run, attempts, last_error)",
+  },
+  runTaskByName: {
+    factory: () => createRunTaskTool(),
+    description:
+      "runTaskByName(task_name) - set task to pending and next_run_time=now to trigger it immediately",
+  },
 };
 
 function parseToolList(value: unknown): string[] {
@@ -81,9 +95,17 @@ export type ToolBundle = {
 export class ToolRegister {
   private static instance: ToolRegister | null = null;
 
-  private readonly config: ToolRegisterConfig;
+  private config: ToolRegisterConfig;
 
   private constructor() {
+    eventBus.on(TOPPIC_HEART_BEAT, () => {
+      // 重新加载配置
+      const newConfig = getUserFgbgConfig();
+      if (newConfig.toolRegister != null) {
+        this.config = newConfig.toolRegister;
+      }
+    });
+
     const userConfig = getUserFgbgConfig();
     if (
       userConfig.toolRegister == null ||

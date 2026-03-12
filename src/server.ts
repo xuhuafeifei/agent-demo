@@ -11,6 +11,7 @@ import {
   ensureLoggingSetting,
   getSubsystemConsoleLogger,
 } from "./logger/logger.js";
+import { startWatchDog } from "./watch-dog/watch-dog.js";
 
 // 加载环境变量
 dotenv.config();
@@ -74,6 +75,13 @@ async function bootstrap() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     serverLogger.error("[memory] disabled: %s", message);
+  }
+  try {
+    // 启动心跳调度：定时扫描 task_schedule 表并分发任务
+    await startWatchDog();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    serverLogger.error("[watch-dog] failed to start: %s", message);
   }
   startServer(PORT);
 }
