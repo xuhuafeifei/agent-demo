@@ -35,6 +35,7 @@ export function createWebLayer() {
     try {
       await runWithSingleFlight({
         message,
+        channel: "web",
         onEvent: (event: RuntimeStreamEvent) => {
           writeSse(res, event);
         },

@@ -6,9 +6,13 @@ export type BuildSystemPromptInput = {
   chatHistory?: string;
   workspace?: string;
   toolings?: string[];
+  channel?: "web" | "qq";
 };
 
-function nonEmptyOrFallback(value: string | undefined, fallback: string): string {
+function nonEmptyOrFallback(
+  value: string | undefined,
+  fallback: string,
+): string {
   const trimmed = (value ?? "").trim();
   return trimmed || fallback;
 }
@@ -36,6 +40,11 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const chatHistory = nonEmptyOrFallback(input.chatHistory, "N/A");
   const workspace = nonEmptyOrFallback(input.workspace, "N/A");
   const toolings = nonEmptyListOrFallback(input.toolings, ["N/A"]);
+  const channel = input.channel ?? "web";
+  const channelFormattingInstruction =
+    channel === "web"
+      ? "Current channel is web. Markdown formatting is allowed when it improves readability."
+      : "Current channel is not web. Do not use Markdown. Reply in plain text only.";
   return `## who you are
 ${soul}
 
@@ -59,6 +68,12 @@ Your working directory is: ${workspace}
 ## Current Chat Information
 user and assistant chat history
 ${chatHistory}
+
+## Channel
+${channel}
+
+## Output Format
+${channelFormattingInstruction}
 
 ## Memory Recall
 Do not assume memory is preloaded in this prompt.

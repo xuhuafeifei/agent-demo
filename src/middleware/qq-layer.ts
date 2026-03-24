@@ -157,6 +157,7 @@ export async function startQQLayer(): Promise<void> {
         const currentToken = await getAccessToken(appId, secret);
         await runWithSingleFlight({
           message: inboundText,
+          channel: "qq",
           onEvent: () => {
             // qq-layer 当前使用最终回包模式，不转发中间流式事件
           },

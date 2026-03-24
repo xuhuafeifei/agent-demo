@@ -28,6 +28,7 @@ import {
   tryAcquireAgent,
   releaseAgent,
 } from "./agent-state.js";
+import { channel } from "node:diagnostics_channel";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 
@@ -107,8 +108,9 @@ function pruneSessionChat(messages: SessionMessage[]): string {
 export async function getReplyFromAgent(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
+  channel: "web" | "qq";
 }): Promise<{ finalText: string }> {
-  const { message, onEvent } = params;
+  const { message, onEvent, channel } = params;
 
   // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
   const prepared = await prepareBeforeGetReply({
@@ -176,6 +178,7 @@ export async function getReplyFromAgent(params: {
     chatHistory: chatHistoryText,
     workspace: resolveWorkspaceDir(),
     toolings: getAgentToolings(prepared.cwd),
+    channel: channel
   });
   agentLogger.trace(`prompt: ${prompt}`);
 
@@ -228,12 +231,14 @@ export async function runWithSingleFlight(params: {
   onBusy?: () => void | Promise<void>;
   onAccepted?: () => void | Promise<void>;
   agentId?: string;
+  channel: "web" | "qq";
 }): Promise<{ status: "busy" | "completed"; finalText: string }> {
   const {
     message,
     onEvent,
     onBusy,
     onAccepted,
+    channel,
     agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   } = params;
 
@@ -244,7 +249,7 @@ export async function runWithSingleFlight(params: {
 
   await onAccepted?.();
   try {
-    const result = await getReplyFromAgent({ message, onEvent });
+    const result = await getReplyFromAgent({ message, onEvent, channel });
     return { status: "completed", finalText: result.finalText };
   } finally {
     releaseAgent(agentId);
