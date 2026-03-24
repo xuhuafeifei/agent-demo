@@ -7,3 +7,23 @@ export type ScriptTaskPayload = {
   args?: string[];
   timeoutMs?: number;
 };
+
+export type ReminderTaskPayload = {
+  content: string;
+  channels: Array<"qq" | "web">;
+  timezone?: string;
+  target?: {
+    qqOpenid?: string;
+  };
+};
+
+export type AgentTaskPayload = {
+  goal: string;
+  notify?: boolean;
+  channels?: Array<"qq" | "web">;
+  timezone?: string;
+  mode?: "evolve" | "analyze_then_notify";
+  target?: {
+    qqOpenid?: string;
+  };
+};

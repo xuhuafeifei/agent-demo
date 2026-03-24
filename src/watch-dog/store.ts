@@ -1,6 +1,7 @@
 import type sqlite from "node:sqlite";
 import { resolveTaskDbPath } from "./paths.js";
 import { getSubsystemLogger } from "../logger/logger.js";
+import { nowChinaIso } from "./time.js";
 
 export type TaskStatus = "pending" | "running" | "done" | "failed" | "timeout";
 export type TaskDetailStatus = "success" | "failed" | "timeout";
@@ -130,7 +131,7 @@ function ensureSchema(database: sqlite.DatabaseSync): void {
  */
 export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
   const database = await getDb();
-  const now = new Date().toISOString();
+  const now = nowChinaIso();
   const nextRun = input.next_run_time ?? now;
   const status: TaskStatus = input.status ?? "pending";
   const interval =
@@ -248,6 +249,34 @@ export async function getTaskByName(
 }
 
 /**
+ * 按 task_name 删除任务（同时删除执行明细）
+ * @returns 是否删除成功（true=删除了至少一条任务）
+ */
+export async function deleteTaskByName(taskName: string): Promise<boolean> {
+  const database = await getDb();
+  const selectStmt = database.prepare(
+    `SELECT id FROM task_schedule WHERE task_name = ?`,
+  );
+  const row = selectStmt.get(taskName) as { id: number } | undefined;
+  if (!row) return false;
+
+  const deleteDetailsStmt = database.prepare(
+    `DELETE FROM task_schedule_detail WHERE task_id = ?`,
+  );
+  deleteDetailsStmt.run(row.id);
+
+  const deleteTaskStmt = database.prepare(
+    `DELETE FROM task_schedule WHERE id = ?`,
+  );
+  const result = deleteTaskStmt.run(row.id);
+  const deleted = typeof result.changes === "number" && result.changes > 0;
+  if (deleted) {
+    storeLogger.info("[watch-dog-store] delete task_schedule name=%s id=%s", taskName, row.id);
+  }
+  return deleted;
+}
+
+/**
  * 标记任务为运行中状态
  * 更新状态为 running，设置开始时间，增加尝试次数
  * @param taskId - 任务 ID
@@ -311,7 +340,7 @@ export async function insertTaskDetail(params: {
   executor?: string | null;
 }): Promise<void> {
   const database = await getDb();
-  const now = new Date().toISOString();
+  const now = nowChinaIso();
   const stmt = database.prepare(
     `INSERT INTO task_schedule_detail
       (task_id, start_time, end_time, create_time, update_time, status, error_message, executor)

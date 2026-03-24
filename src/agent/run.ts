@@ -23,11 +23,13 @@ import { readWorkspaceSoul, readWorkspaceUser } from "./workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { resolveWorkspaceDir } from "../utils/app-path.js";
 import { getAgentToolings } from "./tool/index.js";
+import { getSkillManager } from "./skill/skill-manager.js";
 import {
   getAgentRuntimeState,
   tryAcquireAgent,
   releaseAgent,
 } from "./agent-state.js";
+import { formatChinaIso } from "../watch-dog/time.js";
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
 
@@ -182,11 +184,12 @@ export async function getReplyFromAgent(params: {
   const prompt = buildSystemPrompt({
     soul: readWorkspaceSoul(),
     user: readWorkspaceUser(),
-    nowText: new Date().toISOString(),
+    nowText: formatChinaIso(new Date()),
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
     chatHistory: chatHistoryText,
     workspace: resolveWorkspaceDir(),
     toolings: getAgentToolings(prepared.cwd),
+    skillsMeta: getSkillManager().getMetaPromptText(),
     channel: channel,
   });
   agentLogger.trace(`prompt: ${prompt}`);

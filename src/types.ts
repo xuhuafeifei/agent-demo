@@ -110,6 +110,7 @@ export type FgbgUserConfig = {
       enabled?: boolean;
       appId?: string;
       clientSecret?: string;
+      targetOpenid?: string;
       name?: string;
       accounts?: Record<
         string,
@@ -117,6 +118,7 @@ export type FgbgUserConfig = {
           enabled?: boolean;
           appId?: string;
           clientSecret?: string;
+          targetOpenid?: string;
           name?: string;
         }
       >;

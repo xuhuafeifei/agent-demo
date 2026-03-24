@@ -1,0 +1,4 @@
+{
+  "name": "task-scheduler",
+  "description": "Guide model to create and manage scheduled tasks safely using createReminderTask/createAgentTask."
+}

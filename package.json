@@ -9,6 +9,7 @@
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
     "build": "tsc && node scripts/copy-public.mjs",
     "dev:debug": "NODE_DEBUG=memory,agent tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
+    "dev:inspect": "NODE_DEBUG=memory,agent tsc && node scripts/copy-public.mjs && node --inspect scripts/require-runtime.mjs && node --inspect dist/server.js",
     "start": "node scripts/require-runtime.mjs && node dist/server.js",
     "dev": "tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
     "watch": "tsc -w"

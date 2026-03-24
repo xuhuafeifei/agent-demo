@@ -14,6 +14,7 @@ import { HANDLERS, type HandlerResult, type TaskHandler } from "./handlers.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import type { TaskPayload } from "./types.js";
 import { getEventBus } from "../event-bus/index.js";
+import { addSecondsChinaIso, nowChinaIso } from "./time.js";
 
 const logger = getSubsystemConsoleLogger("watch-dog");
 export const watchDogLogger = logger;
@@ -46,7 +47,7 @@ function parsePayload(payloadText: string | null): TaskPayload {
  * @returns 新时间的 ISO 字符串
  */
 function addSeconds(baseMs: number, seconds: number): string {
-  return new Date(baseMs + seconds * 1000).toISOString();
+  return addSecondsChinaIso(baseMs, seconds);
 }
 
 /**
@@ -75,7 +76,7 @@ async function runSingleTask(
 ): Promise<void> {
   const payload = parsePayload(task.payload_text);
   const config = getHeartbeatConfig();
-  const startedAt = new Date(nowMs).toISOString();
+  const startedAt = nowChinaIso();
   // 状态切到 running，累计 attempts
   await markTaskRunning(task.id, startedAt);
 
@@ -88,7 +89,7 @@ async function runSingleTask(
     result = { status: "failed", errorMessage: message };
   }
 
-  const finishedAt = new Date().toISOString();
+  const finishedAt = nowChinaIso();
   const isRecurring = task.interval_seconds > 0;
 
   let nextRun: string | undefined;
@@ -188,7 +189,7 @@ async function tickOnce(): Promise<void> {
       logger.debug("[watch-dog] heartbeat disabled via config");
       return;
     }
-    const nowIso = new Date().toISOString();
+    const nowIso = nowChinaIso();
     const limit = Math.max(1, cfg.concurrency);
     const tasks = await listDueTasks(limit, nowIso);
     if (tasks.length === 0) return;
@@ -223,7 +224,7 @@ function getNextRunAt10(): string {
   if (d.getTime() <= Date.now()) {
     d.setDate(d.getDate() + 1);
   }
-  return d.toISOString();
+  return addSecondsChinaIso(d.getTime(), 0);
 }
 
 /** 计算「下一个整分钟」：如 10:30:23 → 10:31:00，返回 ISO 字符串 */
@@ -233,7 +234,7 @@ function getNextFullMinute(): string {
   if (d.getTime() <= Date.now()) {
     d.setMinutes(d.getMinutes() + 1);
   }
-  return d.toISOString();
+  return addSecondsChinaIso(d.getTime(), 0);
 }
 
 const CLEANUP_LOGS_INTERVAL_SECONDS = 24 * 3600; // 24 小时

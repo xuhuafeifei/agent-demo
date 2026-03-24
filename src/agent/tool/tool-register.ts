@@ -5,18 +5,36 @@ import {
   writeFgbgUserConfig,
 } from "../../utils/app-path.js";
 import { createAppendTool } from "./append.js";
+import { createLoadSkillTool } from "./load-skill.js";
 import { createMemorySearchTool } from "./memory-search.js";
 import { createPersistMemoryTool } from "./persist-memory.js";
 import { createUpdateTool } from "./update.js";
-import { createListTasksTool, createRunTaskTool } from "./watch-dog.js";
-import { getEventBus, TOPPIC_HEART_BEAT } from "../../event-bus/index.js";
+import {
+  createAgentTaskTool,
+  createDeleteTaskTool,
+  createListTasksTool,
+  createReminderTaskTool,
+  createRunTaskTool,
+} from "./watch-dog.js";
+import {
+  getEventBus,
+  TOPIC_TOOL_BEFORE_BUILD,
+  TOPPIC_HEART_BEAT,
+} from "../../event-bus/index.js";
 
 const eventBus = getEventBus();
 
 const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
   tools: [],
-  customTools: ["memorySearch", "persistMemory"],
-  innerTools: ["listTaskSchedules", "runTaskByName"],
+  customTools: [
+    "memorySearch",
+    "persistMemory",
+    "loadSkill",
+    "createReminderTask",
+    "createAgentTask",
+    "deleteTaskByName",
+  ],
+  innerTools: ["listTaskSchedules", "runTaskByName", "deleteTaskByName"],
 };
 
 type ToolFactory = (cwd: string) => unknown;
@@ -53,6 +71,11 @@ const TOOL_REGISTRY: Record<
     description:
       "persistMemory(filename, content) - persist as .md: USER.md for user info (name, preferences), memory/xxx.md for topic summaries, MEMORY.md for other; append if exists else create",
   },
+  loadSkill: {
+    factory: () => createLoadSkillTool(),
+    description:
+      "loadSkill(skillDir) - load SKILL.md from ~/.fgbg/workspace/skills/<skillDir>/SKILL.md",
+  },
   listTaskSchedules: {
     factory: () => createListTasksTool(),
     description:
@@ -62,6 +85,21 @@ const TOOL_REGISTRY: Record<
     factory: () => createRunTaskTool(),
     description:
       "runTaskByName(task_name) - set task to pending and next_run_time=now to trigger it immediately",
+  },
+  deleteTaskByName: {
+    factory: () => createDeleteTaskTool(),
+    description:
+      "deleteTaskByName(task_name) - delete scheduled task and its execution details",
+  },
+  createReminderTask: {
+    factory: () => createReminderTaskTool(),
+    description:
+      "createReminderTask(content, scheduleType, time?, runAt?, timezone?, channels?, taskName?) - create execute_reminder scheduled task",
+  },
+  createAgentTask: {
+    factory: () => createAgentTaskTool(),
+    description:
+      "createAgentTask(goal, scheduleType, time?, runAt?, timezone?, notify?, channels?, mode?, title?, taskName?) - create execute_agent scheduled task",
   },
 };
 
@@ -156,6 +194,13 @@ export class ToolRegister {
       ...new Set([...toolsNames, ...customNames, ...innerNames]),
     ];
     const toolings = allNames.map((name) => TOOL_REGISTRY[name].description);
+
+    // 动态工具注入：其他模块可在此时通过 event-bus 同步追加工具
+    const dynamicCustomTools: unknown[] = [];
+    eventBus.emitSync(TOPIC_TOOL_BEFORE_BUILD, dynamicCustomTools);
+    if (dynamicCustomTools.length > 0) {
+      customTools.push(...dynamicCustomTools);
+    }
 
     return { tools, customTools, innerTools, toolings };
   }

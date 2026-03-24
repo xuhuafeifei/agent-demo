@@ -4,38 +4,20 @@ export type ResolvedQQAccount = {
   accountId: string;
   appId: string;
   clientSecret: string;
-  source: "fgbg-config" | "env";
+  source: "fgbg-config";
 };
 
 const DEFAULT_ACCOUNT_ID = "default";
 
-function env(name: string): string {
-  return String(process.env[name] ?? "").trim();
-}
-
-function resolveFromEnv(): ResolvedQQAccount | null {
-  const appId = env("QQBOT_APP_ID");
-  const clientSecret = env("QQBOT_SECRET");
-  if (!appId || !clientSecret) return null;
-  return {
-    accountId: DEFAULT_ACCOUNT_ID,
-    appId,
-    clientSecret,
-    source: "env",
-  };
-}
-
 export function resolveQQAccountFromConfig(): ResolvedQQAccount | null {
   const cfg = getUserFgbgConfig();
   const qqbot = cfg.channels?.qqbot;
-  if (!qqbot) {
-    return resolveFromEnv();
-  }
+  if (!qqbot) return null;
   if (qqbot.enabled === false) {
     return null;
   }
 
-  const requestedAccountId = env("QQBOT_ACCOUNT_ID") || DEFAULT_ACCOUNT_ID;
+  const requestedAccountId = DEFAULT_ACCOUNT_ID;
   const hasDefault =
     typeof qqbot.appId === "string" &&
     qqbot.appId.trim().length > 0 &&
@@ -97,5 +79,5 @@ export function resolveQQAccountFromConfig(): ResolvedQQAccount | null {
     }
   }
 
-  return resolveFromEnv();
+  return null;
 }

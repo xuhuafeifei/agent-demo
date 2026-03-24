@@ -5,11 +5,20 @@ import type { HeartbeatConfig } from "./config.js";
 import type { TaskScheduleRow } from "./store.js";
 import { cleanupOldDetails } from "./store.js";
 import { resolveWorkspaceDir } from "../utils/app-path.js";
-import type { ScriptTaskPayload, TaskPayload } from "./types.js";
+import type {
+  AgentTaskPayload,
+  ReminderTaskPayload,
+  ScriptTaskPayload,
+  TaskPayload,
+} from "./types.js";
 import { watchDogLogger } from "./watch-dog.js";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../event-bus/index.js";
+import { sendQQDirectMessage } from "../middleware/qq-layer.js";
+import { formatChinaIso, nowChinaIso } from "./time.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
 const eventBus = getEventBus();
+const handlerLogger = getSubsystemConsoleLogger("watch-dog:handler");
 
 export type HandlerResult = {
   status: "success" | "failed" | "timeout";
@@ -154,18 +163,126 @@ export const executeScriptHandler: TaskHandler = async ({
  */
 export const cleanupLogsHandler: TaskHandler = async () => {
   watchDogLogger.info("[cleanup_logs] triggered");
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const cutoff = formatChinaIso(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
   await cleanupOldDetails(cutoff);
   watchDogLogger.info("[cleanup_logs] completed");
   return { status: "success" };
 };
 
-/**
- * 执行 Agent 处理器（未实现）
- * @returns 执行结果（失败状态）
- */
-export const executeAgentHandler: TaskHandler = async () => {
-  return { status: "failed", errorMessage: "execute_agent handler not implemented yet" };
+function toChannelList(value: unknown): Array<"qq" | "web"> {
+  if (!Array.isArray(value)) return ["qq"];
+  const list = value.filter((v): v is "qq" | "web" => v === "qq" || v === "web");
+  return list.length > 0 ? list : ["qq"];
+}
+
+async function deliverReminderByChannels(params: {
+  channels: Array<"qq" | "web">;
+  text: string;
+  qqOpenid?: string;
+}): Promise<HandlerResult> {
+  const { channels, text, qqOpenid } = params;
+  let successCount = 0;
+  const errors: string[] = [];
+
+  for (const ch of channels) {
+    if (ch === "qq") {
+      if (!qqOpenid) {
+        errors.push("qq target missing");
+        continue;
+      }
+      const ok = await sendQQDirectMessage(qqOpenid, text);
+      if (ok) successCount++;
+      else errors.push("qq send failed");
+    } else if (ch === "web") {
+      // web 通知渠道暂未实现，当前按 no-op 成功处理（不阻塞任务）
+      successCount++;
+    }
+  }
+
+  if (successCount > 0) {
+    return { status: "success" };
+  }
+  return { status: "failed", errorMessage: errors.join("; ") || "no channel delivered" };
+}
+
+export const executeReminderHandler: TaskHandler = async ({ task, payload }) => {
+  handlerLogger.info("execute_reminder trigger! task_name=%s", task.task_name);
+  const p = (payload ?? {}) as ReminderTaskPayload;
+  const content = typeof p.content === "string" ? p.content.trim() : "";
+  if (!content) {
+    handlerLogger.error("execute_reminder failed task_name=%s content is required", task.task_name);
+    return { status: "failed", errorMessage: "content is required" };
+  }
+  const channels = toChannelList(p.channels);
+  const qqOpenid =
+    typeof p.target?.qqOpenid === "string" ? p.target.qqOpenid.trim() : "";
+  const result = await deliverReminderByChannels({
+    channels,
+    text: content,
+    qqOpenid,
+  });
+  handlerLogger.info(
+    "execute_reminder completed task_name=%s status=%s",
+    task.task_name,
+    result.status,
+  );
+  return result;
+};
+
+export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
+  handlerLogger.info("execute_agent trigger! task_name=%s", task.task_name);
+  const p = (payload ?? {}) as AgentTaskPayload;
+  const goal = typeof p.goal === "string" ? p.goal.trim() : "";
+  if (!goal) {
+    handlerLogger.error("execute_agent failed task_name=%s goal is required", task.task_name);
+    return { status: "failed", errorMessage: "goal is required" };
+  }
+
+  try {
+    const { getReplyFromAgent } = await import("../agent/run.js");
+    const now = nowChinaIso();
+    const prompt = [
+      `你在执行定时任务。`,
+      `任务名: ${task.task_name}`,
+      `当前时间: ${now}`,
+      `任务目标: ${goal}`,
+      `请输出简洁的最终执行结果文本。`,
+    ].join("\n");
+
+    const result = await getReplyFromAgent({
+      message: prompt,
+      channel: "web",
+      sessionKey: `watchdog:task:${task.id}`,
+      onEvent: () => {
+        // watch-dog 不透传流式事件
+      },
+    });
+    const finalText = result.finalText?.trim() || "任务已执行完成。";
+
+    if (p.notify !== true) {
+      handlerLogger.info("execute_agent completed task_name=%s status=success notify=false", task.task_name);
+      return { status: "success" };
+    }
+
+    const channels = toChannelList(p.channels);
+    const qqOpenid =
+      typeof p.target?.qqOpenid === "string" ? p.target.qqOpenid.trim() : "";
+    const deliverResult = await deliverReminderByChannels({
+      channels,
+      text: finalText,
+      qqOpenid,
+    });
+    handlerLogger.info(
+      "execute_agent completed task_name=%s status=%s notify=true",
+      task.task_name,
+      deliverResult.status,
+    );
+    return deliverResult;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    handlerLogger.error("execute_agent failed task_name=%s error=%s", task.task_name, message);
+    return { status: "failed", errorMessage: message };
+  }
 };
 
 export const oneMinuteHeartbeatHandler: TaskHandler = async () => {
@@ -180,6 +297,7 @@ export const oneMinuteHeartbeatHandler: TaskHandler = async () => {
  */
 export const HANDLERS: Record<string, TaskHandler> = {
   execute_script: executeScriptHandler,
+  execute_reminder: executeReminderHandler,
   execute_agent: executeAgentHandler,
   cleanup_logs: cleanupLogsHandler,
   one_minute_heartbeat: oneMinuteHeartbeatHandler,

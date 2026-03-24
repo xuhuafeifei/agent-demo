@@ -42,9 +42,6 @@ export function createWebLayer() {
         onBusy: () => {
           writeSse(res, { type: "error", error: "指令正在运行中，请稍后" });
         },
-        onAccepted: () => {
-          writeSse(res, { type: "message_update", message: null, text: "收到，正在处理指令" });
-        },
       });
     } catch (error) {
       const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
