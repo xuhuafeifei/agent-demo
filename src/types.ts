@@ -105,6 +105,23 @@ export type FgbgUserConfig = {
     concurrency?: number;
     allowedScripts?: string[];
   };
+  channels?: {
+    qqbot?: {
+      enabled?: boolean;
+      appId?: string;
+      clientSecret?: string;
+      name?: string;
+      accounts?: Record<
+        string,
+        {
+          enabled?: boolean;
+          appId?: string;
+          clientSecret?: string;
+          name?: string;
+        }
+      >;
+    };
+  };
 };
 
 export type RuntimeModel = {

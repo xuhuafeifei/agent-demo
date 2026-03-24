@@ -23,6 +23,11 @@ import { readWorkspaceSoul, readWorkspaceUser } from "./workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { resolveWorkspaceDir } from "../utils/app-path.js";
 import { getAgentToolings } from "./tool/index.js";
+import {
+  getAgentRuntimeState,
+  tryAcquireAgent,
+  releaseAgent,
+} from "./agent-state.js";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 
@@ -102,7 +107,7 @@ function pruneSessionChat(messages: SessionMessage[]): string {
 export async function getReplyFromAgent(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
-}): Promise<void> {
+}): Promise<{ finalText: string }> {
   const { message, onEvent } = params;
 
   // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
@@ -187,7 +192,7 @@ export async function getReplyFromAgent(params: {
   };
 
   try {
-    await runEmbeddedPiAgent({
+    const runResult = await runEmbeddedPiAgent({
       session,
       message,
       onEvent: emit,
@@ -195,6 +200,7 @@ export async function getReplyFromAgent(params: {
     trace.recordStage("request:end");
     emit({ type: "done" });
     trace.logTimeline("done");
+    return runResult;
   } catch (error) {
     trace.recordStage("request:end");
     const message = error instanceof Error ? error.message : "服务器内部错误";
@@ -204,11 +210,43 @@ export async function getReplyFromAgent(params: {
       error: message,
     });
     trace.logTimeline("error");
+    return { finalText: "" };
   } finally {
     getMemoryIndexManager().onMemorySourceChanged(
       "session",
       prepared.sessionFile,
     );
     session.dispose();
+  }
+}
+
+export { getAgentRuntimeState };
+
+export async function runWithSingleFlight(params: {
+  message: string;
+  onEvent: (event: RuntimeStreamEvent) => void;
+  onBusy?: () => void | Promise<void>;
+  onAccepted?: () => void | Promise<void>;
+  agentId?: string;
+}): Promise<{ status: "busy" | "completed"; finalText: string }> {
+  const {
+    message,
+    onEvent,
+    onBusy,
+    onAccepted,
+    agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  } = params;
+
+  if (!tryAcquireAgent(agentId)) {
+    await onBusy?.();
+    return { status: "busy", finalText: "" };
+  }
+
+  await onAccepted?.();
+  try {
+    const result = await getReplyFromAgent({ message, onEvent });
+    return { status: "completed", finalText: result.finalText };
+  } finally {
+    releaseAgent(agentId);
   }
 }

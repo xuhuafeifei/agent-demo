@@ -279,6 +279,66 @@ npm run watch
 }
 ```
 
+### GET /api/status
+获取 Agent 运行状态
+
+响应：
+```json
+{
+  "success": true,
+  "runtime": {
+    "isRunning": false,
+    "runningAgentId": null,
+    "startedAt": null
+  }
+}
+```
+
+## QQ Layer 配置（迁移自 openclaw-qqbot 风格）
+
+`qq-layer` 支持从 `~/.fgbg/fgbg.json` 读取 `channels.qqbot`，并兼容环境变量兜底。
+
+示例（单账号）：
+
+```json
+{
+  "channels": {
+    "qqbot": {
+      "enabled": true,
+      "appId": "111111111",
+      "clientSecret": "your-secret"
+    }
+  }
+}
+```
+
+示例（多账号）：
+
+```json
+{
+  "channels": {
+    "qqbot": {
+      "enabled": true,
+      "appId": "111111111",
+      "clientSecret": "secret-default",
+      "accounts": {
+        "bot2": {
+          "enabled": true,
+          "appId": "222222222",
+          "clientSecret": "secret-bot2"
+        }
+      }
+    }
+  }
+}
+```
+
+账号选择规则：
+
+- 默认读取 `default` 账号（顶层 `appId/clientSecret`）
+- 可通过 `QQBOT_ACCOUNT_ID=bot2` 指定命名账号
+- 若配置文件无可用账号，回退到环境变量：`QQBOT_APP_ID` + `QQBOT_SECRET`
+
 ## 项目结构
 
 ```

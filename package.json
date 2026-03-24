@@ -26,13 +26,15 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "node-llama-cpp": "^3.17.1",
-    "sqlite-vec": "^0.1.7-alpha.2"
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.6",
     "@types/node": "^25.2.0",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
   }
 }

@@ -110,8 +110,9 @@ export async function runEmbeddedPiAgent(params: {
   session: AgentSession;
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
-}): Promise<void> {
+}): Promise<{ finalText: string }> {
   const { session, message, onEvent } = params;
+  let latestAssistantText = "";
 
   const wrappedOnEvent = (event: RuntimeStreamEvent) => {
     attemptLogger.info(`event.type=${event.type}`);
@@ -140,6 +141,7 @@ export async function runEmbeddedPiAgent(params: {
         : undefined;
 
     const fullText = extractAssistantText(assistantEvent.partial?.content);
+    if (fullText) latestAssistantText = fullText;
 
     wrappedOnEvent({
       type: "message_update",
@@ -192,10 +194,12 @@ export async function runEmbeddedPiAgent(params: {
       case "message_end": {
         if (!isAssistantMessageEvent(event)) break;
         const messageData = event.message as { content?: unknown[] };
+        const finalText = extractAssistantText(messageData.content);
+        if (finalText) latestAssistantText = finalText;
         wrappedOnEvent({
           type: "message_end",
           message: event.message,
-          text: extractAssistantText(messageData.content),
+          text: finalText,
         });
         break;
       }
@@ -232,6 +236,7 @@ export async function runEmbeddedPiAgent(params: {
 
   try {
     await session.prompt(message);
+    return { finalText: latestAssistantText };
   } finally {
     unsubscribe();
   }

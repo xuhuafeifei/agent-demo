@@ -12,6 +12,7 @@ import {
   getSubsystemConsoleLogger,
 } from "./logger/logger.js";
 import { startWatchDog } from "./watch-dog/watch-dog.js";
+import { startQQLayer } from "./middleware/qq-layer.js";
 
 // 加载环境变量
 dotenv.config();
@@ -82,6 +83,12 @@ async function bootstrap() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     serverLogger.error("[watch-dog] failed to start: %s", message);
+  }
+  try {
+    await startQQLayer();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    serverLogger.error("[qq-layer] failed to start: %s", message);
   }
   startServer(PORT);
 }

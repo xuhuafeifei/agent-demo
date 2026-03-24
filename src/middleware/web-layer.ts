@@ -2,7 +2,8 @@ import { type Response, Router } from "express";
 import {
   clearHistory,
   getHistory,
-  getReplyFromAgent,
+  getAgentRuntimeState,
+  runWithSingleFlight,
   ModelUnavailableError,
 } from "../agent/run.js";
 import type { RuntimeStreamEvent } from "../agent/utils/events.js";
@@ -32,10 +33,16 @@ export function createWebLayer() {
     res.setHeader("Access-Control-Allow-Origin", "*");
 
     try {
-      await getReplyFromAgent({
+      await runWithSingleFlight({
         message,
         onEvent: (event: RuntimeStreamEvent) => {
           writeSse(res, event);
+        },
+        onBusy: () => {
+          writeSse(res, { type: "error", error: "指令正在运行中，请稍后" });
+        },
+        onAccepted: () => {
+          writeSse(res, { type: "message_update", message: null, text: "收到，正在处理指令" });
         },
       });
     } catch (error) {
@@ -85,6 +92,15 @@ export function createWebLayer() {
         error: runtimeError.message,
       });
     }
+  });
+
+  // API 路由：获取 Agent 运行状态
+  router.get("/status", (_req, res) => {
+    const runtimeState = getAgentRuntimeState();
+    res.json({
+      success: true,
+      runtime: runtimeState,
+    });
   });
 
   return router;
