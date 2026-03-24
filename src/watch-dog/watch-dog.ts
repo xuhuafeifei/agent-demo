@@ -13,7 +13,6 @@ import {
 import { HANDLERS, type HandlerResult, type TaskHandler } from "./handlers.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import type { TaskPayload } from "./types.js";
-import { getEventBus } from "../event-bus/index.js";
 import { addSecondsChinaIso, nowChinaIso } from "./time.js";
 
 const logger = getSubsystemConsoleLogger("watch-dog");
@@ -22,7 +21,9 @@ export const watchDogLogger = logger;
 let ticking = false;
 let timer: NodeJS.Timeout | null = null;
 
-function shouldAdvanceNextRun(triggerBy?: "heartbeat" | "functionTool"): boolean {
+function shouldAdvanceNextRun(
+  triggerBy?: "heartbeat" | "functionTool",
+): boolean {
   return triggerBy !== "functionTool";
 }
 
@@ -135,7 +136,10 @@ async function runSingleTask(
  * @param tasks - 待处理任务列表
  * @param concurrency - 最大并发数
  */
-async function processTasks(tasks: TaskScheduleRow[], concurrency: number): Promise<void> {
+async function processTasks(
+  tasks: TaskScheduleRow[],
+  concurrency: number,
+): Promise<void> {
   if (tasks.length === 0) return;
   const runQueue: Promise<void>[] = [];
   let index = 0;
