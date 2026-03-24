@@ -10,8 +10,6 @@ import type { RuntimeModel } from "../types.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { ensureAgentWorkspace } from "./workspace.js";
 
-const DEFAULT_SESSION_KEY = "agent:main:main";
-
 function getContextTokens(model?: RuntimeModel): number | undefined {
   if (!model) return undefined;
   const maybeContext = (model as { contextWindow?: number }).contextWindow;
@@ -25,8 +23,8 @@ function getContextTokens(model?: RuntimeModel): number | undefined {
  * 在处理「获取回复」请求前做统一准备：选模型、建目录、刷新模型与鉴权、初始化会话状态并可选创建 Agent 会话。
  * 若当前无可用 runtime 模型则只返回 modelRef/session 信息；否则创建 session 并返回，供后续 prompt 使用。
  */
-export async function prepareBeforeGetReply(params?: {
-  sessionKey?: string;
+export async function prepareBeforeGetReply(params: {
+  sessionKey: string;
 }): Promise<{
   cwd: string;
   agentDir: string;
@@ -42,7 +40,7 @@ export async function prepareBeforeGetReply(params?: {
   apiKey?: string;
   thinkingLevel: ThinkingLevel;
 }> {
-  const sessionKey = params?.sessionKey ?? DEFAULT_SESSION_KEY;
+  const sessionKey = params.sessionKey;
   const selected = await selectModelForRuntime();
   const modelRef = selected.modelRef;
   const model = selected.model;

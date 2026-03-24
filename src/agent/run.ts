@@ -28,7 +28,8 @@ import {
   tryAcquireAgent,
   releaseAgent,
 } from "./agent-state.js";
-import { channel } from "node:diagnostics_channel";
+
+const DEFAULT_SESSION_KEY = "agent:main:main";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 
@@ -105,16 +106,24 @@ function pruneSessionChat(messages: SessionMessage[]): string {
   return lines.join("\n\n");
 }
 
+/**
+ * message: 用户输入信息
+ * onEvent: layer中间层回调
+ * channel: 通信渠道, 目前支持 web 和 qq
+ * sessionKey: 如果上游不传，默认"agent:main:main". 在当前设计下，所有通过 layer层传递的信息
+ * 都是默认sessionKey. 如果是通过watch-dog触发，则需要新建 sessionKey，避免并发问题.
+ */
 export async function getReplyFromAgent(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
   channel: "web" | "qq";
+  sessionKey?: string;
 }): Promise<{ finalText: string }> {
-  const { message, onEvent, channel } = params;
+  const { message, onEvent, channel, sessionKey } = params;
 
   // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
   const prepared = await prepareBeforeGetReply({
-    sessionKey: "agent:main:main",
+    sessionKey: sessionKey ?? DEFAULT_SESSION_KEY,
   });
   const modelRef = prepared.modelRef;
   const model = prepared.model;
@@ -178,7 +187,7 @@ export async function getReplyFromAgent(params: {
     chatHistory: chatHistoryText,
     workspace: resolveWorkspaceDir(),
     toolings: getAgentToolings(prepared.cwd),
-    channel: channel
+    channel: channel,
   });
   agentLogger.trace(`prompt: ${prompt}`);
 
