@@ -18,8 +18,8 @@ import { startQQLayer } from "./middleware/qq/qq-layer.js";
 dotenv.config();
 
 const app = express();
-// 固定监听 localhost；未设置 PORT 时默认 6727，被占用则改用随机端口
-const HOST = "localhost";
+// 默认监听所有 IPv4 网卡；可用 HOST 覆盖（如 127.0.0.1 / 0.0.0.0 / ::）
+const HOST = process.env.HOST?.trim() || "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 6727;
 
 // 静态文件目录：编译后 __dirname 为 dist/，页面在 src/public
@@ -61,7 +61,7 @@ function startServer(port: number) {
         : port;
 
     serverLogger.info(
-      `服务器正在运行在 http://localhost:${actualPort}（进程 PID: ${process.pid}）`,
+      `服务器正在运行在 http://${HOST}:${actualPort}（进程 PID: ${process.pid}）`,
     );
   });
 
