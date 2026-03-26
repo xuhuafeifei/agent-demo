@@ -22,6 +22,38 @@ import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
 const memoryLogger = getSubsystemConsoleLogger("memory");
 
+async function measureAsync<T>(params: {
+  label: string;
+  meta: Record<string, unknown>;
+  fn: () => Promise<T>;
+}): Promise<{ value: T; ms: number }> {
+  const started = Date.now();
+  try {
+    const value = await params.fn();
+    return { value, ms: Date.now() - started };
+  } finally {
+    memoryLogger.debug(
+      `[memory] timing label=${params.label} costMs=${Date.now() - started} meta=${JSON.stringify(params.meta)}`,
+    );
+  }
+}
+
+function measureSync<T>(params: {
+  label: string;
+  meta: Record<string, unknown>;
+  fn: () => T;
+}): { value: T; ms: number } {
+  const started = Date.now();
+  try {
+    const value = params.fn();
+    return { value, ms: Date.now() - started };
+  } finally {
+    memoryLogger.debug(
+      `[memory] timing label=${params.label} costMs=${Date.now() - started} meta=${JSON.stringify(params.meta)}`,
+    );
+  }
+}
+
 /**
  * 根据路径推断来源类型，用于缺省 source 的场景。
  * 与 memory.ts 映射一致：workspace 的 MEMORY.md → memory；用户 memory 目录 → MEMORY.md。
@@ -50,14 +82,28 @@ export async function syncMemoryByPath(params: {
   const started = Date.now();
   const filePath = path.resolve(params.path);
   const source = params.source ?? detectSourceByPath(filePath);
+  const metaBase = { path: filePath, source };
 
-  const exists = fs.existsSync(filePath);
-  const existingHash = await getFileHash(filePath);
+  const { value: exists } = measureSync({
+    label: "exists",
+    meta: metaBase,
+    fn: () => fs.existsSync(filePath),
+  });
+
+  const { value: existingHash } = await measureAsync({
+    label: "get_hash",
+    meta: metaBase,
+    fn: () => getFileHash(filePath),
+  });
 
   // 文件已删除：有历史索引则 delete 清理，否则 skip
   if (!exists) {
     if (existingHash) {
-      await deleteByPath(filePath);
+      await measureAsync({
+        label: "delete_index",
+        meta: metaBase,
+        fn: () => deleteByPath(filePath),
+      });
       return {
         path: filePath,
         action: "delete",
@@ -73,7 +119,11 @@ export async function syncMemoryByPath(params: {
     };
   }
 
-  const content = fs.readFileSync(filePath, "utf8");
+  const { value: content } = measureSync({
+    label: "read_file",
+    meta: metaBase,
+    fn: () => fs.readFileSync(filePath, "utf8"),
+  });
   const nextHash = sha256(content);
 
   // hash 未变则 skip，避免重复切块和 embedding
@@ -87,24 +137,51 @@ export async function syncMemoryByPath(params: {
   }
 
   // 内容有变化：session 先清洗（只保留 role+对话正文），再切块 -> embedding
-  const textToChunk =
-    source === "sessions" ? extractSessionDialogueText(content) : content;
-  const chunkMaxChars = getMemorySearchConfig(
-    getUserFgbgConfig(),
-  ).chunkMaxChars;
-  const chunks = chunkTextWithLines(textToChunk, chunkMaxChars);
-  const embeddings = await batchEmbeddingText(chunks.map((c) => c.content));
-  const count = await replacePathChunks({
-    path: filePath,
-    source,
-    fileHash: nextHash,
-    chunks,
-    embeddings,
+  const { value: textToChunk } = measureSync({
+    label: "normalize",
+    meta: metaBase,
+    fn: () =>
+      source === "sessions" ? extractSessionDialogueText(content) : content,
   });
 
+  const { value: chunkMaxChars } = measureSync({
+    label: "load_cfg",
+    meta: metaBase,
+    fn: () => getMemorySearchConfig(getUserFgbgConfig()).chunkMaxChars,
+  });
+
+  const { value: chunks } = measureSync({
+    label: "chunk",
+    meta: metaBase,
+    fn: () => chunkTextWithLines(textToChunk, chunkMaxChars),
+  });
+
+  const { value: embeddings } = await measureAsync({
+    label: "embed",
+    meta: { ...metaBase, chunks: chunks.length },
+    fn: () => batchEmbeddingText(chunks.map((c) => c.content)),
+  });
+
+  const { value: count } = await measureAsync({
+    label: "write_db",
+    meta: { ...metaBase, chunks: chunks.length },
+    fn: () =>
+      replacePathChunks({
+        path: filePath,
+        source,
+        fileHash: nextHash,
+        chunks,
+        embeddings,
+      }),
+  });
+
+  const action: SyncResult["action"] = existingHash ? "rebuild" : "create";
+  memoryLogger.debug(
+    `[memory] syncMemoryByPath done action=${action} totalMs=${Date.now() - started} source=${source} path=${filePath} chunks=${count}`,
+  );
   return {
     path: filePath,
-    action: existingHash ? "rebuild" : "create",
+    action,
     chunkCount: count,
     costMs: Date.now() - started,
   };
