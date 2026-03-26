@@ -22,9 +22,11 @@ import {
 import {
   getEventBus,
   TOPIC_TOOL_BEFORE_BUILD,
-  TOPPIC_HEART_BEAT,
+  TOPPIC_HEART_BEAT
 } from "../../event-bus/index.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
+const logger = getSubsystemConsoleLogger("tool-register");
 const eventBus = getEventBus();
 
 const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
