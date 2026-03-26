@@ -115,7 +115,7 @@ export async function runEmbeddedPiAgent(params: {
   let latestAssistantText = "";
 
   const wrappedOnEvent = (event: RuntimeStreamEvent) => {
-    attemptLogger.info(`event.type=${event.type}`);
+    attemptLogger.debug(`event.type=${event.type}`);
     onEvent(event);
   };
 
