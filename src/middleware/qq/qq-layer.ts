@@ -1,65 +1,17 @@
 import WebSocket, { type RawData } from "ws";
-import { getSubsystemConsoleLogger } from "../logger/logger.js";
-import { runWithSingleFlight } from "../agent/run.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import { runWithSingleFlight } from "../../agent/run.js";
 import { resolveQQAccountFromConfig } from "./qq-config.js";
-import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../event-bus/index.js";
-import { getUserFgbgConfig, writeFgbgUserConfig } from "../utils/app-path.js";
-import { createQQSendTool } from "../agent/tool/qq-send.js";
+import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
+import { getUserFgbgConfig, writeFgbgUserConfig } from "../../utils/app-path.js";
+import { createQQSendTool } from "../../agent/tool/qq-send.js";
+import { getAccessToken, getGatewayUrl, sendC2CMessage } from "./qq-api.js";
+import { parseC2CEvent, type QQWSPayload } from "./qq-utils.js";
 
 // 获取 QQ 层专用的日志记录器
 const qqLogger = getSubsystemConsoleLogger("qq-layer");
 const eventBus = getEventBus();
 
-// QQ 机器人 API 相关的常量
-const TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"; // 获取访问令牌的接口地址
-const API_BASE = "https://api.sgroup.qq.com"; // QQ 机器人 API 的基础地址
-
-/**
- * QQ 访问令牌响应类型
- * @property access_token - 访问令牌
- * @property expires_in - 令牌过期时间（秒）
- */
-type QQTokenResponse = { access_token?: string; expires_in?: number };
-
-/**
- * QQ 网关响应类型
- * @property url - 网关连接地址
- */
-type QQGatewayResponse = { url: string };
-
-/**
- * QQ WebSocket 消息负载类型
- * @property op - 操作码，用于区分消息类型
- * @property d - 消息数据
- * @property s - 消息序列号
- * @property t - 事件类型
- */
-type QQWSPayload = {
-  op: number;
-  d?: unknown;
-  s?: number;
-  t?: string;
-};
-
-/**
- * QQ 私聊事件类型
- * @property id - 消息 ID
- * @property timestamp - 消息时间戳
- * @property content - 消息内容
- * @property author - 消息发送者信息
- * @property author.user_openid - 发送者的 openid
- */
-type QQC2CEvent = {
-  id: string;
-  timestamp: string;
-  content: string;
-  author: {
-    user_openid: string;
-  };
-};
-
-// 访问令牌缓存
-let tokenCache: { token: string; expiresAt: number } | null = null;
 let qqReady = false;
 let activeAccessToken = "";
 let lastSeenUserOpenid = "";
@@ -126,97 +78,11 @@ async function ensureQQGatewayReady(timeoutMs: number = 7000): Promise<boolean> 
 }
 
 /**
- * 生成随机消息序列号
- * @returns 0-65535 之间的随机整数
+ * qq-gateway准备好后，发送单向消息到目标用户
+ * @param openid 目标 openid
+ * @param content 消息内容
+ * @returns 是否发送成功
  */
-function nextMsgSeq(): number {
-  return Math.floor(Math.random() * 65535);
-}
-
-/**
- * 获取 QQ 机器人访问令牌
- * @param appId - 应用 ID
- * @param secret - 应用密钥
- * @returns 访问令牌字符串
- * @description 该函数会缓存令牌，避免频繁请求，在令牌过期前 60 秒会自动刷新
- */
-async function getAccessToken(appId: string, secret: string): Promise<string> {
-  // 检查缓存的令牌是否有效（过期前 60 秒内刷新）
-  if (tokenCache && Date.now() < tokenCache.expiresAt - 60_000) {
-    return tokenCache.token;
-  }
-
-  // 发起请求获取新的访问令牌
-  const response = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ appId, clientSecret: secret }),
-  });
-  const data = (await response.json()) as QQTokenResponse;
-
-  // 检查响应是否成功
-  if (!response.ok || !data.access_token) {
-    throw new Error(`获取 QQ access_token 失败: ${JSON.stringify(data)}`);
-  }
-
-  // 计算令牌过期时间并更新缓存
-  const expiresIn = Number(data.expires_in ?? 7200);
-  tokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + expiresIn * 1000,
-  };
-
-  return data.access_token;
-}
-
-/**
- * 获取 QQ 网关连接地址
- * @param accessToken - 访问令牌
- * @returns 网关连接地址
- */
-async function getGatewayUrl(accessToken: string): Promise<string> {
-  const response = await fetch(`${API_BASE}/gateway`, {
-    headers: { Authorization: `QQBot ${accessToken}` },
-  });
-  const data = (await response.json()) as QQGatewayResponse;
-
-  if (!response.ok || !data.url) {
-    throw new Error(`获取 QQ gateway 失败: ${JSON.stringify(data)}`);
-  }
-
-  return data.url;
-}
-
-/**
- * 发送私聊消息
- * @param params - 发送消息的参数
- * @param params.accessToken - 访问令牌
- * @param params.openid - 接收方的 openid
- * @param params.content - 消息内容
- * @param params.replyToMessageId - 回复的消息 ID（可选）
- */
-async function sendC2CMessage(params: {
-  accessToken: string;
-  openid: string;
-  content: string;
-  replyToMessageId?: string;
-}): Promise<void> {
-  const { accessToken, openid, content, replyToMessageId } = params;
-  await fetch(`${API_BASE}/v2/users/${openid}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `QQBot ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      content,
-      msg_type: 0, // 0 表示文本消息
-      msg_seq: nextMsgSeq(), // 消息序列号
-      ...(replyToMessageId ? { msg_id: replyToMessageId } : {}), // 回复消息时添加引用 ID
-    }),
-  });
-}
-
 export async function sendQQDirectMessage(
   openid: string,
   content: string,
@@ -238,24 +104,6 @@ export async function sendQQDirectMessage(
   } catch {
     return false;
   }
-}
-
-/**
- * 解析 QQ 私聊事件
- * @param payload - WebSocket 消息负载
- * @returns 解析后的私聊事件，失败返回 null
- */
-function parseC2CEvent(payload: QQWSPayload): QQC2CEvent | null {
-  // 检查是否是私聊消息事件
-  if (payload.op !== 0 || payload.t !== "C2C_MESSAGE_CREATE") return null;
-
-  const data = payload.d as QQC2CEvent | undefined;
-
-  // 验证事件数据的完整性
-  if (!data?.author?.user_openid || typeof data.content !== "string")
-    return null;
-
-  return data;
 }
 
 /**
@@ -344,6 +192,7 @@ export async function startQQLayer(): Promise<void> {
 
         const userOpenId = c2cEvent.author.user_openid;
         lastSeenUserOpenid = userOpenId;
+        // 持久化目标 openid
         persistTargetOpenidIfMissing(userOpenId);
         const inboundMessageId = c2cEvent.id;
         const inboundText = c2cEvent.content.trim();
@@ -351,6 +200,7 @@ export async function startQQLayer(): Promise<void> {
 
         // 处理接收到的消息
         const currentToken = await getAccessToken(appId, secret);
+        // 核心请求
         await runWithSingleFlight({
           message: inboundText,
           channel: "qq",

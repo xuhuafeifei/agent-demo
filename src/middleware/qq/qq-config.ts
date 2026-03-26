@@ -1,4 +1,4 @@
-import { getUserFgbgConfig } from "../utils/app-path.js";
+import { getUserFgbgConfig } from "../../utils/app-path.js";
 
 export type ResolvedQQAccount = {
   accountId: string;

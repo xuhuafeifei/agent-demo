@@ -5,9 +5,9 @@ import {
   getAgentRuntimeState,
   runWithSingleFlight,
   ModelUnavailableError,
-} from "../agent/run.js";
-import type { RuntimeStreamEvent } from "../agent/utils/events.js";
-import { getSubsystemConsoleLogger } from "../logger/logger.js";
+} from "../../agent/run.js";
+import type { RuntimeStreamEvent } from "../../agent/utils/events.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 

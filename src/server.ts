@@ -4,7 +4,7 @@ import path from "node:path";
 import cors from "cors";
 import dotenv from "dotenv";
 import { logRuntimePaths } from "./agent/run.js";
-import { createWebLayer } from "./middleware/web-layer.js";
+import { createWebLayer } from "./middleware/web/web-layer.js";
 import { fileURLToPath } from "node:url";
 import { getMemoryIndexManager } from "./memory/index.js";
 import {
@@ -12,7 +12,7 @@ import {
   getSubsystemConsoleLogger,
 } from "./logger/logger.js";
 import { startWatchDog } from "./watch-dog/watch-dog.js";
-import { startQQLayer } from "./middleware/qq-layer.js";
+import { startQQLayer } from "./middleware/qq/qq-layer.js";
 
 // 加载环境变量
 dotenv.config();

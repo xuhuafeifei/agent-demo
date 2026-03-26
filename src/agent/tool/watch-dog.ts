@@ -9,7 +9,7 @@ import {
 import { runTaskByNameNow } from "../../watch-dog/watch-dog.js";
 import { upsertTaskSchedule } from "../../watch-dog/store.js";
 import { errResult, okResult, type ToolDetails } from "./types.js";
-import { getLastSeenQQOpenid } from "../../middleware/qq-layer.js";
+import { getLastSeenQQOpenid } from "../../middleware/qq/qq-layer.js";
 import { formatChinaIso } from "../../watch-dog/time.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");

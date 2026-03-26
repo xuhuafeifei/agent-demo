@@ -13,7 +13,7 @@ import type {
 } from "./types.js";
 import { watchDogLogger } from "./watch-dog.js";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../event-bus/index.js";
-import { sendQQDirectMessage } from "../middleware/qq-layer.js";
+import { sendQQDirectMessage } from "../middleware/qq/qq-layer.js";
 import { formatChinaIso, nowChinaIso } from "./time.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
