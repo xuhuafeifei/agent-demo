@@ -152,10 +152,16 @@ export async function syncAllMemorySources(
   const userMemoryFiles = listMarkdownFiles(resolveUserMemoryDir());
   const sessionFiles = sessionDir ? listJsonlFiles(sessionDir) : [];
 
+  memoryLogger.debug("syncAllMemorySources: workspaceMemory", { workspaceMemory });
+  memoryLogger.debug("syncAllMemorySources: userMemoryFiles", { userMemoryFiles });
+  memoryLogger.debug("syncAllMemorySources: sessionFiles", { sessionFiles });
+
   const candidates = new Map<string, MemorySource>();
   candidates.set(path.resolve(workspaceMemory), "memory"); // 工作区 MEMORY.md 路径 → memory
   for (const p of userMemoryFiles) candidates.set(path.resolve(p), "MEMORY.md"); // 用户 memory 目录 → MEMORY.md
   for (const p of sessionFiles) candidates.set(path.resolve(p), "sessions");
+
+  memoryLogger.debug("syncAllMemorySources: candidates", { candidates });
 
   // 历史已跟踪但本轮未扫描到的路径也加入候选，以便 sync 时执行 delete
   for (const tracked of await listTrackedPaths()) {
