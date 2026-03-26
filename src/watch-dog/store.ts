@@ -6,18 +6,22 @@ import { nowChinaIso } from "./time.js";
 export type TaskStatus = "pending" | "running" | "done" | "failed" | "timeout";
 export type TaskDetailStatus = "success" | "failed" | "timeout";
 
+export type TaskScheduleKind = "once" | "cron";
+
 export type TaskScheduleRow = {
   id: number;
   task_name: string;
   task_type: string;
   payload_text: string | null;
+  schedule_kind: TaskScheduleKind;
+  schedule_expr: string;
+  timezone: string;
   status: TaskStatus;
   attempts: number;
   last_error: string | null;
   create_time: string;
   update_time: string;
   next_run_time: string;
-  interval_seconds: number;
   started_at: string | null;
   finished_at: string | null;
 };
@@ -38,9 +42,11 @@ export type NewTaskInput = {
   task_name: string;
   task_type: string;
   payload_text?: string | null;
+  schedule_kind: TaskScheduleKind;
+  schedule_expr: string;
+  timezone?: string;
   status?: TaskStatus;
   next_run_time?: string;
-  interval_seconds?: number;
 };
 
 type SqliteModule = typeof import("node:sqlite");
@@ -92,13 +98,15 @@ function ensureSchema(database: sqlite.DatabaseSync): void {
       task_name TEXT NOT NULL UNIQUE,
       task_type TEXT NOT NULL,
       payload_text TEXT,
+      schedule_kind TEXT NOT NULL,
+      schedule_expr TEXT NOT NULL,
+      timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
       status TEXT NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,
       last_error TEXT,
       create_time TEXT NOT NULL,
       update_time TEXT NOT NULL,
       next_run_time TEXT NOT NULL,
-      interval_seconds INTEGER NOT NULL DEFAULT 0,
       started_at TEXT,
       finished_at TEXT
     );
@@ -133,41 +141,42 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
   const database = await getDb();
   const now = nowChinaIso();
   const nextRun = input.next_run_time ?? now;
+  const timezone = input.timezone?.trim() || "Asia/Shanghai";
   const status: TaskStatus = input.status ?? "pending";
-  const interval =
-    typeof input.interval_seconds === "number" && Number.isFinite(input.interval_seconds)
-      ? Math.max(0, Math.floor(input.interval_seconds))
-      : 0;
 
   const stmt = database.prepare(
     `INSERT INTO task_schedule
-      (task_name, task_type, payload_text, status, attempts, last_error, create_time, update_time, next_run_time, interval_seconds)
-     VALUES (?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)
+      (task_name, task_type, payload_text, schedule_kind, schedule_expr, timezone, status, attempts, last_error, create_time, update_time, next_run_time)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
      ON CONFLICT(task_name) DO UPDATE SET
         task_type=excluded.task_type,
         payload_text=excluded.payload_text,
+        schedule_kind=excluded.schedule_kind,
+        schedule_expr=excluded.schedule_expr,
+        timezone=excluded.timezone,
         status=excluded.status,
         update_time=excluded.update_time,
-        next_run_time=excluded.next_run_time,
-        interval_seconds=excluded.interval_seconds`,
+        next_run_time=excluded.next_run_time`,
   );
   stmt.run(
     input.task_name,
     input.task_type,
     input.payload_text ?? null,
+    input.schedule_kind,
+    input.schedule_expr,
+    timezone,
     status,
     now,
     now,
     nextRun,
-    interval,
   );
   storeLogger.info(
-    "[watch-dog-store] upsert task_schedule name=%s type=%s status=%s next=%s interval=%ss",
+    "[watch-dog-store] upsert task_schedule name=%s type=%s kind=%s status=%s next=%s",
     input.task_name,
     input.task_type,
+    input.schedule_kind,
     status,
     nextRun,
-    interval,
   );
 }
 
@@ -186,7 +195,8 @@ export async function listDueTasks(
   const database = await getDb();
   const stmt = database.prepare(
     `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
-            create_time, update_time, next_run_time, interval_seconds, started_at, finished_at
+            schedule_kind, schedule_expr, timezone,
+            create_time, update_time, next_run_time, started_at, finished_at
      FROM task_schedule
      WHERE status = 'pending' AND next_run_time <= ?
      ORDER BY next_run_time ASC
@@ -202,7 +212,8 @@ export async function listAllTasks(): Promise<TaskScheduleRow[]> {
   const database = await getDb();
   const stmt = database.prepare(
     `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
-            create_time, update_time, next_run_time, interval_seconds, started_at, finished_at
+            schedule_kind, schedule_expr, timezone,
+            create_time, update_time, next_run_time, started_at, finished_at
      FROM task_schedule
      ORDER BY next_run_time ASC`,
   );
@@ -240,7 +251,8 @@ export async function getTaskByName(
   const database = await getDb();
   const stmt = database.prepare(
     `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
-            create_time, update_time, next_run_time, interval_seconds, started_at, finished_at
+            schedule_kind, schedule_expr, timezone,
+            create_time, update_time, next_run_time, started_at, finished_at
      FROM task_schedule
      WHERE task_name = ?`,
   );

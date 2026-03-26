@@ -11,6 +11,7 @@ import { upsertTaskSchedule } from "../../watch-dog/store.js";
 import { errResult, okResult, type ToolDetails } from "./types.js";
 import { getLastSeenQQOpenid } from "../../middleware/qq/qq-layer.js";
 import { formatChinaIso } from "../../watch-dog/time.js";
+import { computeNextRunFromCron } from "../../watch-dog/cron.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -25,7 +26,9 @@ type ListTasksOutput = {
       | "task_type"
       | "status"
       | "next_run_time"
-      | "interval_seconds"
+      | "schedule_kind"
+      | "schedule_expr"
+      | "timezone"
       | "attempts"
       | "last_error"
     >
@@ -49,28 +52,76 @@ const deleteTaskParams = Type.Object({
 });
 type DeleteTaskInput = Static<typeof deleteTaskParams>;
 
+const getNowParams = Type.Object({
+  timezone: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description: "Timezone. Defaults to Asia/Shanghai.",
+    }),
+  ),
+});
+type GetNowInput = Static<typeof getNowParams>;
+
+type GetNowOutput = {
+  now_iso: string;
+  now_ms: number;
+  timezone: string;
+};
+
+const shiftTimeParams = Type.Object({
+  time: Type.String({
+    minLength: 1,
+    description: "Time in HH:mm format.",
+  }),
+  offset_seconds: Type.Number({
+    description: "Seconds offset, can be negative.",
+  }),
+});
+type ShiftTimeInput = Static<typeof shiftTimeParams>;
+
+type ShiftTimeOutput = {
+  input_time: string;
+  offset_seconds: number;
+  result_time: string;
+};
+
+const validateCronParams = Type.Object({
+  cron: Type.String({
+    minLength: 1,
+    description:
+      "5-field cron (min hour dom mon dow). The system will prepend second=0.",
+  }),
+  timezone: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description: "Timezone. Defaults to Asia/Shanghai.",
+    }),
+  ),
+});
+type ValidateCronInput = Static<typeof validateCronParams>;
+
 const createReminderTaskParams = Type.Object({
   content: Type.String({
     minLength: 1,
     description:
       "Reminder content, for example: drink water, stand up and move, submit daily report.",
   }),
-  scheduleType: Type.Union([Type.Literal("daily_at"), Type.Literal("once")], {
+  scheduleType: Type.Union([Type.Literal("cron"), Type.Literal("once")], {
     description:
-      "Schedule type: daily_at = run at a fixed time every day, once = run only once.",
+      "Schedule type: cron = recurring based on cron expression, once = run only once.",
   }),
-  time: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description:
-        "Required when scheduleType=daily_at. Format: HH:mm (24-hour), e.g., 10:00.",
-    }),
-  ),
   runAt: Type.Optional(
     Type.String({
       minLength: 1,
       description:
         "Required when scheduleType=once. Execution time as a parseable datetime string.",
+    }),
+  ),
+  cron: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        "Required when scheduleType=cron. 5-field cron (min hour dom mon dow). The system will prepend second=0.",
     }),
   ),
   timezone: Type.Optional(
@@ -101,21 +152,22 @@ const createAgentTaskParams = Type.Object({
     description:
       "Goal of the agent task, for example: organize recent conversations or summarize industry updates.",
   }),
-  scheduleType: Type.Union([Type.Literal("daily_at"), Type.Literal("once")], {
+  scheduleType: Type.Union([Type.Literal("cron"), Type.Literal("once")], {
     description:
-      "Schedule type: daily_at = run at a fixed time every day, once = run only once.",
+      "Schedule type: cron = recurring based on cron expression, once = run only once.",
   }),
-  time: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Required when scheduleType=daily_at. Format: HH:mm.",
-    }),
-  ),
   runAt: Type.Optional(
     Type.String({
       minLength: 1,
       description:
         "Required when scheduleType=once. Execution time as a parseable datetime string.",
+    }),
+  ),
+  cron: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        "Required when scheduleType=cron. 5-field cron (min hour dom mon dow). The system will prepend second=0.",
     }),
   ),
   timezone: Type.Optional(
@@ -156,19 +208,6 @@ const createAgentTaskParams = Type.Object({
 });
 type CreateAgentTaskInput = Static<typeof createAgentTaskParams>;
 
-function isValidHHmm(value: string): boolean {
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
-}
-
-function toNextDailyRunIso(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map((v) => parseInt(v, 10));
-  const d = new Date();
-  d.setSeconds(0, 0);
-  d.setHours(h!, m!, 0, 0);
-  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-  return formatChinaIso(d);
-}
-
 function makeTaskName(prefix: string): string {
   return `${prefix}_${Date.now()}`;
 }
@@ -194,7 +233,9 @@ export function createListTasksTool(): ToolDefinition<
           task_type: row.task_type,
           status: row.status,
           next_run_time: row.next_run_time,
-          interval_seconds: row.interval_seconds,
+          schedule_kind: row.schedule_kind,
+          schedule_expr: row.schedule_expr,
+          timezone: row.timezone,
           attempts: row.attempts,
           last_error: row.last_error,
         }));
@@ -204,7 +245,7 @@ export function createListTasksTool(): ToolDefinition<
             : tasks
                 .map(
                   (t, idx) =>
-                    `[${idx + 1}] ${t.task_name} (${t.task_type}) status=${t.status} next=${t.next_run_time} interval=${t.interval_seconds}s attempts=${t.attempts}${t.last_error ? ` last_error=${t.last_error}` : ""}`,
+                    `[${idx + 1}] ${t.task_name} (${t.task_type}) kind=${t.schedule_kind} next=${t.next_run_time} tz=${t.timezone} attempts=${t.attempts}${t.last_error ? ` last_error=${t.last_error}` : ""}`,
                 )
                 .join("\n");
         return okResult(summary, { tasks });
@@ -304,6 +345,87 @@ export function createDeleteTaskTool(): ToolDefinition<
   };
 }
 
+export function createGetNowTool(): ToolDefinition<
+  typeof getNowParams,
+  ToolDetails<GetNowOutput>
+> {
+  return {
+    name: "getNow",
+    label: "Get Now",
+    description: "Get current time (ISO) and unix ms.",
+    parameters: getNowParams,
+    execute: async (_id, params: GetNowInput) => {
+      const timezone = params.timezone?.trim() || "Asia/Shanghai";
+      const nowMs = Date.now();
+      const nowIso = formatChinaIso(new Date(nowMs));
+      return okResult(nowIso, { now_iso: nowIso, now_ms: nowMs, timezone });
+    },
+  };
+}
+
+function isValidHHmm(value: string): boolean {
+  return /^([01]\\d|2[0-3]):([0-5]\\d)$/.test(value);
+}
+
+export function createShiftTimeTool(): ToolDefinition<
+  typeof shiftTimeParams,
+  ToolDetails<ShiftTimeOutput>
+> {
+  return {
+    name: "shiftTime",
+    label: "Shift Time",
+    description:
+      "Shift a HH:mm time by offset_seconds (wraps around 24h).",
+    parameters: shiftTimeParams,
+    execute: async (_id, params: ShiftTimeInput) => {
+      const time = params.time.trim();
+      if (!isValidHHmm(time)) {
+        return errResult("time 需要合法 HH:mm", {
+          code: "INVALID_ARGUMENT",
+          message: "invalid time",
+        });
+      }
+      const offsetSeconds = Math.trunc(params.offset_seconds);
+      if (!Number.isFinite(offsetSeconds)) {
+        return errResult("offset_seconds 需要是数字", {
+          code: "INVALID_ARGUMENT",
+          message: "invalid offset_seconds",
+        });
+      }
+      const [hh, mm] = time.split(":").map((v) => parseInt(v, 10));
+      const base = (hh! * 60 + mm!) * 60;
+      const day = 24 * 3600;
+      const shifted = ((base + offsetSeconds) % day + day) % day;
+      const outH = String(Math.floor(shifted / 3600)).padStart(2, "0");
+      const outM = String(Math.floor((shifted % 3600) / 60)).padStart(2, "0");
+      const resultTime = `${outH}:${outM}`;
+      return okResult(resultTime, {
+        input_time: time,
+        offset_seconds: offsetSeconds,
+        result_time: resultTime,
+      });
+    },
+  };
+}
+
+export function createValidateCronTool(): ToolDefinition<
+  typeof validateCronParams,
+  ToolDetails<{ ok: boolean }>
+> {
+  return {
+    name: "validateCron",
+    label: "Validate Cron",
+    description: "Validate cron expression (not implemented yet).",
+    parameters: validateCronParams,
+    execute: async () => {
+      return errResult("validateCron 暂未实现", {
+        code: "INTERNAL_ERROR",
+        message: "not implemented",
+      });
+    },
+  };
+}
+
 export function createReminderTaskTool(): ToolDefinition<
   typeof createReminderTaskParams,
   ToolDetails<{ task_name: string; task_type: string; next_run_time: string }>
@@ -323,19 +445,10 @@ export function createReminderTaskTool(): ToolDefinition<
       ) as Array<"qq" | "web">;
       const taskName = params.taskName?.trim() || makeTaskName("reminder");
       let nextRunTime: string;
-      let intervalSeconds: number;
+      let scheduleKind: "once" | "cron";
+      let scheduleExpr: string;
 
-      if (scheduleType === "daily_at") {
-        const hhmm = params.time?.trim() || "";
-        if (!isValidHHmm(hhmm)) {
-          return errResult("daily_at 需要合法 time（HH:mm）", {
-            code: "INVALID_ARGUMENT",
-            message: "invalid time",
-          });
-        }
-        nextRunTime = toNextDailyRunIso(hhmm);
-        intervalSeconds = 86400;
-      } else {
+      if (scheduleType === "once") {
         const runAt = params.runAt?.trim() || "";
         const ts = Date.parse(runAt);
         if (!runAt || Number.isNaN(ts)) {
@@ -351,7 +464,27 @@ export function createReminderTaskTool(): ToolDefinition<
           });
         }
         nextRunTime = formatChinaIso(new Date(ts));
-        intervalSeconds = 0;
+        scheduleKind = "once";
+        scheduleExpr = nextRunTime;
+      } else {
+        const cron = params.cron?.trim() || "";
+        if (!cron) {
+          return errResult("cron 需要合法 cron 表达式（5 段）", {
+            code: "INVALID_ARGUMENT",
+            message: "invalid cron",
+          });
+        }
+        scheduleKind = "cron";
+        scheduleExpr = `0 ${cron.replace(/\s+/g, " ").trim()}`;
+        try {
+          nextRunTime = computeNextRunFromCron({ cron: scheduleExpr, timezone });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return errResult(`cron 表达式不合法: ${message}`, {
+            code: "INVALID_ARGUMENT",
+            message,
+          });
+        }
       }
 
       const qqOpenid = getLastSeenQQOpenid();
@@ -367,7 +500,9 @@ export function createReminderTaskTool(): ToolDefinition<
           task_name: taskName,
           task_type: "execute_reminder",
           payload_text: JSON.stringify(payload),
-          interval_seconds: intervalSeconds,
+          schedule_kind: scheduleKind,
+          schedule_expr: scheduleExpr,
+          timezone,
           next_run_time: nextRunTime,
           status: "pending",
         });
@@ -411,19 +546,10 @@ export function createAgentTaskTool(): ToolDefinition<
         params.title?.trim() ||
         makeTaskName("agent_task");
       let nextRunTime: string;
-      let intervalSeconds: number;
+      let scheduleKind: "once" | "cron";
+      let scheduleExpr: string;
 
-      if (scheduleType === "daily_at") {
-        const hhmm = params.time?.trim() || "";
-        if (!isValidHHmm(hhmm)) {
-          return errResult("daily_at 需要合法 time（HH:mm）", {
-            code: "INVALID_ARGUMENT",
-            message: "invalid time",
-          });
-        }
-        nextRunTime = toNextDailyRunIso(hhmm);
-        intervalSeconds = 86400;
-      } else {
+      if (scheduleType === "once") {
         const runAt = params.runAt?.trim() || "";
         const ts = Date.parse(runAt);
         if (!runAt || Number.isNaN(ts)) {
@@ -439,7 +565,27 @@ export function createAgentTaskTool(): ToolDefinition<
           });
         }
         nextRunTime = formatChinaIso(new Date(ts));
-        intervalSeconds = 0;
+        scheduleKind = "once";
+        scheduleExpr = nextRunTime;
+      } else {
+        const cron = params.cron?.trim() || "";
+        if (!cron) {
+          return errResult("cron 需要合法 cron 表达式（5 段）", {
+            code: "INVALID_ARGUMENT",
+            message: "invalid cron",
+          });
+        }
+        scheduleKind = "cron";
+        scheduleExpr = `0 ${cron.replace(/\s+/g, " ").trim()}`;
+        try {
+          nextRunTime = computeNextRunFromCron({ cron: scheduleExpr, timezone });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return errResult(`cron 表达式不合法: ${message}`, {
+            code: "INVALID_ARGUMENT",
+            message,
+          });
+        }
       }
 
       const qqOpenid = getLastSeenQQOpenid();
@@ -457,7 +603,9 @@ export function createAgentTaskTool(): ToolDefinition<
           task_name: taskName,
           task_type: "execute_agent",
           payload_text: JSON.stringify(payload),
-          interval_seconds: intervalSeconds,
+          schedule_kind: scheduleKind,
+          schedule_expr: scheduleExpr,
+          timezone,
           next_run_time: nextRunTime,
           status: "pending",
         });

@@ -13,7 +13,8 @@ import {
 import { HANDLERS, type HandlerResult, type TaskHandler } from "./handlers.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import type { TaskPayload } from "./types.js";
-import { addSecondsChinaIso, nowChinaIso } from "./time.js";
+import { nowChinaIso } from "./time.js";
+import { computeNextRunFromCron } from "./cron.js";
 
 const logger = getSubsystemConsoleLogger("watch-dog");
 export const watchDogLogger = logger;
@@ -39,16 +40,6 @@ function parsePayload(payloadText: string | null): TaskPayload {
   } catch {
     return {};
   }
-}
-
-/**
- * 在给定时间戳基础上增加指定秒数，返回 ISO 格式字符串
- * @param baseMs - 基准时间戳（毫秒）
- * @param seconds - 要增加的秒数
- * @returns 新时间的 ISO 字符串
- */
-function addSeconds(baseMs: number, seconds: number): string {
-  return addSecondsChinaIso(baseMs, seconds);
 }
 
 /**
@@ -91,16 +82,21 @@ async function runSingleTask(
   }
 
   const finishedAt = nowChinaIso();
-  const isRecurring = task.interval_seconds > 0;
+  const isCron = task.schedule_kind === "cron";
 
   let nextRun: string | undefined;
   let finalStatus: TaskStatus;
 
-  if (isRecurring) {
+  if (isCron) {
     // heartbeat 触发才推进节拍；functionTool 不改 next_run_time
-    nextRun = shouldAdvanceNextRun(opts?.triggerBy)
-      ? addSeconds(Date.now(), task.interval_seconds)
-      : task.next_run_time;
+    if (shouldAdvanceNextRun(opts?.triggerBy)) {
+      nextRun = computeNextRunFromCron({
+        cron: task.schedule_expr,
+        timezone: task.timezone,
+      });
+    } else {
+      nextRun = task.next_run_time;
+    }
     finalStatus = "pending";
   } else {
     if (result.status === "success") {
@@ -221,28 +217,6 @@ function scheduleNext(): void {
   }, delay);
 }
 
-/** 计算「下次 10:00」：若已过当天 10:00 则为次日 10:00，返回 ISO 字符串 */
-function getNextRunAt10(): string {
-  const d = new Date();
-  d.setHours(10, 0, 0, 0);
-  if (d.getTime() <= Date.now()) {
-    d.setDate(d.getDate() + 1);
-  }
-  return addSecondsChinaIso(d.getTime(), 0);
-}
-
-/** 计算「下一个整分钟」：如 10:30:23 → 10:31:00，返回 ISO 字符串 */
-function getNextFullMinute(): string {
-  const d = new Date();
-  d.setSeconds(0, 0);
-  if (d.getTime() <= Date.now()) {
-    d.setMinutes(d.getMinutes() + 1);
-  }
-  return addSecondsChinaIso(d.getTime(), 0);
-}
-
-const CLEANUP_LOGS_INTERVAL_SECONDS = 24 * 3600; // 24 小时
-
 /**
  * 确保系统任务存在
  * 创建 cleanup_logs 系统任务，用于定期清理旧日志
@@ -252,16 +226,28 @@ async function ensureSystemTasks(): Promise<void> {
     task_name: "cleanup_logs",
     task_type: "cleanup_logs",
     payload_text: null,
-    interval_seconds: CLEANUP_LOGS_INTERVAL_SECONDS,
-    next_run_time: getNextRunAt10(),
+    schedule_kind: "cron",
+    // daily at 10:00
+    schedule_expr: "0 0 10 * * *",
+    timezone: "Asia/Shanghai",
+    next_run_time: computeNextRunFromCron({
+      cron: "0 0 10 * * *",
+      timezone: "Asia/Shanghai",
+    }),
     status: "pending",
   });
   await upsertTaskSchedule({
     task_name: "one_minute_heartbeat",
     task_type: "one_minute_heartbeat",
     payload_text: null,
-    interval_seconds: 60,
-    next_run_time: getNextFullMinute(),
+    schedule_kind: "cron",
+    // every minute at second 0
+    schedule_expr: "0 */1 * * * *",
+    timezone: "Asia/Shanghai",
+    next_run_time: computeNextRunFromCron({
+      cron: "0 */1 * * * *",
+      timezone: "Asia/Shanghai",
+    }),
     status: "pending",
   });
 }

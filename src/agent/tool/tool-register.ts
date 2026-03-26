@@ -12,9 +12,12 @@ import { createUpdateTool } from "./update.js";
 import {
   createAgentTaskTool,
   createDeleteTaskTool,
+  createGetNowTool,
   createListTasksTool,
   createReminderTaskTool,
   createRunTaskTool,
+  createShiftTimeTool,
+  createValidateCronTool,
 } from "./watch-dog.js";
 import {
   getEventBus,
@@ -25,15 +28,17 @@ import {
 const eventBus = getEventBus();
 
 const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
-  tools: [],
+  // tools: 通用基础工具（偏“常用能力”）
+  tools: ["read", "write", "append", "update", "getNow", "shiftTime"],
+  // customTools: 业务工具（偏“让模型主动使用的能力”）
   customTools: [
     "memorySearch",
     "persistMemory",
     "loadSkill",
     "createReminderTask",
     "createAgentTask",
-    "deleteTaskByName",
   ],
+  // innerTools: 运维/调试工具（偏“人类/系统调试入口”）
   innerTools: ["listTaskSchedules", "runTaskByName", "deleteTaskByName"],
 };
 
@@ -94,12 +99,26 @@ const TOOL_REGISTRY: Record<
   createReminderTask: {
     factory: () => createReminderTaskTool(),
     description:
-      "createReminderTask(content, scheduleType, time?, runAt?, timezone?, channels?, taskName?) - create execute_reminder scheduled task",
+      "createReminderTask(content, scheduleType, runAt?, cron?, timezone?, channels?, taskName?) - create execute_reminder scheduled task",
   },
   createAgentTask: {
     factory: () => createAgentTaskTool(),
     description:
-      "createAgentTask(goal, scheduleType, time?, runAt?, timezone?, notify?, channels?, mode?, title?, taskName?) - create execute_agent scheduled task",
+      "createAgentTask(goal, scheduleType, runAt?, cron?, timezone?, notify?, channels?, mode?, title?, taskName?) - create execute_agent scheduled task",
+  },
+  getNow: {
+    factory: () => createGetNowTool(),
+    description: "getNow(timezone?) - get current time as ISO and unix ms",
+  },
+  shiftTime: {
+    factory: () => createShiftTimeTool(),
+    description:
+      "shiftTime(time, offset_seconds) - shift HH:mm by seconds (wraps around 24h)",
+  },
+  validateCron: {
+    factory: () => createValidateCronTool(),
+    description:
+      "validateCron(cron, timezone?) - validate cron expression (not implemented yet)",
   },
 };
 
