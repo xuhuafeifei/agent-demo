@@ -11,8 +11,90 @@ import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
+type UiEventType = "message" | "thinking" | "tool" | "context" | "status";
+
+type RuntimeUiEvent = RuntimeStreamEvent & {
+  uiEventType?: UiEventType;
+  uiPayload?: Record<string, unknown>;
+};
+
+function normalizeRuntimeEvent(event: RuntimeStreamEvent): RuntimeUiEvent {
+  switch (event.type) {
+    case "message_start":
+    case "message_update":
+    case "message_end":
+      return {
+        ...event,
+        uiEventType: "message",
+        uiPayload: { phase: event.type },
+      };
+    case "thinking_update":
+      return {
+        ...event,
+        uiEventType: "thinking",
+        uiPayload: {
+          thinking: event.thinking,
+          thinkingDelta: event.thinkingDelta,
+        },
+      };
+    case "tool_execution_start":
+      return {
+        ...event,
+        uiEventType: "tool",
+        uiPayload: {
+          phase: "start",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: event.args,
+        },
+      };
+    case "tool_execution_update":
+      return {
+        ...event,
+        uiEventType: "tool",
+        uiPayload: {
+          phase: "update",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: event.args,
+          partialResult: event.partialResult,
+        },
+      };
+    case "tool_execution_end":
+      return {
+        ...event,
+        uiEventType: "tool",
+        uiPayload: {
+          phase: "end",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          result: event.result,
+          isError: event.isError,
+        },
+      };
+    case "auto_retry_start":
+    case "auto_retry_end":
+    case "error":
+      return {
+        ...event,
+        uiEventType: "context",
+        uiPayload: { phase: event.type },
+      };
+    case "agent_end":
+    case "done":
+      return {
+        ...event,
+        uiEventType: "status",
+        uiPayload: { phase: event.type },
+      };
+    default:
+      return event;
+  }
+}
+
 function writeSse(res: Response, data: RuntimeStreamEvent): void {
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
+  const normalized = normalizeRuntimeEvent(data);
+  res.write(`data: ${JSON.stringify(normalized)}\n\n`);
 }
 
 export function createWebLayer() {

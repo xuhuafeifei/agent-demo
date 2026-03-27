@@ -7,47 +7,54 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app-layout">
-        <aside class="tool-sidebar">
-            <div class="tool-log-panel">
-                <div class="tool-log-header">
-                    <span>工具调用日志</span>
-                    <button class="btn btn-secondary" id="clear-tool-log-btn">清空</button>
-                </div>
-                <ul class="tool-log-list" id="tool-log-list"></ul>
-            </div>
-        </aside>
-        <div class="container">
-            <div class="header">
+    <div class="app-shell">
+        <header class="app-header">
+            <div>
                 <h1>Agent Demo</h1>
-                <p>使用 @mariozechner/pi-agent-core 的简单对话应用 - 支持流式输出</p>
+                <p>左侧对话与调试时间线，右侧任务调度面板（预留）</p>
             </div>
+            <button class="btn btn-secondary" id="clear-btn">清除历史</button>
+        </header>
 
-            <div class="retry-banner" id="retry-banner" role="status" aria-live="polite"></div>
+        <main class="main-layout">
+            <section class="chat-panel">
+                <div class="retry-banner" id="retry-banner" role="status" aria-live="polite"></div>
+                <div class="chat-container" id="chat-container"></div>
 
-            <div class="chat-container" id="chat-container">
-                <div class="message assistant">
-                    <div class="avatar">A</div>
-                    <div class="content">
-                        您好！我是您的 AI 助手。有什么我可以帮助您的吗？
+                <div class="input-container">
+                    <div class="input-wrapper">
+                        <textarea
+                            id="message-input"
+                            placeholder="输入您的消息..."
+                            rows="1"
+                        ></textarea>
+                        <button id="send-btn">➤</button>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <div class="input-container">
-                <div class="input-wrapper">
-                    <textarea
-                        id="message-input"
-                        placeholder="输入您的消息..."
-                        rows="1"
-                    ></textarea>
-                    <button id="send-btn">➤</button>
+            <aside class="scheduler-panel">
+                <div class="scheduler-header">
+                    <h2>任务调度</h2>
+                    <span class="scheduler-status">空壳模式</span>
                 </div>
-                <div class="controls">
-                    <button class="btn btn-secondary" id="clear-btn">清除历史</button>
+                <div class="scheduler-filter-row">
+                    <button class="btn btn-secondary scheduler-filter active" data-filter="all">全部</button>
+                    <button class="btn btn-secondary scheduler-filter" data-filter="pending">待执行</button>
+                    <button class="btn btn-secondary scheduler-filter" data-filter="running">执行中</button>
+                    <button class="btn btn-secondary scheduler-filter" data-filter="done">已完成</button>
                 </div>
-            </div>
-        </div>
+                <div class="scheduler-list" id="scheduler-list"></div>
+                <div class="scheduler-detail" id="scheduler-detail">
+                    <h3>任务详情</h3>
+                    <p>选择右侧任务项查看详情。</p>
+                </div>
+                <div class="scheduler-actions">
+                    <button class="btn btn-secondary" id="scheduler-refresh-btn">刷新</button>
+                    <button class="btn btn-secondary" id="scheduler-new-btn">新建任务</button>
+                </div>
+            </aside>
+        </main>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
