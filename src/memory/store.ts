@@ -184,9 +184,11 @@ async function reinitializeIndexesForEmbeddingDimension(
 /**
  * 读取 path 对应的文件 hash。
  */
-export async function getFileHash(path: string): Promise<string | null> {
+export async function queryFileHash(path: string): Promise<string | null> {
   const db = await openDb();
-  const row = db.prepare("SELECT file_hash FROM files WHERE path = ?").get(path);
+  const row = db
+    .prepare("SELECT file_hash FROM files WHERE path = ?")
+    .get(path);
   // 未索引过的路径返回 null，供 sync 判断 create/rebuild
   if (!row || typeof row.file_hash !== "string") return null;
   return row.file_hash;
@@ -257,7 +259,9 @@ export async function replacePathChunks(params: {
 
   return transactionCommit(db, () => {
     // 先删该 path 在 vec/fts 的旧记录，再删 chunks，再插入新 chunk
-    const oldRows = db.prepare("SELECT id FROM chunks WHERE path = ?").all(path);
+    const oldRows = db
+      .prepare("SELECT id FROM chunks WHERE path = ?")
+      .all(path);
     for (const row of oldRows) {
       const id = Number(row.id);
       db.prepare("DELETE FROM chunks_vec WHERE id = ?").run(BigInt(id));
@@ -274,7 +278,7 @@ export async function replacePathChunks(params: {
     );
     const insertFts = db.prepare(
       `INSERT INTO chunks_fts(source, chunk_content, path, line_start, line_end, id)
-       VALUES (?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
 
     let inserted = 0;

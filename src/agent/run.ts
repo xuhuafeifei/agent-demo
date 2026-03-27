@@ -235,17 +235,15 @@ export async function getReplyFromAgent(params: {
     onEvent(event);
   };
   const channelPolicy = getChannelPolicy(channel);
-  let webContextSeq = 0;
-  const emitWebContextSnapshot = (
+  const emitContextSnapshot = (
     reason: "before_prompt",
   ) => {
     if (!channelPolicy.emitContextSnapshot) return;
-    webContextSeq += 1;
-    emit({ type: "context_snapshot", seq: webContextSeq, reason, contextText: prompt });
+    emit({ type: "context_snapshot", seq: 0, reason, contextText: prompt });
   };
 
   try {
-    emitWebContextSnapshot("before_prompt");
+    emitContextSnapshot("before_prompt");
     const runResult = await runEmbeddedPiAgent({
       session,
       message,

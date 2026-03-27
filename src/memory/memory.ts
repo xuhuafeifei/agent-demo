@@ -18,6 +18,7 @@ import {
 import { resolveSessionDir } from "../agent/session/session-path.js";
 import { ensureAgentWorkspace } from "../agent/workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
+import { deprecate } from "node:util";
 
 const DEBOUNCE_MS = 1500;
 const memoryLogger = getSubsystemConsoleLogger("memory");
@@ -107,6 +108,7 @@ export class MemoryIndexManager {
   /**
    * 执行一次全源扫描同步。未启动时返回空汇总。
    */
+  // 没在使用
   async syncAll(): Promise<SyncSummary> {
     if (!this.started) {
       return {

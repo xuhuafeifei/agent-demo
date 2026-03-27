@@ -3,7 +3,7 @@ import path from "node:path";
 import { batchEmbeddingText } from "./embedding/embedding-provider.js";
 import {
   deleteByPath,
-  getFileHash,
+  queryFileHash,
   listTrackedPaths,
   replacePathChunks,
 } from "./store.js";
@@ -61,8 +61,10 @@ function measureSync<T>(params: {
 function detectSourceByPath(filePath: string): MemorySource {
   const normalized = path.resolve(filePath);
   if (filePath.endsWith(".jsonl")) return "sessions";
-  if (normalized === path.resolve(resolveWorkspaceMemoryPath())) return "memory";
-  if (normalized.startsWith(path.resolve(resolveUserMemoryDir()) + path.sep)) return "MEMORY.md";
+  if (normalized === path.resolve(resolveWorkspaceMemoryPath()))
+    return "memory";
+  if (normalized.startsWith(path.resolve(resolveUserMemoryDir()) + path.sep))
+    return "MEMORY.md";
   return "memory";
 }
 
@@ -85,15 +87,15 @@ export async function syncMemoryByPath(params: {
   const metaBase = { path: filePath, source };
 
   const { value: exists } = measureSync({
-    label: "exists",
+    label: "check_exists",
     meta: metaBase,
     fn: () => fs.existsSync(filePath),
   });
 
   const { value: existingHash } = await measureAsync({
-    label: "get_hash",
+    label: "query_file_hash",
     meta: metaBase,
-    fn: () => getFileHash(filePath),
+    fn: () => queryFileHash(filePath),
   });
 
   // 文件已删除：有历史索引则 delete 清理，否则 skip
@@ -229,8 +231,12 @@ export async function syncAllMemorySources(
   const userMemoryFiles = listMarkdownFiles(resolveUserMemoryDir());
   const sessionFiles = sessionDir ? listJsonlFiles(sessionDir) : [];
 
-  memoryLogger.debug("syncAllMemorySources: workspaceMemory", { workspaceMemory });
-  memoryLogger.debug("syncAllMemorySources: userMemoryFiles", { userMemoryFiles });
+  memoryLogger.debug("syncAllMemorySources: workspaceMemory", {
+    workspaceMemory,
+  });
+  memoryLogger.debug("syncAllMemorySources: userMemoryFiles", {
+    userMemoryFiles,
+  });
   memoryLogger.debug("syncAllMemorySources: sessionFiles", { sessionFiles });
 
   const candidates = new Map<string, MemorySource>();
