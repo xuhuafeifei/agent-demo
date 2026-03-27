@@ -322,9 +322,8 @@ async function buildImplicitProviders(
 }
 
 function normalizeExplicitProviders(
-  providers: Record<string, ProviderConfig> | undefined,
+  providers: Record<string, ProviderConfig>,
 ): Record<string, ProviderConfig> {
-  if (!providers) return {};
 
   const out: Record<string, ProviderConfig> = {};
   for (const [rawProviderId, provider] of Object.entries(providers)) {
@@ -347,7 +346,7 @@ export async function getMergedProviders(
 ): Promise<Record<string, ProviderConfig>> {
   const projectConfig = readProjectModelConfig();
   const implicit = await buildImplicitProviders(projectConfig);
-  const explicit = normalizeExplicitProviders(config.models?.providers);
+  const explicit = normalizeExplicitProviders(config.models.providers);
 
   const merged: Record<string, ProviderConfig> = {};
 

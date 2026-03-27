@@ -1,8 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { format } from "node:util";
-import { getUserFgbgConfig, writeFgbgUserConfig } from "../utils/app-path.js";
-import type { FgbgUserConfig } from "../types.js";
+import { readFgbgUserConfig } from "../config/index.js";
 
 export type LoggingLevel =
   | "trace"
@@ -32,15 +31,6 @@ export type Logger = {
   fatal: (message: string, ...args: unknown[]) => void;
 };
 
-const DEFAULT_LOGGING_CONFIG: LoggingConfig = {
-  cacheTime: 300,
-  level: "info",
-  file: "/tmp/fgbg/fgbg-YYYY-MM-DD.log",
-  consoleLevel: "info",
-  consoleStyle: "pretty",
-  allowModule: [],
-};
-
 const MAX_LOG_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 const LOG_RETENTION_DAYS = 7;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1h
@@ -62,117 +52,24 @@ type CacheState = {
 
 let loggingCache: CacheState = null;
 let rootLogger: Logger | null = null;
-const subsystemFileLoggers = new Map<string, Logger>();
-const subsystemConsoleLoggers = new Map<string, Logger>();
+var subsystemFileLoggers: Map<string, Logger> | undefined = new Map<
+  string,
+  Logger
+>();
+var subsystemConsoleLoggers: Map<string, Logger> | undefined = new Map<
+  string,
+  Logger
+>();
 let lastCleanupAt = 0;
 
-function isValidLevel(value: unknown): value is LoggingLevel {
-  return (
-    value === "trace" ||
-    value === "debug" ||
-    value === "info" ||
-    value === "warn" ||
-    value === "error" ||
-    value === "fatal" ||
-    value === "silent"
-  );
-}
-
-function isValidStyle(value: unknown): value is ConsoleStyle {
-  return value === "pretty" || value === "common" || value === "json";
-}
-
-function normalizeAllowModule(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return Array.from(
-      new Set(
-        value
-          .filter((v): v is string => typeof v === "string")
-          .map((v) => v.trim().toLowerCase())
-          .filter(Boolean),
-      ),
-    );
+function getCachedOrLoadConfig(): LoggingConfig {
+  const now = Date.now();
+  if (loggingCache && now < loggingCache.expireAt) {
+    return loggingCache.config;
   }
-  if (typeof value === "string" && value.trim()) {
-    return Array.from(
-      new Set(
-        value
-          .split(",")
-          .map((v) => v.trim().toLowerCase())
-          .filter(Boolean),
-      ),
-    );
-  }
-  return [...DEFAULT_LOGGING_CONFIG.allowModule];
-}
-
-function normalizeLoggingConfig(raw: unknown): LoggingConfig {
-  const source = (
-    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
-  ) as Record<string, unknown>;
-
-  const cacheTimeRaw = source.cacheTime;
-  const cacheTime =
-    typeof cacheTimeRaw === "number" && Number.isFinite(cacheTimeRaw)
-      ? Math.max(1, Math.floor(cacheTimeRaw))
-      : DEFAULT_LOGGING_CONFIG.cacheTime;
-
-  const level = isValidLevel(source.level)
-    ? source.level
-    : DEFAULT_LOGGING_CONFIG.level;
-  const file =
-    typeof source.file === "string" && source.file.trim()
-      ? source.file.trim()
-      : DEFAULT_LOGGING_CONFIG.file;
-  const consoleLevel = isValidLevel(source.consoleLevel)
-    ? source.consoleLevel
-    : DEFAULT_LOGGING_CONFIG.consoleLevel;
-  const consoleStyle = isValidStyle(source.consoleStyle)
-    ? source.consoleStyle
-    : DEFAULT_LOGGING_CONFIG.consoleStyle;
-  const allowModule = normalizeAllowModule(source.allowModule);
-
-  return {
-    cacheTime,
-    level,
-    file,
-    consoleLevel,
-    consoleStyle,
-    allowModule,
-  };
-}
-
-function isSameConfig(a: LoggingConfig, b: LoggingConfig): boolean {
-  const aAllow = [...a.allowModule].sort().join(",");
-  const bAllow = [...b.allowModule].sort().join(",");
-  return (
-    a.cacheTime === b.cacheTime &&
-    a.level === b.level &&
-    a.file === b.file &&
-    a.consoleLevel === b.consoleLevel &&
-    a.consoleStyle === b.consoleStyle &&
-    aAllow === bAllow
-  );
-}
-
-function isLoggingConfigComplete(raw: unknown): boolean {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
-  const source = raw as Record<string, unknown>;
-  if (
-    !(typeof source.cacheTime === "number" && Number.isFinite(source.cacheTime))
-  )
-    return false;
-  if (!isValidLevel(source.level)) return false;
-  if (!(typeof source.file === "string" && source.file.trim())) return false;
-  if (!isValidLevel(source.consoleLevel)) return false;
-  if (!isValidStyle(source.consoleStyle)) return false;
-  if (
-    !Array.isArray(source.allowModule) &&
-    !(typeof source.allowModule === "string")
-  ) {
-    return false;
-  }
-  return true;
+  const cfg = ensureLoggingSetting();
+  loggingCache = { config: cfg, expireAt: now + cfg.cacheTime * 1000 };
+  return cfg;
 }
 
 function toDateText(date: Date): string {
@@ -332,47 +229,16 @@ function formatConsoleLine(params: {
   return withAnsi(colorMap[level], base);
 }
 
-function getCachedOrLoadConfig(): LoggingConfig {
-  const now = Date.now();
-  if (loggingCache && now < loggingCache.expireAt) {
-    return loggingCache.config;
-  }
-  return ensureLoggingSetting();
-}
-
 export function ensureLoggingSetting(): LoggingConfig {
-  const cfg = getUserFgbgConfig();
-  const current = normalizeLoggingConfig(
-    (cfg as unknown as { logging?: unknown }).logging,
-  );
-
-  const nextCfg: FgbgUserConfig = {
-    ...cfg,
-    logging: {
-      cacheTime: current.cacheTime,
-      level: current.level,
-      file: current.file,
-      consoleLevel: current.consoleLevel,
-      consoleStyle: current.consoleStyle,
-      allowModule: current.allowModule,
-    },
+  const cfg = readFgbgUserConfig();
+  return {
+    cacheTime: cfg.logging.cacheTimeSecond,
+    level: cfg.logging.level,
+    file: cfg.logging.file,
+    consoleLevel: cfg.logging.consoleLevel,
+    consoleStyle: cfg.logging.consoleStyle,
+    allowModule: cfg.logging.allowModule,
   };
-
-  const prevRaw = (cfg as unknown as { logging?: unknown }).logging;
-  const prevNorm = normalizeLoggingConfig(prevRaw);
-  if (
-    !prevRaw ||
-    !isLoggingConfigComplete(prevRaw) ||
-    !isSameConfig(prevNorm, current)
-  ) {
-    writeFgbgUserConfig(nextCfg);
-  }
-
-  loggingCache = {
-    config: current,
-    expireAt: Date.now() + current.cacheTime * 1000,
-  };
-  return current;
 }
 
 function createLogger(params: {
@@ -444,6 +310,7 @@ export function getLogger(): Logger {
 }
 
 export function getSubsystemLogger(subsystem: string): Logger {
+  subsystemFileLoggers ??= new Map<string, Logger>();
   const key = subsystem.trim() || "app";
   const hit = subsystemFileLoggers.get(key);
   if (hit) return hit;
@@ -453,6 +320,7 @@ export function getSubsystemLogger(subsystem: string): Logger {
 }
 
 export function getSubsystemConsoleLogger(subsystem: string): Logger {
+  subsystemConsoleLoggers ??= new Map<string, Logger>();
   const key = subsystem.trim() || "app";
   const hit = subsystemConsoleLoggers.get(key);
   if (hit) return hit;

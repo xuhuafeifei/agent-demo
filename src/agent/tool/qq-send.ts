@@ -1,7 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { errResult, okResult, type ToolDetails } from "./types.js";
-import { getUserFgbgConfig } from "../../utils/app-path.js";
+import { readFgbgUserConfig } from "../../config/index.js";
 
 const qqSendParameters = Type.Object({
   content: Type.String({
@@ -46,13 +46,17 @@ export function createQQSendTool(deps?: {
           message: "content 不能为空",
         });
       }
-      const cfgOpenid = getUserFgbgConfig().channels?.qqbot?.targetOpenid?.trim() || "";
+      const cfgOpenid =
+        readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
       const openid = cfgOpenid || resolveLastSeenOpenid().trim();
       if (!openid) {
-        return errResult("未找到 QQ 目标用户，请先在 fgbg.json 配置 channels.qqbot.targetOpenid", {
-          code: "NOT_FOUND",
-          message: "qq target openid missing",
-        });
+        return errResult(
+          "未找到 QQ 目标用户，请先在 fgbg.json 配置 channels.qqbot.targetOpenid",
+          {
+            code: "NOT_FOUND",
+            message: "qq target openid missing",
+          },
+        );
       }
       const sent = await sendQQDirectMessage(openid, content);
       if (!sent) {

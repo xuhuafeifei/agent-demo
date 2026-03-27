@@ -8,17 +8,16 @@ import {
   replacePathChunks,
 } from "./store.js";
 import type { MemorySource, SyncResult, SyncSummary } from "./types.js";
-import { getMemorySearchConfig } from "./memory-search-config.js";
 import { chunkTextWithLines } from "./utils/chunk.js";
 import { extractSessionDialogueText } from "./utils/session-content.js";
 import { sha256 } from "./utils/hash.js";
-import { getUserFgbgConfig } from "../utils/app-path.js";
 import {
   ensureDirSync,
   resolveUserMemoryDir,
   resolveWorkspaceMemoryPath,
 } from "./utils/path.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
+import { readFgbgUserConfig } from "../config/index.js";
 
 const memoryLogger = getSubsystemConsoleLogger("memory");
 
@@ -149,7 +148,7 @@ export async function syncMemoryByPath(params: {
   const { value: chunkMaxChars } = measureSync({
     label: "load_cfg",
     meta: metaBase,
-    fn: () => getMemorySearchConfig(getUserFgbgConfig()).chunkMaxChars,
+    fn: () => readFgbgUserConfig().agents.memorySearch.chunkMaxChars,
   });
 
   const { value: chunks } = measureSync({

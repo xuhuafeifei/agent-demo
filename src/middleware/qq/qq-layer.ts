@@ -3,10 +3,11 @@ import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { runWithSingleFlight } from "../../agent/run.js";
 import { resolveQQAccountFromConfig } from "./qq-config.js";
 import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
-import { getUserFgbgConfig, writeFgbgUserConfig } from "../../utils/app-path.js";
+import { writeFgbgUserConfig } from "../../config/index.js";
 import { createQQSendTool } from "../../agent/tool/qq-send.js";
 import { getAccessToken, getGatewayUrl, sendC2CMessage } from "./qq-api.js";
 import { parseC2CEvent, type QQWSPayload } from "./qq-utils.js";
+import { readFgbgUserConfig } from "../../config/index.js";
 
 // 获取 QQ 层专用的日志记录器
 const qqLogger = getSubsystemConsoleLogger("qq-layer");
@@ -21,25 +22,14 @@ let isConnecting = false;
 function persistTargetOpenidIfMissing(openid: string): void {
   const value = openid.trim();
   if (!value) return;
-  const cfg = getUserFgbgConfig();
-  const current = cfg.channels?.qqbot?.targetOpenid?.trim();
+  const cfg = readFgbgUserConfig();
+  const current = cfg.channels.qqbot.targetOpenid?.trim();
   if (current) return;
 
-  const qqbot = cfg.channels?.qqbot;
-  if (!qqbot) return;
-  if (qqbot.enabled === false) return;
+  if (cfg.channels.qqbot.enabled === false) return;
 
-  const nextCfg = {
-    ...cfg,
-    channels: {
-      ...(cfg.channels ?? {}),
-      qqbot: {
-        ...qqbot,
-        targetOpenid: value,
-      },
-    },
-  };
-  writeFgbgUserConfig(nextCfg);
+  cfg.channels.qqbot.targetOpenid = value;
+  writeFgbgUserConfig(cfg);
   qqLogger.info("已自动写入 channels.qqbot.targetOpenid");
 }
 
@@ -62,7 +52,9 @@ export function getLastSeenQQOpenid(): string {
   return lastSeenUserOpenid;
 }
 
-async function ensureQQGatewayReady(timeoutMs: number = 7000): Promise<boolean> {
+async function ensureQQGatewayReady(
+  timeoutMs: number = 7000,
+): Promise<boolean> {
   if (qqReady && activeAccessToken) return true;
 
   if (reconnectFn && !isConnecting) {
@@ -112,7 +104,7 @@ export async function sendQQDirectMessage(
  */
 export async function startQQLayer(): Promise<void> {
   // 显式开关：enabled=false 时绝不进入后续流程
-  const enabled = getUserFgbgConfig().channels?.qqbot?.enabled;
+  const enabled = readFgbgUserConfig().channels.qqbot.enabled;
   if (enabled === false) {
     qqLogger.info("fgbg.json.channels.qqbot.enabled=false，跳过 qq-layer 启动");
     return;

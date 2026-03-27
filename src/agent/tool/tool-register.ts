@@ -1,9 +1,5 @@
 import { createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
 import type { ToolRegisterConfig } from "../../types.js";
-import {
-  getUserFgbgConfig,
-  writeFgbgUserConfig,
-} from "../../utils/app-path.js";
 import { createAppendTool } from "./append.js";
 import { createLoadSkillTool } from "./load-skill.js";
 import { createMemorySearchTool } from "./memory-search.js";
@@ -22,14 +18,13 @@ import {
 import {
   getEventBus,
   TOPIC_TOOL_BEFORE_BUILD,
-  TOPPIC_HEART_BEAT
+  TOPPIC_HEART_BEAT,
 } from "../../event-bus/index.js";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import { readFgbgUserConfig } from "../../config/index.js";
 
-const logger = getSubsystemConsoleLogger("tool-register");
 const eventBus = getEventBus();
 
-const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
+export const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
   // tools: 通用基础工具（偏“常用能力”）
   tools: ["read", "write", "append", "update", "getNow", "shiftTime"],
   // customTools: 业务工具（偏“让模型主动使用的能力”）
@@ -152,34 +147,24 @@ export type ToolBundle = {
  * 配置项可为数组或逗号分隔字符串，不支持通配符。
  */
 export class ToolRegister {
-  private static instance: ToolRegister | null = null;
+  private static instance: ToolRegister;
 
   private config: ToolRegisterConfig;
 
   private constructor() {
     eventBus.on(TOPPIC_HEART_BEAT, () => {
       // 重新加载配置
-      const newConfig = getUserFgbgConfig();
+      const newConfig = readFgbgUserConfig();
       if (newConfig.toolRegister != null) {
         this.config = newConfig.toolRegister;
       }
     });
 
-    const userConfig = getUserFgbgConfig();
-    if (
-      userConfig.toolRegister == null ||
-      typeof userConfig.toolRegister !== "object"
-    ) {
-      const merged = { ...userConfig, toolRegister: DEFAULT_TOOL_REGISTER };
-      writeFgbgUserConfig(merged);
-      this.config = DEFAULT_TOOL_REGISTER;
-    } else {
-      this.config = userConfig.toolRegister;
-    }
+    this.config = readFgbgUserConfig().toolRegister;
   }
 
   static getInstance(): ToolRegister {
-    if (ToolRegister.instance === null) {
+    if (!ToolRegister.instance) {
       ToolRegister.instance = new ToolRegister();
     }
     return ToolRegister.instance;
@@ -198,11 +183,7 @@ export class ToolRegister {
    * 下述工具的返回值本就会成为系统提示词的一部分，因此不应该出现在 历史对话信息 中
    */
   getFilterContextToolNames(): string[] {
-    return [
-      "memorySearch",
-      "persistMemory",
-      "loadSkill",
-    ];
+    return ["memorySearch", "persistMemory", "loadSkill"];
   }
 
   /**

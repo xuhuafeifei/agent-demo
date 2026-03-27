@@ -63,7 +63,12 @@ export type ToolRegisterConfig = {
   innerTools?: ToolListConfig;
 };
 
-export type FgbgUserConfig = {
+export type FgbgUserMeta = {
+  lastTouchedVersion: string;
+  lastTouchedAt: string;
+};
+
+export type FgbgUserRawConfig = {
   meta?: {
     lastTouchedVersion?: string;
     lastTouchedAt?: string;
@@ -75,7 +80,7 @@ export type FgbgUserConfig = {
   };
   agents?: {
     defaults?: {
-      model?: string | { primary?: string };
+      model?: { primary?: string };
       models?: Record<string, { alias?: string }>;
       workspace?: string;
     };
@@ -100,13 +105,20 @@ export type FgbgUserConfig = {
     cacheTime?: number;
     level?: "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
     file?: string;
-    consoleLevel?: "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
+    consoleLevel?:
+      | "trace"
+      | "debug"
+      | "info"
+      | "warn"
+      | "error"
+      | "fatal"
+      | "silent";
     consoleStyle?: "pretty" | "common" | "json";
-    allowModule?: string[] | string;
+    allowModule?: string[];
   };
   heartbeat?: {
     enabled?: boolean;
-    interval_ms?: number;
+    intervalMs?: number;
     concurrency?: number;
     allowedScripts?: string[];
   };
@@ -116,7 +128,80 @@ export type FgbgUserConfig = {
       appId?: string;
       clientSecret?: string;
       targetOpenid?: string;
-      name?: string;
+      accounts?: Record<
+        string,
+        {
+          enabled?: boolean;
+          appId?: string;
+          clientSecret?: string;
+          targetOpenid?: string;
+          name?: string;
+        }
+      >;
+    };
+  };
+};
+
+export type FgbgUserConfig = {
+  meta: {
+    lastTouchedVersion: string;
+    lastTouchedAt: string;
+  };
+  toolRegister: ToolRegisterConfig;
+  models: {
+    mode: string;
+    providers: Record<string, ProviderConfig>;
+  };
+  agents: {
+    defaults: {
+      model: { primary: string };
+      models: Record<string, { alias?: string }>;
+      workspace: string;
+    };
+    /** 自动重试：baseDelayMs 首次间隔(ms)，maxRetries 最大重试次数，maxDelayMs 单次最大等待(ms) */
+    retry: {
+      baseDelayMs: number;
+      maxRetries: number;
+      maxDelayMs: number;
+    };
+    memorySearch: {
+      mode: "local" | "remote";
+      model: string;
+      endpoint: string;
+      apiKey: string;
+      chunkMaxChars: number;
+      embeddingDimensions: number;
+    };
+    /** 思考级别配置：按 channel 定义默认思考级别 */
+    thinking: Partial<Record<AgentChannel, ThinkingLevel>>;
+  };
+  logging: {
+    cacheTimeSecond: number;
+    level: "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent";
+    file: string;
+    consoleLevel:
+      | "trace"
+      | "debug"
+      | "info"
+      | "warn"
+      | "error"
+      | "fatal"
+      | "silent";
+    consoleStyle: "pretty" | "common" | "json";
+    allowModule: string[];
+  };
+  heartbeat: {
+    enabled: boolean;
+    intervalMs: number;
+    concurrency: number;
+    allowedScripts: string[];
+  };
+  channels: {
+    qqbot: {
+      enabled: boolean;
+      appId: string;
+      clientSecret: string;
+      targetOpenid?: string;
       accounts?: Record<
         string,
         {

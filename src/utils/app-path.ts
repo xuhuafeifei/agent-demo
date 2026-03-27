@@ -42,32 +42,3 @@ export function resolveWorkspaceDir(): string {
   }
   return path.join(resolveStateDir(), "workspace");
 }
-
-/**
- * 读取用户级 fgbg.json，返回原始配置对象（不解读字段含义）。
- * 文件不存在或解析失败时返回空对象。
- */
-export function getUserFgbgConfig(): FgbgUserConfig {
-  const filePath = resolveGlobalConfigPath();
-  try {
-    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
-    return isRecord(raw) ? (raw as FgbgUserConfig) : {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * 将配置写回 fgbg.json（不解读字段含义）。
- * 若目录不存在会先创建（权限 0o700），文件权限 0o600。
- */
-export function writeFgbgUserConfig(cfg: FgbgUserConfig): void {
-  const cfgPath = resolveGlobalConfigPath();
-  const cfgDir = path.dirname(cfgPath);
-  if (!fs.existsSync(cfgDir)) {
-    fs.mkdirSync(cfgDir, { recursive: true, mode: 0o700 });
-  }
-  fs.writeFileSync(cfgPath, `${JSON.stringify(cfg, null, 2)}\n`, {
-    mode: 0o600,
-  });
-}

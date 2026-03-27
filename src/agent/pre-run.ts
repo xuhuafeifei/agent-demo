@@ -9,28 +9,8 @@ import {
 import type { RuntimeModel } from "../types.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { ensureAgentWorkspace } from "./workspace.js";
-import { getUserFgbgConfig, writeFgbgUserConfig } from "../utils/app-path.js";
-import { getSubsystemConsoleLogger } from "../logger/logger.js";
-import {
-  CHANNEL_POLICY,
-  SUPPORTED_CHANNELS,
-  type AgentChannel,
-  normalizeChannel,
-} from "./channel-policy.js";
-
-const preRunLogger = getSubsystemConsoleLogger("pre-run");
-
-/**
- * 默认思考级别配置
- */
-const DEFAULT_THINKING_CONFIG: Record<AgentChannel, ThinkingLevel> =
-  SUPPORTED_CHANNELS.reduce(
-    (acc, ch) => {
-      acc[ch] = CHANNEL_POLICY[ch].defaultThinkingLevel;
-      return acc;
-    },
-    {} as Record<AgentChannel, ThinkingLevel>,
-  );
+import { type AgentChannel, normalizeChannel } from "./channel-policy.js";
+import { readFgbgUserConfig } from "../config/index.js";
 
 /**
  * 从模型配置中获取上下文token数
@@ -50,81 +30,12 @@ function getContextTokens(model?: RuntimeModel): number | undefined {
 }
 
 /**
- * 有效的思考级别枚举
- * off: 无思考过程
- * minimal: 最小思考过程
- * low: 低思考过程
- * medium: 中等思考过程
- * high: 高思考过程
- * xhigh: 极高思考过程
- */
-const THINKING_LEVELS: ThinkingLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
-
-/**
- * 解析思考级别的字符串值
- * @param value 要解析的字符串值
- * @returns 有效的ThinkingLevel，或undefined（如果解析失败）
- */
-function parseThinkingLevel(
-  value: string | undefined,
-): ThinkingLevel | undefined {
-  if (!value) return undefined;
-
-  const normalized = value.trim().toLowerCase();
-
-  return THINKING_LEVELS.includes(normalized as ThinkingLevel)
-    ? (normalized as ThinkingLevel)
-    : undefined;
-}
-
-/**
  * 从配置文件读取思考级别配置
  * 如果配置无效，则回写默认配置并返回默认值
  * @returns 解析后的思考级别配置
  */
 function resolveThinkingLevel(channel: AgentChannel): ThinkingLevel {
-  // 获取用户配置
-  const userConfig = getUserFgbgConfig();
-
-  // 检查思考级别配置
-  const rawThinkingConfig = userConfig.agents?.thinking;
-  const thinkingConfig =
-    rawThinkingConfig && typeof rawThinkingConfig === "object"
-      ? (rawThinkingConfig as Partial<Record<AgentChannel, string>>)
-      : undefined;
-
-  const mergedConfig = {} as Record<AgentChannel, ThinkingLevel>;
-  let changed = !thinkingConfig;
-
-  for (const ch of SUPPORTED_CHANNELS) {
-    const parsed = parseThinkingLevel(thinkingConfig?.[ch]);
-    if (parsed) {
-      mergedConfig[ch] = parsed;
-      continue;
-    }
-    mergedConfig[ch] = DEFAULT_THINKING_CONFIG[ch];
-    changed = true;
-  }
-
-  if (changed) {
-    const newConfig = {
-      ...userConfig,
-      agents: {
-        ...userConfig.agents,
-        thinking: mergedConfig,
-      },
-    };
-    writeFgbgUserConfig(newConfig);
-  }
-
-  return mergedConfig[channel];
+  return readFgbgUserConfig().agents.thinking[channel] ?? "medium";
 }
 
 /**

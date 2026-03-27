@@ -1,9 +1,8 @@
 import { getLoadablePath } from "sqlite-vec";
 import { ensureMemoryPaths, resolveMemoryDbPath } from "./utils/path.js";
 import type { MemorySource } from "./types.js";
-import { getMemorySearchConfig } from "./memory-search-config.js";
-import { getUserFgbgConfig } from "../utils/app-path.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
+import { readFgbgUserConfig } from "../config/index.js";
 
 type ChunkRow = {
   id: number;
@@ -30,16 +29,13 @@ type DbLike = {
 let dbInstance: DbLike | null = null;
 const memoryLogger = getSubsystemConsoleLogger("memory");
 
-function getConfiguredEmbeddingDimensions(): number {
-  return getMemorySearchConfig(getUserFgbgConfig()).embeddingDimensions;
-}
-
 /**
  * 打开并初始化数据库（惰性初始化）。
  */
 async function openDb(): Promise<DbLike> {
   if (dbInstance) return dbInstance;
-  const embeddingDimensions = getConfiguredEmbeddingDimensions();
+  const embeddingDimensions =
+    readFgbgUserConfig().agents.memorySearch.embeddingDimensions;
 
   const sqlite = await import("node:sqlite");
   ensureMemoryPaths();

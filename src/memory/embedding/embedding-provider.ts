@@ -1,16 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  ensureFgbgUserConfigMemorySearchAndWrite,
-  getMemorySearchConfig,
-  type MemorySearchConfig,
-} from "../memory-search-config.js";
-import {
   ensureDirSync,
   expandHome,
   resolveEmbeddingModelDir,
 } from "../utils/path.js";
 import type { FgbgUserConfig } from "../../types.js";
+import { readFgbgUserConfig } from "../../config/index.js";
+
+type MemorySearchConfig = FgbgUserConfig["agents"]["memorySearch"];
 
 type EmbeddingContextLike = {
   getEmbeddingFor: (text: string) => Promise<{ vector: readonly number[] }>;
@@ -211,7 +209,7 @@ const strategyByMode: Record<
 
 /** 按 mode 缓存策略实例，mode 不变则复用（local 的 context 也只建一次）。 */
 function getOrCreateStrategy(config: FgbgUserConfig): EmbeddingStrategy {
-  const memorySearch = getMemorySearchConfig(config);
+  const memorySearch = config.agents.memorySearch;
   const mode = memorySearch.mode;
 
   if (cachedStrategy && cachedMode === mode) {
@@ -231,13 +229,13 @@ function getOrCreateStrategy(config: FgbgUserConfig): EmbeddingStrategy {
  * 校验并补齐 embedding provider 运行条件，并写回 fgbg.json。
  */
 export function ensureEmbeddingProviderReady(): FgbgUserConfig {
-  const next = ensureFgbgUserConfigMemorySearchAndWrite();
+  const config = readFgbgUserConfig();
 
   // 仅 local 模式需要本地 GGUF 模型目录，确保目录存在
-  if ((next.agents?.memorySearch?.mode ?? "local") === "local") {
+  if (config.agents.memorySearch.mode === "local") {
     ensureDirSync(resolveEmbeddingModelDir());
   }
-  return next;
+  return config;
 }
 
 /**

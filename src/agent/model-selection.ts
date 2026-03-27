@@ -1,4 +1,3 @@
-import { getUserFgbgConfig } from "../utils/app-path.js";
 import {
   buildRuntimeModelsFromProviders,
   getMergedProviders,
@@ -7,23 +6,14 @@ import {
 } from "./pi-embedded-runner/model-config.js";
 import type { ModelRef, RuntimeModel } from "../types.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
+import { readFgbgUserConfig } from "../config/index.js";
 
 const logger = getSubsystemConsoleLogger("model-selection");
 
 function resolvePrimaryModelRef(): ModelRef | null {
-  const raw = getUserFgbgConfig();
-  const modelEntry = raw.agents?.defaults?.model;
-  logger.debug("modelEntry: %o", modelEntry);
-  const primaryRaw =
-    typeof modelEntry === "string"
-      ? modelEntry.trim()
-      : typeof modelEntry?.primary === "string"
-        ? modelEntry.primary.trim()
-        : "";
-  logger.debug("primaryRaw: %s", primaryRaw);
-
-  if (!primaryRaw) return null;
-  return parseModelRef(primaryRaw);
+  const model = readFgbgUserConfig().agents.defaults.model.primary;
+  if (!model) return null;
+  return parseModelRef(model);
 }
 
 export async function selectModelForRuntime(): Promise<{
@@ -32,7 +22,7 @@ export async function selectModelForRuntime(): Promise<{
   modelError?: string;
   discoveryError?: string;
 }> {
-  const config = getUserFgbgConfig();
+  const config = readFgbgUserConfig();
   const mergedProviders = await getMergedProviders(config);
   const preferred = resolvePrimaryModelRef();
 
