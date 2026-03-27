@@ -19,12 +19,41 @@ function getContextTokens(model?: RuntimeModel): number | undefined {
   return undefined;
 }
 
+const THINKING_LEVELS: ThinkingLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+
+function parseThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  return THINKING_LEVELS.includes(normalized as ThinkingLevel)
+    ? (normalized as ThinkingLevel)
+    : undefined;
+}
+
+function resolveThinkingLevel(channel: "web" | "qq" | undefined): ThinkingLevel {
+  const channelDefault: ThinkingLevel = channel === "web" ? "medium" : "off";
+  const fromChannelEnv = parseThinkingLevel(
+    channel === "web"
+      ? process.env.FGBG_WEB_THINKING_LEVEL
+      : process.env.FGBG_QQ_THINKING_LEVEL,
+  );
+  const fromGlobalEnv = parseThinkingLevel(process.env.FGBG_THINKING_LEVEL);
+  return fromChannelEnv ?? fromGlobalEnv ?? channelDefault;
+}
+
 /**
  * 在处理「获取回复」请求前做统一准备：选模型、建目录、刷新模型与鉴权、初始化会话状态并可选创建 Agent 会话。
  * 若当前无可用 runtime 模型则只返回 modelRef/session 信息；否则创建 session 并返回，供后续 prompt 使用。
  */
 export async function prepareBeforeGetReply(params: {
   sessionKey: string;
+  channel?: "web" | "qq";
 }): Promise<{
   cwd: string;
   agentDir: string;
@@ -51,7 +80,7 @@ export async function prepareBeforeGetReply(params: {
 
   const normalizedProvider = normalizeProviderId(modelRef.provider);
   const apiKey = (model as { apiKey?: string } | undefined)?.apiKey;
-  const thinkingLevel: ThinkingLevel = "off";
+  const thinkingLevel: ThinkingLevel = resolveThinkingLevel(params.channel);
 
   const runtimeModel = model;
 

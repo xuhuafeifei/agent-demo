@@ -8,6 +8,42 @@ const schedulerDetail = document.getElementById("scheduler-detail");
 const schedulerRefreshBtn = document.getElementById("scheduler-refresh-btn");
 const schedulerNewBtn = document.getElementById("scheduler-new-btn");
 const schedulerFilterButtons = Array.from(document.querySelectorAll(".scheduler-filter"));
+const chatPanel = document.querySelector(".chat-panel");
+let lastContextSnapshotGlobal = "";
+let autoScrollEnabled = true;
+let scrollBottomBtn = null;
+
+function isNearBottom(element, threshold = 36) {
+    if (!element) return true;
+    const distance = element.scrollHeight - (element.scrollTop + element.clientHeight);
+    return distance <= threshold;
+}
+
+function updateScrollBottomButtonVisibility() {
+    if (!scrollBottomBtn) return;
+    scrollBottomBtn.classList.toggle("visible", !autoScrollEnabled);
+}
+
+function refreshAutoScrollState() {
+    autoScrollEnabled = isNearBottom(chatContainer);
+    updateScrollBottomButtonVisibility();
+}
+
+function initScrollBottomButton() {
+    if (!chatPanel || scrollBottomBtn) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "scroll-bottom-btn";
+    btn.textContent = "回到底部";
+    btn.addEventListener("click", () => {
+        autoScrollEnabled = true;
+        chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: "smooth" });
+        updateScrollBottomButtonVisibility();
+    });
+    chatPanel.appendChild(btn);
+    scrollBottomBtn = btn;
+    updateScrollBottomButtonVisibility();
+}
 
 const md = window.markdownit({ html: false, linkify: true, breaks: true });
 const schedulerState = {
@@ -59,8 +95,11 @@ function getAssistantStream(messageEl) {
     return messageEl?.querySelector(".timeline-stream");
 }
 
-function scrollToBottom() {
+function scrollToBottom(options = {}) {
+    const { force = false } = options;
+    if (!force && !autoScrollEnabled) return;
     chatContainer.scrollTop = chatContainer.scrollHeight;
+    if (autoScrollEnabled) updateScrollBottomButtonVisibility();
 }
 
 function appendTimelineMarkdown(messageEl, text, className = "") {
@@ -157,7 +196,7 @@ function addMessage(content, role, id = `msg-${Date.now()}`, isStreaming = false
     }
 
     chatContainer.appendChild(messageEl);
-    scrollToBottom();
+    scrollToBottom({ force: true });
     return messageEl;
 }
 
@@ -175,6 +214,7 @@ function appendTimestamp(messageEl, llmElapsedMs) {
     ts.className = "timestamp";
     ts.textContent = `完成时间 ${new Date().toLocaleTimeString("zh-CN")}${typeof llmElapsedMs === "number" ? ` · LLM耗时 ${formatDuration(llmElapsedMs)}` : ""}`;
     stream.appendChild(ts);
+    scrollToBottom();
 }
 
 function normalizeUiEvent(data) {
@@ -202,9 +242,142 @@ function formatJson(value) {
     }
 }
 
+function buildLineDiffUnified(oldText, newText, maxLines = 1200) {
+    const oldLinesRaw = (oldText || "").split("\n");
+    const newLinesRaw = (newText || "").split("\n");
+    const oldLines = oldLinesRaw.slice(0, maxLines);
+    const newLines = newLinesRaw.slice(0, maxLines);
+    const truncated = oldLinesRaw.length > maxLines || newLinesRaw.length > maxLines;
+
+    const n = oldLines.length;
+    const m = newLines.length;
+    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            dp[i][j] = oldLines[i] === newLines[j]
+                ? dp[i + 1][j + 1] + 1
+                : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+
+    const out = [];
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+        if (oldLines[i] === newLines[j]) {
+            out.push(` ${oldLines[i]}`);
+            i += 1;
+            j += 1;
+        } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+            out.push(`-${oldLines[i]}`);
+            i += 1;
+        } else {
+            out.push(`+${newLines[j]}`);
+            j += 1;
+        }
+    }
+    while (i < n) out.push(`-${oldLines[i++]}`);
+    while (j < m) out.push(`+${newLines[j++]}`);
+    if (truncated) out.push(` ...(diff truncated at ${maxLines} lines)`);
+    return out;
+}
+
+function appendContextDiffBlock(messageEl, seq, reason, annotatedLines, currentSnapshot) {
+    const stream = getAssistantStream(messageEl);
+    if (!stream) return;
+    const details = document.createElement("details");
+    details.className = "timeline-details context";
+    details.open = false;
+
+    const summary = document.createElement("summary");
+    summary.textContent = `上下文Diff #${seq} · ${reason}`;
+    const cvButton = document.createElement("button");
+    cvButton.type = "button";
+    cvButton.className = "context-cv-btn";
+    cvButton.textContent = "CV";
+    cvButton.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(currentSnapshot || "");
+            cvButton.textContent = "Copied";
+            setTimeout(() => {
+                cvButton.textContent = "CV";
+            }, 1200);
+        } catch (_err) {
+            cvButton.textContent = "Fail";
+            setTimeout(() => {
+                cvButton.textContent = "CV";
+            }, 1200);
+        }
+    });
+    summary.appendChild(cvButton);
+    details.appendChild(summary);
+
+    const container = document.createElement("div");
+    container.className = "context-diff-container";
+
+    const snapshotDetails = document.createElement("details");
+    snapshotDetails.className = "context-subsection";
+    snapshotDetails.open = false;
+    const snapshotSummary = document.createElement("summary");
+    snapshotSummary.textContent = "Current Context Snapshot";
+    snapshotDetails.appendChild(snapshotSummary);
+    const snapshotPre = document.createElement("pre");
+    snapshotPre.className = "context-snapshot-pre";
+    snapshotPre.textContent = currentSnapshot;
+    snapshotDetails.appendChild(snapshotPre);
+    container.appendChild(snapshotDetails);
+
+    const annotatedDetails = document.createElement("details");
+    annotatedDetails.className = "context-subsection";
+    annotatedDetails.open = false;
+    const annotatedSummary = document.createElement("summary");
+    annotatedSummary.textContent = "Annotated Full Context";
+    annotatedDetails.appendChild(annotatedSummary);
+    const diffPre = document.createElement("pre");
+    diffPre.className = "context-diff-pre";
+    const linesToRender = annotatedLines.length > 0 ? annotatedLines : ["  (Empty context)"];
+    linesToRender.forEach((line) => {
+        const span = document.createElement("span");
+        span.className = "context-diff-line";
+        if (line.startsWith("+")) {
+            span.classList.add("add");
+        } else if (line.startsWith("-")) {
+            span.classList.add("del");
+        } else {
+            span.classList.add("ctx");
+        }
+        span.textContent = line || " ";
+        diffPre.appendChild(span);
+    });
+    annotatedDetails.appendChild(diffPre);
+    container.appendChild(annotatedDetails);
+
+    details.appendChild(container);
+    stream.appendChild(details);
+    scrollToBottom();
+}
+
 function handleStreamEvent(data, state, assistantMessageEl) {
     const event = normalizeUiEvent(data);
     const eventType = event.uiEventType;
+
+    if (event.type === "context_snapshot") {
+        const current = typeof event.contextText === "string" ? event.contextText : "";
+        const prev = state.prevContextText || "";
+        const diffLines = buildLineDiffUnified(prev, current);
+        state.prevContextText = current;
+        lastContextSnapshotGlobal = current;
+        appendContextDiffBlock(
+            assistantMessageEl,
+            event.seq ?? 0,
+            event.reason ?? "unknown",
+            diffLines,
+            current,
+        );
+        return;
+    }
 
     if (eventType === "message") {
         if (event.type === "message_start" && !state.llmStartedAt) {
@@ -283,6 +456,7 @@ async function sendMessage() {
         fullThinking: "",
         llmStartedAt: 0,
         llmEndedAt: 0,
+        prevContextText: lastContextSnapshotGlobal,
     };
 
     try {
@@ -400,6 +574,7 @@ function bindSchedulerActions() {
 
 sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", clearHistory);
+chatContainer.addEventListener("scroll", refreshAutoScrollState);
 messageInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -411,3 +586,4 @@ addMessage("您好！我是您的 AI 助手。左侧将展示对话、工具调�
 renderSchedulerList();
 renderSchedulerDetail();
 bindSchedulerActions();
+initScrollBottomButton();

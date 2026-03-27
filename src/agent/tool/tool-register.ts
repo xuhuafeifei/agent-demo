@@ -194,6 +194,18 @@ export class ToolRegister {
   }
 
   /**
+   * 返回需要从 session 历史对话记录（context）中过滤掉的工具名列表。
+   * 下述工具的返回值本就会成为系统提示词的一部分，因此不应该出现在 历史对话信息 中
+   */
+  getFilterContextToolNames(): string[] {
+    return [
+      "memorySearch",
+      "persistMemory",
+      "loadSkill",
+    ];
+  }
+
+  /**
    * 根据当前配置为给定 cwd 生成工具实例与说明文案。
    */
   getToolBundle(cwd: string): ToolBundle {

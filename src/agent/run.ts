@@ -30,6 +30,7 @@ import {
   releaseAgent,
 } from "./agent-state.js";
 import { formatChinaIso } from "../watch-dog/time.js";
+import { ToolRegister } from "./tool/tool-register.js";
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
 
@@ -87,11 +88,23 @@ export function clearHistory(): void {
  * 从 session 消息列表剪枝：只保留每条 message 的 role 与文本内容，
  * 返回 "user: ...\n\nassistant: ..." 格式字符串。
  */
-function pruneSessionChat(messages: SessionMessage[]): string {
-  const lines: string[] = [];
-  for (const msg of messages) {
-    const raw = msg as { role?: string; content?: unknown[] };
-    const role = raw.role === "assistant" ? "assistant" : "user";
+function pruneSessionChat(
+  messages: SessionMessage[],
+  tokenWindowLimit: number = 8 * 1024,
+): string {
+  const estimatedTokens = (text: string): number => Math.max(1, text.length);
+
+  const selected: string[] = [];
+  let usedTokens = 0;
+  for (let i = 0; i < messages.length; i += 1) {
+    const msg = messages[i];
+    const raw = msg as { role?: string; content?: unknown[]; toolName?: string };
+    const role = raw.role ?? "unknown";
+    const toolName = raw.toolName ?? "";
+    if (ToolRegister.getInstance().getFilterContextToolNames().includes(toolName)) {
+      continue;
+    }
+
     const parts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
@@ -102,10 +115,21 @@ function pruneSessionChat(messages: SessionMessage[]): string {
       }
     }
     if (parts.length > 0) {
-      lines.push(`${role}: ${parts.join("\n")}`);
-    }
+      const line = `${role}: ${parts.join("\n")}`;
+      selected.push(line);
+      usedTokens += estimatedTokens(line);
+      // 从最新消息开始回溯，包含触发超限的那条后停止。
+      if (usedTokens > tokenWindowLimit) break;
+    }    
   }
-  return lines.join("\n\n");
+
+  return selected.reverse().join("\n\n");
+}
+
+function resolveChatHistoryTokenWindow(model?: { contextWindow?: number }): number {
+  const DEFAULT_TOKEN_WINDOW = 8 * 1024;
+  const window = model?.contextWindow;
+  return typeof window === "number" && window > 0 ? window : DEFAULT_TOKEN_WINDOW;
 }
 
 /**
@@ -126,6 +150,7 @@ export async function getReplyFromAgent(params: {
   // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
   const prepared = await prepareBeforeGetReply({
     sessionKey: sessionKey ?? DEFAULT_SESSION_KEY,
+    channel,
   });
   const modelRef = prepared.modelRef;
   const model = prepared.model;
@@ -178,7 +203,10 @@ export async function getReplyFromAgent(params: {
   });
 
   // session 获取当前聊天信息，剪枝为仅保留 user/assistant 的文本内容
-  const chatHistoryText = pruneSessionChat(getHistory());
+  const chatHistoryText = pruneSessionChat(
+    getHistory(),
+    resolveChatHistoryTokenWindow(prepared.model),
+  );
 
   // 提示词函数是纯组合器：数据由调用方准备后传入。
   const prompt = buildSystemPrompt({
@@ -205,12 +233,23 @@ export async function getReplyFromAgent(params: {
     }
     onEvent(event);
   };
+  let webContextSeq = 0;
+  const emitWebContextSnapshot = (
+    reason: "before_prompt",
+  ) => {
+    if (channel !== "web") return;
+    webContextSeq += 1;
+    emit({ type: "context_snapshot", seq: webContextSeq, reason, contextText: prompt });
+  };
 
   try {
+    emitWebContextSnapshot("before_prompt");
     const runResult = await runEmbeddedPiAgent({
       session,
       message,
-      onEvent: emit,
+      onEvent: (event) => {
+        emit(event);
+      },
     });
     trace.recordStage("request:end");
     emit({ type: "done" });

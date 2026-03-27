@@ -38,4 +38,10 @@ export type RuntimeStreamEvent =
       success: boolean;
       attempt: number;
       finalError?: string;
+    }
+  | {
+      type: "context_snapshot";
+      seq: number;
+      reason: "before_prompt";
+      contextText: string;
     };

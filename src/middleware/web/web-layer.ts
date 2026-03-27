@@ -20,6 +20,17 @@ type RuntimeUiEvent = RuntimeStreamEvent & {
 
 function normalizeRuntimeEvent(event: RuntimeStreamEvent): RuntimeUiEvent {
   switch (event.type) {
+    case "context_snapshot":
+      return {
+        ...event,
+        uiEventType: "context",
+        uiPayload: {
+          phase: event.type,
+          seq: event.seq,
+          reason: event.reason,
+          contextText: event.contextText,
+        },
+      };
     case "message_start":
     case "message_update":
     case "message_end":
