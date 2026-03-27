@@ -1,11 +1,5 @@
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { FgbgUserConfig } from "../types.js";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
 
 /**
  * 应用状态根目录（~/.fgbg 或 FGBG_STATE_DIR）。
