@@ -1,3 +1,6 @@
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentChannel } from "./agent/channel-policy.js";
+
 export type ModelInputType = "text" | "image";
 
 export type ModelApi =
@@ -90,6 +93,8 @@ export type FgbgUserConfig = {
       chunkMaxChars?: number;
       embeddingDimensions?: number;
     };
+    /** 思考级别配置：按 channel 定义默认思考级别 */
+    thinking?: Partial<Record<AgentChannel, ThinkingLevel>>;
   };
   logging?: {
     cacheTime?: number;

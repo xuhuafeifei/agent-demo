@@ -9,25 +9,44 @@ import {
 import type { RuntimeModel } from "../types.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { ensureAgentWorkspace } from "./workspace.js";
+import { getUserFgbgConfig, writeFgbgUserConfig } from "../utils/app-path.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
+import {
+  CHANNEL_POLICY,
+  SUPPORTED_CHANNELS,
+  type AgentChannel,
+  normalizeChannel,
+} from "./channel-policy.js";
+
+const preRunLogger = getSubsystemConsoleLogger("pre-run");
+
+/**
+ * 默认思考级别配置
+ */
+const DEFAULT_THINKING_CONFIG: Record<AgentChannel, ThinkingLevel> =
+  SUPPORTED_CHANNELS.reduce(
+    (acc, ch) => {
+      acc[ch] = CHANNEL_POLICY[ch].defaultThinkingLevel;
+      return acc;
+    },
+    {} as Record<AgentChannel, ThinkingLevel>,
+  );
 
 /**
  * 从模型配置中获取上下文token数
  * 支持两种字段名：contextWindow 或 contextTokens
  * @param model 运行时模型配置
- * @returns 上下文token数，或undefined（如果模型未定义或没有配置）
+ * @returns 上下文token数
  */
 function getContextTokens(model?: RuntimeModel): number | undefined {
-  if (!model) return undefined;
+  const DEFAULT_CONTENT_TOKEN = 8 * 1024;
+  if (!model) return DEFAULT_CONTENT_TOKEN;
 
   // 尝试从contextWindow字段获取
   const maybeContext = (model as { contextWindow?: number }).contextWindow;
   if (typeof maybeContext === "number") return maybeContext;
 
-  // 尝试从contextTokens字段获取
-  const maybeTokens = (model as { contextTokens?: number }).contextTokens;
-  if (typeof maybeTokens === "number") return maybeTokens;
-
-  return undefined;
+  return DEFAULT_CONTENT_TOKEN;
 }
 
 /**
@@ -53,7 +72,9 @@ const THINKING_LEVELS: ThinkingLevel[] = [
  * @param value 要解析的字符串值
  * @returns 有效的ThinkingLevel，或undefined（如果解析失败）
  */
-function parseThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
+function parseThinkingLevel(
+  value: string | undefined,
+): ThinkingLevel | undefined {
   if (!value) return undefined;
 
   const normalized = value.trim().toLowerCase();
@@ -64,27 +85,46 @@ function parseThinkingLevel(value: string | undefined): ThinkingLevel | undefine
 }
 
 /**
- * 根据渠道和环境变量解析思考级别
- * 优先级：渠道特定环境变量 > 全局环境变量 > 默认值
- * @param channel 渠道类型（web或qq）
- * @returns 解析后的思考级别
+ * 从配置文件读取思考级别配置
+ * 如果配置无效，则回写默认配置并返回默认值
+ * @returns 解析后的思考级别配置
  */
-function resolveThinkingLevel(channel: "web" | "qq" | undefined): ThinkingLevel {
-  // 根据渠道设置默认思考级别
-  const channelDefault: ThinkingLevel = channel === "web" ? "medium" : "off";
+function resolveThinkingLevel(channel: AgentChannel): ThinkingLevel {
+  // 获取用户配置
+  const userConfig = getUserFgbgConfig();
 
-  // 从渠道特定环境变量获取
-  const fromChannelEnv = parseThinkingLevel(
-    channel === "web"
-      ? process.env.FGBG_WEB_THINKING_LEVEL
-      : process.env.FGBG_QQ_THINKING_LEVEL,
-  );
+  // 检查思考级别配置
+  const rawThinkingConfig = userConfig.agents?.thinking;
+  const thinkingConfig =
+    rawThinkingConfig && typeof rawThinkingConfig === "object"
+      ? (rawThinkingConfig as Partial<Record<AgentChannel, string>>)
+      : undefined;
 
-  // 从全局环境变量获取
-  const fromGlobalEnv = parseThinkingLevel(process.env.FGBG_THINKING_LEVEL);
+  const mergedConfig = {} as Record<AgentChannel, ThinkingLevel>;
+  let changed = !thinkingConfig;
 
-  // 解析优先级：渠道特定 > 全局 > 默认值
-  return fromChannelEnv ?? fromGlobalEnv ?? channelDefault;
+  for (const ch of SUPPORTED_CHANNELS) {
+    const parsed = parseThinkingLevel(thinkingConfig?.[ch]);
+    if (parsed) {
+      mergedConfig[ch] = parsed;
+      continue;
+    }
+    mergedConfig[ch] = DEFAULT_THINKING_CONFIG[ch];
+    changed = true;
+  }
+
+  if (changed) {
+    const newConfig = {
+      ...userConfig,
+      agents: {
+        ...userConfig.agents,
+        thinking: mergedConfig,
+      },
+    };
+    writeFgbgUserConfig(newConfig);
+  }
+
+  return mergedConfig[channel];
 }
 
 /**
@@ -106,23 +146,24 @@ function resolveThinkingLevel(channel: "web" | "qq" | undefined): ThinkingLevel 
  */
 export async function prepareBeforeGetReply(params: {
   sessionKey: string;
-  channel?: "web" | "qq";
+  channel?: AgentChannel;
 }): Promise<{
-  cwd: string;              // 工作目录
-  agentDir: string;         // 代理目录
-  sessionDir: string;       // 会话目录
-  modelRef: { provider: string; model: string };  // 模型引用
-  model?: RuntimeModel;     // 运行时模型配置（可选）
-  modelError?: string;      // 模型选择错误信息（可选）
-  discoveryError?: string;  // 模型发现错误信息（可选）
-  sessionKey: string;       // 会话密钥
-  sessionId: string;        // 会话ID
-  sessionFile: string;      // 会话文件路径
-  normalizedProvider: string;  // 规范化的提供商ID
-  apiKey?: string;          // API密钥（可选）
-  thinkingLevel: ThinkingLevel;  // 思考级别
+  cwd: string; // 工作目录
+  agentDir: string; // 代理目录
+  sessionDir: string; // 会话目录
+  modelRef: { provider: string; model: string }; // 模型引用
+  model?: RuntimeModel; // 运行时模型配置（可选）
+  modelError?: string; // 模型选择错误信息（可选）
+  discoveryError?: string; // 模型发现错误信息（可选）
+  sessionKey: string; // 会话密钥
+  sessionId: string; // 会话ID
+  sessionFile: string; // 会话文件路径
+  normalizedProvider: string; // 规范化的提供商ID
+  apiKey?: string; // API密钥（可选）
+  thinkingLevel: ThinkingLevel; // 思考级别
 }> {
   const sessionKey = params.sessionKey;
+  const channel = normalizeChannel(params.channel);
 
   // 选择运行时模型
   const selected = await selectModelForRuntime();
@@ -139,7 +180,7 @@ export async function prepareBeforeGetReply(params: {
   const apiKey = (model as { apiKey?: string } | undefined)?.apiKey;
 
   // 解析思考级别
-  const thinkingLevel: ThinkingLevel = resolveThinkingLevel(params.channel);
+  const thinkingLevel: ThinkingLevel = resolveThinkingLevel(channel);
 
   const runtimeModel = model;
 

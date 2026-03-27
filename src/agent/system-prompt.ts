@@ -1,3 +1,9 @@
+import {
+  getChannelFormattingInstruction,
+  normalizeChannel,
+  type AgentChannel,
+} from "./channel-policy.js";
+
 export type BuildSystemPromptInput = {
   soul: string;
   user?: string;
@@ -7,7 +13,7 @@ export type BuildSystemPromptInput = {
   workspace?: string;
   toolings?: string[];
   skillsMeta?: string;
-  channel?: "web" | "qq";
+  channel?: AgentChannel;
 };
 
 function nonEmptyOrFallback(
@@ -42,11 +48,8 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const workspace = nonEmptyOrFallback(input.workspace, "N/A");
   const toolings = nonEmptyListOrFallback(input.toolings, ["N/A"]);
   const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
-  const channel = input.channel ?? "web";
-  const channelFormattingInstruction =
-    channel === "web"
-      ? "Current channel is web. Markdown formatting is allowed when it improves readability."
-      : `Current channel is ${channel}. Do not use Markdown. Reply in plain text only.`;
+  const channel = normalizeChannel(input.channel);
+  const channelFormattingInstruction = getChannelFormattingInstruction(channel);
   return `## who you are
 ${soul}
 

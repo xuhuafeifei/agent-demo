@@ -52,6 +52,10 @@
       "model": {
         "primary": "minimax/MiniMax-M2.1"
       }
+    },
+    "thinking": {
+      "qq": "off",
+      "web": "medium"
     }
   }
 }
@@ -62,6 +66,8 @@
 - `models.providers.<provider>.apiKey`: 对应 provider 的 key
 - `agents.defaults.model.primary`: 默认模型（重点字段）
 - `models.providers.<provider>.models[].contextWindow`: 可作为上下文窗口来源
+- `agents.thinking.qq`: QQ渠道的默认思考级别（off、minimal、low、medium、high、xhigh）
+- `agents.thinking.web`: Web渠道的默认思考级别（off、minimal、low、medium、high、xhigh）
 
 兼容说明：
 

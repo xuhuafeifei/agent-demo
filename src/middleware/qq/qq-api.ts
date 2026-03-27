@@ -81,17 +81,23 @@ export async function sendC2CMessage(params: {
   replyToMessageId?: string;
 }): Promise<void> {
   const { accessToken, openid, content, replyToMessageId } = params;
-  await fetch(`${API_BASE}/v2/users/${openid}/messages`, {
+  const response = await fetch(`${API_BASE}/v2/users/${openid}/messages`, {
     method: "POST",
     headers: {
       Authorization: `QQBot ${accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      content,
-      msg_type: 0, // 0 表示文本消息
+      content: "",
+      msg_type: 2, // 0 表示文本消息, 2 表示 markdown
       msg_seq: nextMsgSeq(), // 消息序列号
       ...(replyToMessageId ? { msg_id: replyToMessageId } : {}), // 回复消息时添加引用 ID
+      markdown: {
+        content: content,
+      },
     }),
   });
+  if (!response.ok) {
+    throw new Error(`发送私聊消息失败: ${response}`);
+  }
 }

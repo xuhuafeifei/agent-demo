@@ -31,6 +31,7 @@ import {
 } from "./agent-state.js";
 import { formatChinaIso } from "../watch-dog/time.js";
 import { ToolRegister } from "./tool/tool-register.js";
+import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
 
@@ -142,7 +143,7 @@ function resolveChatHistoryTokenWindow(model?: { contextWindow?: number }): numb
 export async function getReplyFromAgent(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
-  channel: "web" | "qq";
+  channel: AgentChannel;
   sessionKey?: string;
 }): Promise<{ finalText: string }> {
   const { message, onEvent, channel, sessionKey } = params;
@@ -233,11 +234,12 @@ export async function getReplyFromAgent(params: {
     }
     onEvent(event);
   };
+  const channelPolicy = getChannelPolicy(channel);
   let webContextSeq = 0;
   const emitWebContextSnapshot = (
     reason: "before_prompt",
   ) => {
-    if (channel !== "web") return;
+    if (!channelPolicy.emitContextSnapshot) return;
     webContextSeq += 1;
     emit({ type: "context_snapshot", seq: webContextSeq, reason, contextText: prompt });
   };
@@ -282,7 +284,7 @@ export async function runWithSingleFlight(params: {
   onBusy?: () => void | Promise<void>;
   onAccepted?: () => void | Promise<void>;
   agentId?: string;
-  channel: "web" | "qq";
+  channel: AgentChannel;
 }): Promise<{ status: "busy" | "completed"; finalText: string }> {
   const {
     message,

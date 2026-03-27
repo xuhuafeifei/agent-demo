@@ -1,25 +1,83 @@
 {
-  "toolRegister": {
-    "tools": ["read", "write"],
-    "customTools": ["memorySearch", "persistMemory"],
-    "innerTools": []
+  "meta": {
+    "lastTouchedVersion": "2026.1.29",
+    "lastTouchedAt": "2026-01-30T06:53:26.311Z"
   },
-  "agents": {
-    "retry": {
-      "baseDelayMs": 800,
-      "maxRetries": 3,
-      "maxDelayMs": 10000
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "deepseek": {
+        "baseUrl": "https://api.deepseek.com",
+        "apiKey": "",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "deepseek-chat",
+            "name": "DeepSeek Chat",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 8192,
+            "maxTokens": 65536
+          }
+        ]
+      }
     }
   },
-  "model": {
-    "provider": "qwen-portal",
-    "model": "coder-model",
-    "contextTokens": 128000
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "qwen-portal/coder-model"
+      },
+      "models": {
+        "deepseek/deepseek-chat": {
+          "alias": "deepseek"
+        }
+      }
+    },
+    "memorySearch": {
+      "mode": "local",
+      "model": "nomic-embed-text-v1.5.Q4_K_M",
+      "endpoint": "",
+      "apiKey": "",
+      "chunkMaxChars": 500,
+      "embeddingDimensions": 768
+    },
+    "thinking": {
+      "qq": "off",
+      "web": "medium"
+    }
   },
-  "apiKey": {
-    "minimax": "sk-api-xxx",
-    "moonshot": "sk-xxx",
-    "kimi-code": "sk-xxx",
-    "xiaomi": "sk-xxx"
+  "logging": {
+    "cacheTime": 300,
+    "level": "debug",
+    "file": "/tmp/fgbg/fgbg-YYYY-MM-DD.log",
+    "consoleLevel": "debug",
+    "consoleStyle": "pretty",
+    "allowModule": []
+  },
+  "channels": {
+    "qqbot": {
+      "enabled": true,
+      "appId": "",
+      "clientSecret": "",
+      "targetOpenid": ""
+    }
+  },
+  "toolRegister": {
+    "tools": ["read", "write", "append", "update", "getNow", "shiftTime"],
+    "customTools": [
+      "memorySearch",
+      "persistMemory",
+      "loadSkill",
+      "createReminderTask",
+      "createAgentTask"
+    ],
+    "innerTools": ["listTaskSchedules", "runTaskByName", "deleteTaskByName"]
   }
 }

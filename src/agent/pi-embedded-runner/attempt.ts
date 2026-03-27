@@ -61,7 +61,7 @@ export async function createRuntimeAgentSession(params: {
     agentDir,
     provider,
     apiKey,
-    thinkingLevel = "off",
+    thinkingLevel,
   } = params;
 
   const sessionManager = SessionManager.open(sessionFile, sessionDir);
@@ -86,7 +86,7 @@ export async function createRuntimeAgentSession(params: {
     modelRegistry,
     cwd,
     agentDir,
-    thinkingLevel,
+    thinkingLevel: thinkingLevel,
     tools: toolBundle.tools as NonNullable<
       Parameters<typeof createAgentSession>[0]
     >["tools"],
