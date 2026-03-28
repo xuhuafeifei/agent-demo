@@ -265,7 +265,11 @@ export async function syncAllMemorySources(
   for (const [filePath, source] of candidates.entries()) {
     summary.total += 1;
     try {
+      const start = Date.now();
       const result = await syncMemoryByPath({ path: filePath, source });
+      memoryLogger.info(
+        ` syncMemoryByPath done action=${result.action} totalMs=${Date.now() - start} source=${source} path=${filePath} chunks=${result.chunkCount}`,
+      );
       summary[result.action] += 1;
     } catch (error) {
       summary.failed += 1;
