@@ -98,7 +98,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
   // 这里做一次探测，不兼容时清空并重建向量相关索引，交给后续 syncAll 回填。
   if (!isVectorDimensionCompatible(db, embeddingDimensions)) {
     memoryLogger.warn(
-      `[memory] embedding dimension changed, rebuilding memory indexes with ${embeddingDimensions} dimensions`,
+      ` embedding dimension changed, rebuilding memory indexes with ${embeddingDimensions} dimensions`,
     );
     await reinitializeIndexesForEmbeddingDimension(db, embeddingDimensions);
   }

@@ -75,7 +75,7 @@ async function bootstrap() {
     await getMemoryIndexManager().start();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    serverLogger.error("[memory] disabled: %s", message);
+    serverLogger.error("disabled: %s", message);
   }
   try {
     // 启动心跳调度：定时扫描 task_schedule 表并分发任务

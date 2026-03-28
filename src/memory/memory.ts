@@ -10,6 +10,8 @@ import type {
   SyncSummary,
 } from "./types.js";
 import { searchMemory } from "./recall.js";
+import { createPrepareStrategy } from "./embedding/embedding-provider.js";
+import { readFgbgUserConfig } from "../config/index.js";
 import {
   ensureDirSync,
   resolveUserMemoryDir,
@@ -32,16 +34,46 @@ const memoryLogger = getSubsystemConsoleLogger("memory");
  * - 对外提供 syncAll / search 能力
  */
 export class MemoryIndexManager {
-  private started = false;
+  private state: "stopped" | "starting" | "running" | "repairing" | "stopping" =
+    "stopped";
   private timerByPath = new Map<string, NodeJS.Timeout>();
   private watchers: FSWatcher[] = [];
 
   /**
+   * 设置记忆系统状态（用于内部状态管理）
+   */
+  private setState(
+    newState: "stopped" | "starting" | "running" | "repairing" | "stopping",
+  ): void {
+    const oldState = this.state;
+    if (oldState !== newState) {
+      memoryLogger.debug(` 状态变更: ${oldState} → ${newState}`);
+      this.state = newState;
+    }
+  }
+
+  /**
+   * 检查是否正在修复
+   */
+  public isRepairing(): boolean {
+    return this.state === "repairing";
+  }
+
+  /**
    * 启动监听并执行首次全量同步。
-   * 仅当全部成功后才置 started=true，否则调用方方法均按未启动处理（返回空）。
+   * 仅当全部成功后才置 state="running"，否则按未启动处理。
+   * 如果模型正在下载中，则暂停启动过程。
    */
   async start(): Promise<void> {
-    if (this.started) return;
+    if (this.state === "running" || this.state === "starting") return;
+
+    // 如果模型正在修复中，暂停启动过程
+    if (this.state === "repairing") {
+      memoryLogger.warn(` 正在修复中，记忆系统启动已暂停`);
+      return;
+    }
+
+    this.setState("starting");
 
     // watcher 启动前确保目录存在，避免监听初始化失败
     ensureAgentWorkspace();
@@ -52,31 +84,80 @@ export class MemoryIndexManager {
     this.watchFile(workspaceMemory, "MEMORY.md");
     this.watchDir(resolveUserMemoryDir(), "memory");
 
-    // 冷启动先全量同步，建立索引基线；成功后再标记已启动
-    await this.syncAllInternal();
-    this.started = true;
+    // 获取配置并创建准备策略
+    const config = readFgbgUserConfig().agents.memorySearch;
+    const prepareStrategy = createPrepareStrategy(config);
+
+    // 检查服务是否可连接
+    const isConnected = await prepareStrategy.connect();
+
+    if (!isConnected) {
+      // 服务不可连接，尝试自动修复
+      memoryLogger.warn(` embedding 服务不可连接，尝试自动修复`);
+      this.setState("repairing");
+
+      const repairSuccess = await prepareStrategy.repair();
+
+      if (!repairSuccess) {
+        // 修复失败，停止启动
+        memoryLogger.error(`自动修复失败，记忆系统启动失败`);
+        this.setState("stopped");
+        return;
+      }
+
+      // 修复成功，重新检查连接
+      const reconnected = await prepareStrategy.connect();
+      if (!reconnected) {
+        memoryLogger.error(` 修复后仍然无法连接，记忆系统启动失败`);
+        this.setState("stopped");
+        return;
+      }
+    }
+
+    // 冷启动先全量同步，建立索引基线；成功后再标记为运行中
+    try {
+      await this.syncAllInternal();
+      this.setState("running");
+      // 调度搜索, 触发模型检测
+      await searchMemory("init_memory_system");
+    } catch (error) {
+      memoryLogger.error(` 启动失败: ${error}`);
+      this.setState("stopped");
+      // 清理已创建的 watchers
+      for (const watcher of this.watchers) {
+        await watcher.close();
+      }
+      this.watchers = [];
+    }
   }
 
   /**
    * 停止监听并释放资源。
    */
   async stop(): Promise<void> {
-    if (!this.started) return;
+    if (this.state === "stopped" || this.state === "stopping") return;
 
-    // 先清空所有待执行 debounce，避免 stop 后仍触发 handleSync
-    for (const timer of this.timerByPath.values()) {
-      clearTimeout(timer);
+    this.setState("stopping");
+
+    try {
+      // 先清空所有待执行 debounce，避免 stop 后仍触发 handleSync
+      for (const timer of this.timerByPath.values()) {
+        clearTimeout(timer);
+      }
+      this.timerByPath.clear();
+
+      // 再关闭所有 watcher，防止后续文件事件进入队列
+      const closing = this.watchers.map((watcher) => watcher.close());
+      await Promise.allSettled(closing);
+      this.watchers = [];
+
+      // 最后关闭 SQLite 连接，释放文件句柄
+      await closeMemoryDb();
+    } catch (error) {
+      memoryLogger.error(` 停止过程中出错: ${error}`);
+    } finally {
+      this.setState("stopped");
     }
-    this.timerByPath.clear();
-
-    // 再关闭所有 watcher，防止后续文件事件进入队列
-    const closing = this.watchers.map((watcher) => watcher.close());
-    await Promise.allSettled(closing);
-    this.watchers = [];
-    this.started = false;
-
-    // 最后关闭 SQLite 连接，释放文件句柄
-    await closeMemoryDb();
   }
 
   /**
@@ -87,7 +168,7 @@ export class MemoryIndexManager {
     source: "workspace" | "memory" | "session",
     filePath: string,
   ): void {
-    if (!this.started) return;
+    if (this.state !== "running") return;
 
     const normalized = path.resolve(filePath);
     let mapped: MemorySource = "sessions";
@@ -106,11 +187,10 @@ export class MemoryIndexManager {
   }
 
   /**
-   * 执行一次全源扫描同步。未启动时返回空汇总。
+   * 执行一次全源扫描同步。状态不是 running 时返回空汇总。
    */
-  // 没在使用
   async syncAll(): Promise<SyncSummary> {
-    if (!this.started) {
+    if (this.state !== "running") {
       return {
         total: 0,
         create: 0,
@@ -125,7 +205,7 @@ export class MemoryIndexManager {
   }
 
   /**
-   * 内部全量同步（不检查 started），供 start() 与 syncAll() 使用。
+   * 内部全量同步（不检查 state），供 start() 与 syncAll() 使用。
    */
   private async syncAllInternal(): Promise<SyncSummary> {
     const sessionDir = resolveSessionDir();
@@ -137,10 +217,10 @@ export class MemoryIndexManager {
   }
 
   /**
-   * 对外检索接口。未启动时返回空数组。
+   * 对外检索接口。状态不是 running 时返回空数组。
    */
   async search(query: string, options?: SearchOptions): Promise<MemoryHit[]> {
-    if (!this.started) return [];
+    if (this.state !== "running") return [];
     const startMs = Date.now();
     const hits = await searchMemory(query, options);
     const durationMs = Date.now() - startMs;

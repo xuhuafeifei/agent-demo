@@ -1,6 +1,12 @@
-import { embeddingText } from "./embedding/embedding-provider.js";
+import {
+  embeddingText,
+  isModelDownloading,
+} from "./embedding/embedding-provider.js";
 import { getChunksByIds, queryFts, queryVector } from "./store.js";
 import type { MemoryHit, SearchOptions } from "./types.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
+
+const memoryLogger = getSubsystemConsoleLogger("memory");
 
 const RRF_K = 60;
 
@@ -11,6 +17,12 @@ export async function searchMemory(
   query: string,
   options?: SearchOptions,
 ): Promise<MemoryHit[]> {
+  // 检查模型是否正在下载，如果是则返回空结果
+  if (isModelDownloading()) {
+    memoryLogger.info(`embedding正在自动修复，搜索请求已暂停: ${query}`);
+    throw new Error("embedding正在自动修复，搜索请求已暂停");
+  }
+
   const topKFts = options?.topKFts ?? 20;
   const topKVector = options?.topKVector ?? 20;
   const topN = options?.topN ?? 8;
@@ -18,7 +30,9 @@ export async function searchMemory(
   // 并行执行 FTS 关键词召回与向量 KNN 召回
   const [ftsRows, vectorRows] = await Promise.all([
     queryFts(query, topKFts),
-    embeddingText(query).then((embedding) => queryVector(embedding, topKVector)),
+    embeddingText(query).then((embedding) =>
+      queryVector(embedding, topKVector),
+    ),
   ]);
 
   const ftsRank = new Map<number, number>();

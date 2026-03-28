@@ -65,6 +65,13 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
         chunkMaxChars: raw.agents?.memorySearch?.chunkMaxChars ?? 500,
         embeddingDimensions:
           raw.agents?.memorySearch?.embeddingDimensions ?? 768,
+        download: {
+          url:
+            raw.agents?.memorySearch?.download?.url ??
+            "https://hf-mirror.com/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_K_M.gguf",
+          timeout: raw.agents?.memorySearch?.download?.timeout ?? 5 * 60 * 1000, // 默认 5 分钟
+          enabled: raw.agents?.memorySearch?.download?.enabled ?? true, // 默认允许自动下载
+        },
       },
       thinking: raw.agents?.thinking ?? {},
     },

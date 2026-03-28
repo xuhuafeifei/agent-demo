@@ -32,7 +32,7 @@ async function measureAsync<T>(params: {
     return { value, ms: Date.now() - started };
   } finally {
     memoryLogger.debug(
-      `[memory] timing label=${params.label} costMs=${Date.now() - started} meta=${JSON.stringify(params.meta)}`,
+      `timing label=${params.label} costMs=${Date.now() - started} meta=${JSON.stringify(params.meta)}`,
     );
   }
 }
@@ -48,7 +48,7 @@ function measureSync<T>(params: {
     return { value, ms: Date.now() - started };
   } finally {
     memoryLogger.debug(
-      `[memory] timing label=${params.label} costMs=${Date.now() - started} meta=${JSON.stringify(params.meta)}`,
+      ` timing label=${params.label} costMs=${Date.now() - started} meta=${JSON.stringify(params.meta)}`,
     );
   }
 }
@@ -178,7 +178,7 @@ export async function syncMemoryByPath(params: {
 
   const action: SyncResult["action"] = existingHash ? "rebuild" : "create";
   memoryLogger.debug(
-    `[memory] syncMemoryByPath done action=${action} totalMs=${Date.now() - started} source=${source} path=${filePath} chunks=${count}`,
+    ` syncMemoryByPath done action=${action} totalMs=${Date.now() - started} source=${source} path=${filePath} chunks=${count}`,
   );
   return {
     path: filePath,
@@ -270,7 +270,7 @@ export async function syncAllMemorySources(
     } catch (error) {
       summary.failed += 1;
       const message = error instanceof Error ? error.message : String(error);
-      memoryLogger.warn(`[memory] sync failed: ${filePath} - ${message}`);
+      memoryLogger.warn(` sync failed: ${filePath} - ${message}`);
       // 单文件失败不影响其余，继续下一路径
     }
   }

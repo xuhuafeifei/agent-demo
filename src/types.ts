@@ -97,6 +97,15 @@ export type FgbgUserRawConfig = {
       apiKey?: string;
       chunkMaxChars?: number;
       embeddingDimensions?: number;
+      /** 模型下载配置 */
+      download?: {
+        /** 模型下载地址（可选，未配置则使用默认地址） */
+        url?: string;
+        /** 下载超时时间（ms，默认 5 分钟） */
+        timeout?: number;
+        /** 是否允许自动下载（默认 true） */
+        enabled?: boolean;
+      };
     };
     /** 思考级别配置：按 channel 定义默认思考级别 */
     thinking?: Partial<Record<AgentChannel, ThinkingLevel>>;
@@ -171,6 +180,15 @@ export type FgbgUserConfig = {
       apiKey: string;
       chunkMaxChars: number;
       embeddingDimensions: number;
+      /** 模型下载配置 */
+      download: {
+        /** 模型下载地址（可选，未配置则使用默认地址） */
+        url: string;
+        /** 下载超时时间（ms，默认 5 分钟） */
+        timeout: number;
+        /** 是否允许自动下载（默认 true） */
+        enabled: boolean;
+      };
     };
     /** 思考级别配置：按 channel 定义默认思考级别 */
     thinking: Partial<Record<AgentChannel, ThinkingLevel>>;
