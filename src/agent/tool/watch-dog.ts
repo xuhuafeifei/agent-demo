@@ -98,7 +98,6 @@ const validateCronParams = Type.Object({
     }),
   ),
 });
-type ValidateCronInput = Static<typeof validateCronParams>;
 
 const createReminderTaskParams = Type.Object({
   content: Type.String({
@@ -231,6 +230,7 @@ export function createListTasksTool(): ToolDefinition<
         const tasks = rows.map((row) => ({
           task_name: row.task_name,
           task_type: row.task_type,
+          payload_text: row.payload_text,
           status: row.status,
           next_run_time: row.next_run_time,
           schedule_kind: row.schedule_kind,
@@ -245,7 +245,7 @@ export function createListTasksTool(): ToolDefinition<
             : tasks
                 .map(
                   (t, idx) =>
-                    `[${idx + 1}] ${t.task_name} (${t.task_type}) kind=${t.schedule_kind} next=${t.next_run_time} tz=${t.timezone} attempts=${t.attempts}${t.last_error ? ` last_error=${t.last_error}` : ""}`,
+                    `[${idx + 1}] ${t.task_name} (${t.task_type}) kind=${t.schedule_kind} content=${t.payload_text} next=${t.next_run_time} tz=${t.timezone} attempts=${t.attempts}${t.last_error ? ` last_error=${t.last_error}` : ""}`,
                 )
                 .join("\n");
         return okResult(summary, { tasks });
@@ -374,8 +374,7 @@ export function createShiftTimeTool(): ToolDefinition<
   return {
     name: "shiftTime",
     label: "Shift Time",
-    description:
-      "Shift a HH:mm time by offset_seconds (wraps around 24h).",
+    description: "Shift a HH:mm time by offset_seconds (wraps around 24h).",
     parameters: shiftTimeParams,
     execute: async (_id, params: ShiftTimeInput) => {
       const time = params.time.trim();
@@ -395,7 +394,7 @@ export function createShiftTimeTool(): ToolDefinition<
       const [hh, mm] = time.split(":").map((v) => parseInt(v, 10));
       const base = (hh! * 60 + mm!) * 60;
       const day = 24 * 3600;
-      const shifted = ((base + offsetSeconds) % day + day) % day;
+      const shifted = (((base + offsetSeconds) % day) + day) % day;
       const outH = String(Math.floor(shifted / 3600)).padStart(2, "0");
       const outM = String(Math.floor((shifted % 3600) / 60)).padStart(2, "0");
       const resultTime = `${outH}:${outM}`;
@@ -477,9 +476,13 @@ export function createReminderTaskTool(): ToolDefinition<
         scheduleKind = "cron";
         scheduleExpr = `0 ${cron.replace(/\s+/g, " ").trim()}`;
         try {
-          nextRunTime = computeNextRunFromCron({ cron: scheduleExpr, timezone });
+          nextRunTime = computeNextRunFromCron({
+            cron: scheduleExpr,
+            timezone,
+          });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           return errResult(`cron 表达式不合法: ${message}`, {
             code: "INVALID_ARGUMENT",
             message,
@@ -578,9 +581,13 @@ export function createAgentTaskTool(): ToolDefinition<
         scheduleKind = "cron";
         scheduleExpr = `0 ${cron.replace(/\s+/g, " ").trim()}`;
         try {
-          nextRunTime = computeNextRunFromCron({ cron: scheduleExpr, timezone });
+          nextRunTime = computeNextRunFromCron({
+            cron: scheduleExpr,
+            timezone,
+          });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           return errResult(`cron 表达式不合法: ${message}`, {
             code: "INVALID_ARGUMENT",
             message,
