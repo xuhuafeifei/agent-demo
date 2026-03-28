@@ -32,6 +32,7 @@ import {
 import { formatChinaIso } from "../watch-dog/time.js";
 import { ToolRegister } from "./tool/tool-register.js";
 import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
+import { refreshFgbgUserConfigCache } from "../config/index.js";
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
 
@@ -99,10 +100,16 @@ function pruneSessionChat(
   let usedTokens = 0;
   for (let i = 0; i < messages.length; i += 1) {
     const msg = messages[i];
-    const raw = msg as { role?: string; content?: unknown[]; toolName?: string };
+    const raw = msg as {
+      role?: string;
+      content?: unknown[];
+      toolName?: string;
+    };
     const role = raw.role ?? "unknown";
     const toolName = raw.toolName ?? "";
-    if (ToolRegister.getInstance().getFilterContextToolNames().includes(toolName)) {
+    if (
+      ToolRegister.getInstance().getFilterContextToolNames().includes(toolName)
+    ) {
       continue;
     }
 
@@ -121,16 +128,20 @@ function pruneSessionChat(
       usedTokens += estimatedTokens(line);
       // 从最新消息开始回溯，包含触发超限的那条后停止。
       if (usedTokens > tokenWindowLimit) break;
-    }    
+    }
   }
 
   return selected.reverse().join("\n\n");
 }
 
-function resolveChatHistoryTokenWindow(model?: { contextWindow?: number }): number {
+function resolveChatHistoryTokenWindow(model?: {
+  contextWindow?: number;
+}): number {
   const DEFAULT_TOKEN_WINDOW = 8 * 1024;
   const window = model?.contextWindow;
-  return typeof window === "number" && window > 0 ? window : DEFAULT_TOKEN_WINDOW;
+  return typeof window === "number" && window > 0
+    ? window
+    : DEFAULT_TOKEN_WINDOW;
 }
 
 /**
@@ -146,6 +157,9 @@ export async function getReplyFromAgent(params: {
   channel: AgentChannel;
   sessionKey?: string;
 }): Promise<{ finalText: string }> {
+  // 刷新本地fgbg.json配置缓存
+  refreshFgbgUserConfigCache();
+
   const { message, onEvent, channel, sessionKey } = params;
 
   // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
@@ -235,9 +249,7 @@ export async function getReplyFromAgent(params: {
     onEvent(event);
   };
   const channelPolicy = getChannelPolicy(channel);
-  const emitContextSnapshot = (
-    reason: "before_prompt",
-  ) => {
+  const emitContextSnapshot = (reason: "before_prompt") => {
     if (!channelPolicy.emitContextSnapshot) return;
     emit({ type: "context_snapshot", seq: 0, reason, contextText: prompt });
   };

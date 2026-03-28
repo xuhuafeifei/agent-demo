@@ -195,21 +195,74 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
   return cfg;
 }
 
+type FgbgUserConfigCache = {
+  cfg: FgbgUserConfig;
+  expireAt: number;
+};
+
+let cache: FgbgUserConfigCache | null = null;
+
 /**
  * 读取用户配置, 解析并返回 FgbgUserConfig
  * 如果配置文件不存在或解析失败, 则返回默认配置
  * @returns FgbgUserConfig
  */
-export function readFgbgUserConfig(): FgbgUserConfig {
+export function refreshAndGetFgbgUserConfig(): FgbgUserConfig {
   const filePath = resolveGlobalConfigPath();
   try {
     const raw = JSON.parse(
       fs.readFileSync(filePath, "utf-8"),
     ) as FgbgUserRawConfig;
-    return resolveFgbgUserConfig(raw);
+    cache = {
+      cfg: resolveFgbgUserConfig(raw),
+      expireAt: Date.now() + 5 * 60 * 1000,
+    };
   } catch {
-    return resolveFgbgUserConfig({} as FgbgUserRawConfig);
+    cache = {
+      cfg: resolveFgbgUserConfig({} as FgbgUserRawConfig),
+      expireAt: Date.now() + 5 * 60 * 1000,
+    };
   }
+  return cache.cfg;
+}
+
+/**
+ * 刷新缓存
+ */
+export function refreshFgbgUserConfigCache(): void {
+  const filePath = resolveGlobalConfigPath();
+  try {
+    const raw = JSON.parse(
+      fs.readFileSync(filePath, "utf-8"),
+    ) as FgbgUserRawConfig;
+    cache = {
+      cfg: resolveFgbgUserConfig(raw),
+      expireAt: Date.now() + 5 * 60 * 1000,
+    };
+  } catch {
+    cache = {
+      cfg: resolveFgbgUserConfig({} as FgbgUserRawConfig),
+      expireAt: Date.now() + 5 * 60 * 1000, // 5分钟缓存
+    };
+  }
+}
+
+/**
+ * 读取缓存. 如果缓存不存在, 则重新读取配置
+ * @returns FgbgUserConfig
+ */
+export function readFgbgUserConfig(): FgbgUserConfig {
+  if (cache && cache.expireAt > Date.now()) {
+    return cache.cfg;
+  }
+  return refreshAndGetFgbgUserConfig();
+}
+
+/**
+ * 清除缓存
+ */
+export function evicateFgbgUserConfigCache(): void {
+  cache = null;
 }
 
 /**
