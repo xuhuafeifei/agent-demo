@@ -12,6 +12,7 @@ import {
 import fs from "node:fs";
 
 function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
+  const modelsMode = raw.models?.mode ?? "merge";
   const cfg: FgbgUserConfig = {
     meta: {
       lastTouchedVersion: raw.meta?.lastTouchedVersion ?? "1.0.0",
@@ -19,25 +20,37 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
     },
     toolRegister: raw.toolRegister ?? DEFAULT_TOOL_REGISTER,
     models: {
-      mode: raw.models?.mode ?? "merge",
-      providers: raw.models?.providers ?? {
-        "qwen-portal": {
-          baseUrl: "https://api.qwen.com",
-          apiKey: "",
-          api: "openai-completions",
-          models: [
-            {
-              id: "coder-model",
-              name: "coder-model",
-              reasoning: false,
-              input: ["text"],
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-              contextWindow: 8192,
-              maxTokens: 65536,
-            },
-          ],
-        },
-      },
+      mode: modelsMode,
+      providers: (() => {
+        const defaultProviders: Record<string, ProviderConfig> = {
+          "qwen-portal": {
+            baseUrl: "https://portal.qwen.ai/v1",
+            apiKey: "",
+            api: "openai-completions",
+            models: [
+              {
+                id: "coder-model",
+                name: "coder-model",
+                reasoning: false,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 8192,
+                maxTokens: 16 * 1024,
+                tokenRatio: 0.75,
+              },
+            ],
+          },
+        };
+
+        const userProviders = raw.models?.providers;
+        if (!userProviders) {
+          return defaultProviders;
+        }
+        if (modelsMode === "replace") {
+          return { ...userProviders };
+        }
+        return { ...defaultProviders, ...userProviders };
+      })(),
     },
     agents: {
       defaults: {

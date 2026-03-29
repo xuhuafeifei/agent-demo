@@ -121,9 +121,9 @@ export async function startQQLayer(): Promise<void> {
 
   const appId = account.appId;
   const secret = account.clientSecret;
-  qqLogger.info(
-    `qq-layer 使用账号 ${account.accountId}（来源: ${account.source}）`,
-  );
+  // qqLogger.info(
+  //   `qq-layer 使用账号 ${account.accountId}（来源: ${account.source}）`,
+  // );
 
   let heartbeatTimer: NodeJS.Timeout | null = null; // 心跳定时器
   let lastSeq: number | null = null; // 最后一条消息的序列号

@@ -1,11 +1,73 @@
 import fs from "node:fs";
 import path from "node:path";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
+import {
+  SessionManager,
+  SessionMessageEntry,
+} from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { Message } from "@mariozechner/pi-ai";
 import { resolveSessionDir, resolveSessionIndexPath } from "./session-path.js";
 import type { SessionIndex, SessionIndexEntry } from "./types.js";
+import { ToolRegister } from "../tool/tool-register.js";
 
-// 4MB
-const MAX_SESSION_FILE_SIZE = 4 * 1024 * 1024;
+// 128 KB
+const MAX_SESSION_FILE_SIZE = 128 * 1024;
+
+/** User / assistant LLM messages only (excludes toolResult and agent custom roles). */
+type UserOrAssistantMessage = Extract<Message, { role: "user" | "assistant" }>;
+
+function isUserOrAssistantMessage(
+  m: AgentMessage,
+): m is UserOrAssistantMessage {
+  return m.role === "user" || m.role === "assistant";
+}
+
+/**
+ * 从旧会话中获取需要保留到新的轮转会话中的消息。
+ * 过滤规则：
+ * 1. 只要 role 为 user 和 assistant 的消息
+ * 2. 只要 text 内容（忽略 toolResult 等）
+ * 3. 过滤掉 toolRegister 中 getFilterContextToolNames() 返回的工具相关消息
+ */
+function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
+  const entries = oldSessionManager.getEntries();
+
+  // 从后向前收集最多 10 条符合条件的消息
+  const messagesToPreserve: Message[] = [];
+
+  for (
+    let i = entries.length - 1;
+    i >= 0 && messagesToPreserve.length < 10;
+    i--
+  ) {
+    const entry = entries[i];
+
+    // 只处理 message 类型的条目
+    if (entry.type !== "message") {
+      continue;
+    }
+
+    const message = (entry as SessionMessageEntry).message;
+    if (!isUserOrAssistantMessage(message)) {
+      continue;
+    }
+    // 过滤掉 toolRegister 中 getFilterContextToolNames() 返回的工具相关消息
+    const toolName =
+      "toolName" in message &&
+      typeof (message as { toolName?: string }).toolName === "string"
+        ? (message as { toolName: string }).toolName
+        : "";
+    if (
+      ToolRegister.getInstance().getFilterContextToolNames().includes(toolName)
+    ) {
+      continue;
+    }
+
+    messagesToPreserve.unshift(message);
+  }
+
+  return messagesToPreserve;
+}
 
 function ensureSessionDir(): string {
   const sessionDir = resolveSessionDir();
@@ -45,12 +107,15 @@ function ensureSessionFile(sessionManager: SessionManager): string {
 }
 
 function shouldRotateSessionFile(sessionFile: string): boolean {
-  try {
-    const stat = fs.statSync(sessionFile);
-    return stat.size > MAX_SESSION_FILE_SIZE;
-  } catch {
-    return true;
-  }
+  // 暂时不限制文件大小. 主链路会通过 summary 压缩内容.
+  // TODO, 未来可以新增创建新会话的能力.
+  return false;
+  // try {
+  //   const stat = fs.statSync(sessionFile);
+  //   return stat.size > MAX_SESSION_FILE_SIZE;
+  // } catch {
+  //   return true;
+  // }
 }
 
 function createSessionEntry(params: {
@@ -136,8 +201,21 @@ export function prepareBeforeSessionManager(params: {
     // 已有会话时，检查会话文件是否超过大小阈值需要轮转
     const resolvedFile = path.resolve(existing.sessionFile);
     if (shouldRotateSessionFile(resolvedFile)) {
+      // 打开旧会话管理器以读取消息
+      const oldManager = SessionManager.open(existing.sessionFile, sessionDir);
+
+      // 获取需要保留的消息
+      const messagesToPreserve = getMessagesToPreserve(oldManager);
+
+      // 创建新会话
       const manager = SessionManager.create(params.cwd, sessionDir);
       const sessionFile = ensureSessionFile(manager);
+
+      // 将旧消息复制到新会话
+      for (const message of messagesToPreserve) {
+        manager.appendMessage(message);
+      }
+
       nextEntry = createSessionEntry({
         sessionKey: params.sessionKey,
         sessionId: manager.getSessionId(),

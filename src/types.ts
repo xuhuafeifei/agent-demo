@@ -28,6 +28,7 @@ export type ModelDefinitionConfig = {
   baseUrl?: string;
   headers?: Record<string, string>;
   compat?: Record<string, unknown>;
+  tokenRatio?: number; // 新增字段，默认 0.75
 };
 
 export type ProviderConfig = {
@@ -52,6 +53,7 @@ export type ModelConfigFile = {
     contextTokens?: number;
   };
   apiKey?: Record<string, string>;
+  providers?: Record<string, Partial<ProviderConfig>>;
 };
 
 /** toolRegister 中每项可为字符串（逗号分隔）或字符串数组，不支持通配符 */
@@ -253,6 +255,7 @@ export type RuntimeModel = {
   headers?: Record<string, string>;
   compat?: Record<string, unknown>;
   apiKey?: string;
+  tokenRatio?: number; // 新增字段，默认 0.75
 };
 
 export type ModelRegistry = Record<string, RuntimeModel>;

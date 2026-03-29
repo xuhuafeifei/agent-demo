@@ -20,17 +20,32 @@ type RuntimeUiEvent = RuntimeStreamEvent & {
 
 function normalizeRuntimeEvent(event: RuntimeStreamEvent): RuntimeUiEvent {
   switch (event.type) {
-    case "context_snapshot":
+    case "context_snapshot": {
+      const typedEvent = event as { type: "context_snapshot"; seq: number; reason: "before_prompt"; contextText: string };
       return {
-        ...event,
+        ...typedEvent,
         uiEventType: "context",
         uiPayload: {
-          phase: event.type,
-          seq: event.seq,
-          reason: event.reason,
-          contextText: event.contextText,
+          phase: typedEvent.type,
+          seq: typedEvent.seq,
+          reason: typedEvent.reason,
+          contextText: typedEvent.contextText,
         },
       };
+    }
+    case "context_used": {
+      const typedEvent = event as { type: "context_used"; totalTokens: number; threshold: number; contextWindow: number };
+      return {
+        ...typedEvent,
+        uiEventType: "context",
+        uiPayload: {
+          phase: typedEvent.type,
+          totalTokens: typedEvent.totalTokens,
+          threshold: typedEvent.threshold,
+          contextWindow: typedEvent.contextWindow,
+        },
+      };
+    }
     case "message_start":
     case "message_update":
     case "message_end":

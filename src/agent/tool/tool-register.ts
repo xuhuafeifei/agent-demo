@@ -5,6 +5,7 @@ import { createLoadSkillTool } from "./load-skill.js";
 import { createMemorySearchTool } from "./memory-search.js";
 import { createPersistMemoryTool } from "./persist-memory.js";
 import { createUpdateTool } from "./update.js";
+import { createCompactContextTool } from "./compact-context.js";
 import {
   createAgentTaskTool,
   createDeleteTaskTool,
@@ -15,11 +16,7 @@ import {
   createShiftTimeTool,
   createValidateCronTool,
 } from "./watch-dog.js";
-import {
-  getEventBus,
-  TOPIC_TOOL_BEFORE_BUILD,
-  TOPPIC_HEART_BEAT,
-} from "../../event-bus/index.js";
+import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
 import { readFgbgUserConfig } from "../../config/index.js";
 
 const eventBus = getEventBus();
@@ -34,6 +31,7 @@ export const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
     "loadSkill",
     "createReminderTask",
     "createAgentTask",
+    "compactContext",
   ],
   // innerTools: 运维/调试工具（偏“人类/系统调试入口”）
   innerTools: ["listTaskSchedules", "runTaskByName", "deleteTaskByName"],
@@ -117,6 +115,10 @@ const TOOL_REGISTRY: Record<
     description:
       "validateCron(cron, timezone?) - validate cron expression (not implemented yet)",
   },
+  compactContext: {
+    factory: () => createCompactContextTool(),
+    description: "compactContext() - compress session context to reduce size",
+  },
 };
 
 function parseToolList(value: unknown): string[] {
@@ -149,19 +151,7 @@ export type ToolBundle = {
 export class ToolRegister {
   private static instance: ToolRegister;
 
-  private config: ToolRegisterConfig;
-
-  private constructor() {
-    eventBus.on(TOPPIC_HEART_BEAT, () => {
-      // 重新加载配置
-      const newConfig = readFgbgUserConfig();
-      if (newConfig.toolRegister != null) {
-        this.config = newConfig.toolRegister;
-      }
-    });
-
-    this.config = readFgbgUserConfig().toolRegister;
-  }
+  private constructor() {}
 
   static getInstance(): ToolRegister {
     if (!ToolRegister.instance) {
@@ -190,11 +180,10 @@ export class ToolRegister {
    * 根据当前配置为给定 cwd 生成工具实例与说明文案。
    */
   getToolBundle(cwd: string): ToolBundle {
-    const toolsNames = this.resolveNames(parseToolList(this.config.tools));
-    const customNames = this.resolveNames(
-      parseToolList(this.config.customTools),
-    );
-    const innerNames = this.resolveNames(parseToolList(this.config.innerTools));
+    const config = readFgbgUserConfig().toolRegister;
+    const toolsNames = this.resolveNames(parseToolList(config.tools));
+    const customNames = this.resolveNames(parseToolList(config.customTools));
+    const innerNames = this.resolveNames(parseToolList(config.innerTools));
 
     const tools = toolsNames.map((name) => TOOL_REGISTRY[name].factory(cwd));
     const customTools = customNames.map((name) =>
@@ -226,6 +215,6 @@ export class ToolRegister {
 
   /** 返回当前持久化的 toolRegister 配置（只读）。 */
   getConfig(): Readonly<ToolRegisterConfig> {
-    return this.config;
+    return readFgbgUserConfig().toolRegister;
   }
 }

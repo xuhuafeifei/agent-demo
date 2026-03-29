@@ -172,7 +172,8 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           input: ["text"],
           cost: { input: 15, output: 60, cacheRead: 2, cacheWrite: 10 },
           contextWindow: 200000,
-          maxTokens: 8192,
+          maxTokens: 16 * 1024,
+          tokenRatio: 0.75,
         },
       ],
     },
@@ -187,7 +188,8 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 65536,
-          maxTokens: 8192,
+          maxTokens: 16 * 1024,
+          tokenRatio: 0.75,
         },
       ],
     },
@@ -202,7 +204,8 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 256000,
-          maxTokens: 8192,
+          maxTokens: 16 * 1024,
+          tokenRatio: 0.75,
         },
       ],
     },
@@ -217,9 +220,10 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 262144,
-          maxTokens: 32768,
+          maxTokens: 16 * 1024,
           headers: { "User-Agent": "KimiCLI/0.77" },
           compat: { supportsDeveloperRole: false },
+          tokenRatio: 0.75,
         },
       ],
     },
@@ -234,7 +238,8 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 128000,
-          maxTokens: 8192,
+          maxTokens: 16 * 1024,
+          tokenRatio: 0.75,
         },
       ],
     },
@@ -249,7 +254,8 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 262144,
-          maxTokens: 8192,
+          maxTokens: 16 * 1024,
+          tokenRatio: 0.75,
         },
       ],
     },
@@ -265,6 +271,7 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 8192,
           maxTokens: 2048,
+          tokenRatio: 0.75,
         },
       ],
     },
@@ -311,8 +318,11 @@ async function buildImplicitProviders(
       projectApiKey: projectConfig.apiKey?.[providerId],
     });
 
+    const configOverride = projectConfig.providers?.[providerId] ?? {};
+
     providers[providerId] = {
       ...template,
+      ...configOverride,
       models: template.models.map((model) => cloneModelDefinition(model)),
       ...(apiKey ? { apiKey } : {}),
     };
@@ -324,7 +334,6 @@ async function buildImplicitProviders(
 function normalizeExplicitProviders(
   providers: Record<string, ProviderConfig>,
 ): Record<string, ProviderConfig> {
-
   const out: Record<string, ProviderConfig> = {};
   for (const [rawProviderId, provider] of Object.entries(providers)) {
     const providerId = normalizeProviderId(rawProviderId);
@@ -345,7 +354,9 @@ export async function getMergedProviders(
   config: FgbgUserConfig,
 ): Promise<Record<string, ProviderConfig>> {
   const projectConfig = readProjectModelConfig();
+  // 隐式自动发现
   const implicit = await buildImplicitProviders(projectConfig);
+  // 显式配置合并
   const explicit = normalizeExplicitProviders(config.models.providers);
 
   const merged: Record<string, ProviderConfig> = {};
@@ -400,6 +411,9 @@ export function buildRuntimeModelsFromProviders(
         maxTokens: modelDef.maxTokens,
         ...(provider.headers ? { headers: { ...provider.headers } } : {}),
         ...(modelDef.compat ? { compat: { ...modelDef.compat } } : {}),
+        ...(typeof modelDef.tokenRatio === "number"
+          ? { tokenRatio: modelDef.tokenRatio }
+          : { tokenRatio: 0.75 }), // 新增字段，默认 0.75
         apiKey,
       };
       models[key] = model;

@@ -33,8 +33,9 @@ import { formatChinaIso } from "../watch-dog/time.js";
 import { ToolRegister } from "./tool/tool-register.js";
 import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
 import { refreshFgbgUserConfigCache } from "../config/index.js";
+import { areTextsOverTokenThreshold } from "./utils/token-counter.js";
 
-const DEFAULT_SESSION_KEY = "agent:main:main";
+export const DEFAULT_SESSION_KEY = "agent:main:main";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 
@@ -90,14 +91,8 @@ export function clearHistory(): void {
  * 从 session 消息列表剪枝：只保留每条 message 的 role 与文本内容，
  * 返回 "user: ...\n\nassistant: ..." 格式字符串。
  */
-function pruneSessionChat(
-  messages: SessionMessage[],
-  tokenWindowLimit: number = 8 * 1024,
-): string {
-  const estimatedTokens = (text: string): number => Math.max(1, text.length);
-
+function pruneSessionChat(messages: SessionMessage[]): string {
   const selected: string[] = [];
-  let usedTokens = 0;
   for (let i = 0; i < messages.length; i += 1) {
     const msg = messages[i];
     const raw = msg as {
@@ -125,23 +120,10 @@ function pruneSessionChat(
     if (parts.length > 0) {
       const line = `${role}: ${parts.join("\n")}`;
       selected.push(line);
-      usedTokens += estimatedTokens(line);
-      // 从最新消息开始回溯，包含触发超限的那条后停止。
-      if (usedTokens > tokenWindowLimit) break;
     }
   }
 
   return selected.reverse().join("\n\n");
-}
-
-function resolveChatHistoryTokenWindow(model?: {
-  contextWindow?: number;
-}): number {
-  const DEFAULT_TOKEN_WINDOW = 8 * 1024;
-  const window = model?.contextWindow;
-  return typeof window === "number" && window > 0
-    ? window
-    : DEFAULT_TOKEN_WINDOW;
 }
 
 /**
@@ -167,6 +149,7 @@ export async function getReplyFromAgent(params: {
     sessionKey: sessionKey ?? DEFAULT_SESSION_KEY,
     channel,
   });
+
   const modelRef = prepared.modelRef;
   const model = prepared.model;
   const modelError = prepared.modelError;
@@ -218,10 +201,7 @@ export async function getReplyFromAgent(params: {
   });
 
   // session 获取当前聊天信息，剪枝为仅保留 user/assistant 的文本内容
-  const chatHistoryText = pruneSessionChat(
-    getHistory(),
-    resolveChatHistoryTokenWindow(prepared.model),
-  );
+  const chatHistoryText = pruneSessionChat(getHistory());
 
   // 提示词函数是纯组合器：数据由调用方准备后传入。
   const prompt = buildSystemPrompt({
@@ -237,6 +217,26 @@ export async function getReplyFromAgent(params: {
   });
   agentLogger.trace(`prompt: ${prompt}`);
 
+  // 使用 token-counter 工具计算 systemprompt + 用户输入的总 token 数
+  const maxTokens = prepared.model.maxTokens;
+  const tokenRatio = prepared.model.tokenRatio || 0.75;
+  const compressionResult = areTextsOverTokenThreshold(
+    [prompt, message],
+    maxTokens,
+    tokenRatio,
+  );
+  const needsCompression = compressionResult.isOver;
+
+  agentLogger.info(
+    `maxTokens: ${maxTokens}, tokenRatio: ${tokenRatio}, compressionResult: ${JSON.stringify(compressionResult)}`,
+  );
+
+  if (needsCompression) {
+    agentLogger.warn(
+      `提示词总 Token 数超过阈值: ${compressionResult.totalTokens}/${compressionResult.threshold} (${maxTokens} max)，需要压缩会话`,
+    );
+  }
+
   session.agent.setSystemPrompt(prompt);
 
   trace.recordStage("request:start");
@@ -248,6 +248,14 @@ export async function getReplyFromAgent(params: {
     }
     onEvent(event);
   };
+
+  // 发送 context used 事件到前端
+  emit({
+    type: "context_used",
+    totalTokens: compressionResult.totalTokens,
+    threshold: compressionResult.threshold,
+    contextWindow: maxTokens,
+  });
   const channelPolicy = getChannelPolicy(channel);
   const emitContextSnapshot = (reason: "before_prompt") => {
     if (!channelPolicy.emitContextSnapshot) return;
@@ -262,6 +270,7 @@ export async function getReplyFromAgent(params: {
       onEvent: (event) => {
         emit(event);
       },
+      needsCompression, // 传递压缩标记
     });
     trace.recordStage("request:end");
     emit({ type: "done" });

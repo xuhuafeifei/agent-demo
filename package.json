@@ -27,7 +27,6 @@
     "cron-parser": "^5.5.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "lru-cache": "^11.2.7",
     "node-llama-cpp": "^3.17.1",
     "sqlite-vec": "^0.1.7-alpha.2",
     "ws": "^8.20.0"

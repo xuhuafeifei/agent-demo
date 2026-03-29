@@ -44,4 +44,10 @@ export type RuntimeStreamEvent =
       seq: number;
       reason: "before_prompt";
       contextText: string;
+    }
+  | {
+      type: "context_used";
+      totalTokens: number;
+      threshold: number;
+      contextWindow: number;
     };
