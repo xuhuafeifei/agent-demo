@@ -315,7 +315,7 @@ function normalizeUiEvent(data) {
   if (String(data.type || "").startsWith("tool_execution_")) {
     return { ...data, uiEventType: "tool", uiPayload: { phase: data.type } };
   }
-  if (["error", "auto_retry_start", "auto_retry_end"].includes(data.type)) {
+  if (["error", "auto_retry_start", "auto_retry_end", "compaction_start", "compaction_end"].includes(data.type)) {
     return { ...data, uiEventType: "context", uiPayload: { phase: data.type } };
   }
   return data;
@@ -710,6 +710,31 @@ function handleStreamEvent(data, state, assistantMessageEl) {
       } else {
         updateStreamingIndicator(assistantMessageEl, "Thinking");
         clearTimelineError(assistantMessageEl);
+      }
+      return;
+    } else if (event.type === "compaction_start") {
+      if (!assistantMessageEl) return;
+      finalizeCurrentThinking(assistantMessageEl, state);
+      updateStreamingIndicator(assistantMessageEl, "Compressing Context...");
+      return;
+    } else if (event.type === "compaction_end") {
+      if (!assistantMessageEl) return;
+      const indicator = getAssistantStream(assistantMessageEl)?.querySelector(
+        ".streaming-indicator",
+      );
+      if (event.error) {
+        updateStreamingIndicator(assistantMessageEl, "Compression Failed");
+        if (indicator) indicator.classList.add("error");
+        updateTimelineError(assistantMessageEl, `压缩失败：${event.error}`);
+      } else {
+        if (indicator) indicator.classList.remove("error");
+        updateStreamingIndicator(assistantMessageEl, "Thinking");
+        appendTimelineDetails(
+          assistantMessageEl,
+          "context",
+          "上下文变化 · compaction",
+          event.tokensBefore ? `压缩完成，压缩前 Token 数：${event.tokensBefore}` : "会话已压缩过，跳过本次压缩"
+        );
       }
       return;
     }

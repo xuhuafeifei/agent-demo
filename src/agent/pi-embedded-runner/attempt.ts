@@ -9,12 +9,13 @@ import type {
   AgentSession,
   AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel, AgentMessage } from "@mariozechner/pi-agent-core";
 import type { RuntimeStreamEvent } from "../utils/events.js";
 import path from "node:path";
 import type { RuntimeModel } from "../../types.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { createAgentToolBundle } from "../tool/index.js";
+import { ToolRegister } from "../tool/tool-register.js";
 
 const attemptLogger = getSubsystemConsoleLogger("attempt");
 
@@ -34,13 +35,118 @@ function extractAssistantText(content: unknown[] | undefined): string {
     .join("");
 }
 
-/** 从 partial.content 中拼接所有 type===thinking 的 thinking 字段，用于 thinking_start/thinking_delta/thinking_end 时推给前端 */
-function extractAssistantThinking(content: unknown[] | undefined): string {
-  if (!content || !Array.isArray(content)) return "";
-  return (content as { type?: string; thinking?: string }[])
-    .filter((item) => item.type === "thinking")
-    .map((item) => item.thinking || "")
-    .join("");
+/**
+ * 截断工具结果和 thinking 的内容，避免占用过多 token
+ * 使用 toolRegister 中定义的 getFilterContextToolNames() 来决定截断哪些工具
+ * @param messages - 原始消息列表
+ * @param maxContentLength - 每个工具结果/思考保留的最大字符数（默认 500 字符）
+ * @returns 截断后的消息列表
+ */
+function truncateToolResults(
+  messages: AgentMessage[],
+  maxContentLength = 500,
+): AgentMessage[] {
+  const filterToolNames =
+    ToolRegister.getInstance().getFilterContextToolNames();
+
+  if (filterToolNames.length === 0) {
+    return messages;
+  }
+
+  return messages.map((msg) => {
+    const message = msg as {
+      role?: string;
+      toolName?: string;
+      content?: string | unknown[];
+    };
+
+    // 1. 处理 toolResult 类型的消息
+    if (message.role === "toolResult" && message.toolName) {
+      if (filterToolNames.includes(message.toolName)) {
+        const truncatedMsg = { ...message };
+
+        if (typeof message.content === "string") {
+          if (message.content.length > maxContentLength) {
+            truncatedMsg.content =
+              message.content.slice(0, maxContentLength) +
+              "\n\n... [Content truncated]";
+          }
+        } else if (Array.isArray(message.content)) {
+          truncatedMsg.content = message.content.map((block) => {
+            const b = block as { type?: string; text?: string };
+            if (
+              b.type === "text" &&
+              b.text &&
+              b.text.length > maxContentLength
+            ) {
+              return {
+                ...b,
+                text:
+                  b.text.slice(0, maxContentLength) +
+                  "\n\n... [Content truncated]",
+              };
+            }
+            return block;
+          });
+        }
+
+        return truncatedMsg as AgentMessage;
+      }
+    }
+
+    // 2. 处理 assistant 消息中的 thinking 和 toolCall 块
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      const truncatedMsg = { ...message };
+      truncatedMsg.content = message.content.map((block) => {
+        const b = block as {
+          type?: string;
+          thinking?: string;
+          text?: string;
+          name?: string;
+          arguments?: Record<string, unknown>;
+        };
+
+        // 截断 thinking 块
+        if (
+          b.type === "thinking" &&
+          b.thinking &&
+          b.thinking.length > maxContentLength
+        ) {
+          return {
+            ...b,
+            thinking:
+              b.thinking.slice(0, maxContentLength) +
+              "\n\n... [Thinking truncated]",
+          };
+        }
+
+        // 截断 toolCall 的 arguments
+        if (b.type === "toolCall" && b.arguments) {
+          const truncatedArgs: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(b.arguments)) {
+            if (typeof value === "string" && value.length > maxContentLength) {
+              // 字符串值超过阈值，截断
+              truncatedArgs[key] =
+                value.slice(0, maxContentLength) + "\n... [Argument truncated]";
+            } else {
+              // 其他类型（数字、布尔值、对象等）保持不变
+              truncatedArgs[key] = value;
+            }
+          }
+          return {
+            ...b,
+            arguments: truncatedArgs,
+          };
+        }
+
+        return block;
+      });
+
+      return truncatedMsg as AgentMessage;
+    }
+
+    return msg;
+  });
 }
 
 export async function createRuntimeAgentSession(params: {
@@ -115,10 +221,27 @@ export async function runEmbeddedPiAgent(params: {
   const { session, message, onEvent, needsCompression = false } = params;
   let latestAssistantText = "";
 
+  // 打印当前 Session 文件路径
+  attemptLogger.info(
+    `当前 Session 文件：${session.sessionManager.getSessionFile()}`,
+  );
+
   // 如果需要压缩会话，使用内置的 compact 方法
   if (needsCompression) {
     attemptLogger.warn("会话需要压缩，正在执行内置压缩功能");
+    onEvent({ type: "compaction_start" });
     try {
+      // 压缩前截断不重要的工具结果（如 memorySearch、persistMemory 等）
+      // 避免这些工具的大量返回内容占用压缩后的 token 配额
+      // 每个工具结果保留前 500 字符，这样既保留上下文又节省 token
+      const messages = session.agent.state.messages;
+      const truncatedMessages = truncateToolResults(messages, 500);
+
+      if (truncatedMessages.length !== messages.length) {
+        attemptLogger.info(`工具结果截断：${messages.length} 条消息`);
+        session.agent.replaceMessages(truncatedMessages);
+      }
+
       // 需要注意的是，本次压缩不会影响本次对话的上下文，只会影响未来的对话。
       const compactionResult = await session.compact(
         "会话过长，需要压缩以适应上下文窗口限制",
@@ -126,6 +249,7 @@ export async function runEmbeddedPiAgent(params: {
       attemptLogger.info(
         `压缩完成：原 Token 数 ${compactionResult.tokensBefore}，保留内容从 ${compactionResult.firstKeptEntryId} 开始`,
       );
+      onEvent({ type: "compaction_end", tokensBefore: compactionResult.tokensBefore });
     } catch (error) {
       // 忽略 "Already compacted" 错误，这表示会话已经压缩过
       if (
@@ -133,10 +257,12 @@ export async function runEmbeddedPiAgent(params: {
         error.message.includes("Already compacted")
       ) {
         attemptLogger.warn("会话已经压缩过，跳过压缩");
+        onEvent({ type: "compaction_end" });
       } else {
         attemptLogger.error(
           `压缩会话失败：${error instanceof Error ? error.message : error}`,
         );
+        onEvent({ type: "compaction_end", error: error instanceof Error ? error.message : String(error) });
         throw error;
       }
     }

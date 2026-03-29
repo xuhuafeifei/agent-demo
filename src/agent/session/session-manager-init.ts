@@ -10,8 +10,8 @@ import { resolveSessionDir, resolveSessionIndexPath } from "./session-path.js";
 import type { SessionIndex, SessionIndexEntry } from "./types.js";
 import { ToolRegister } from "../tool/tool-register.js";
 
-// 128 KB
-const MAX_SESSION_FILE_SIZE = 128 * 1024;
+// 512 KB
+const MAX_SESSION_FILE_SIZE = 512 * 1024;
 
 /** User / assistant LLM messages only (excludes toolResult and agent custom roles). */
 type UserOrAssistantMessage = Extract<Message, { role: "user" | "assistant" }>;
@@ -107,15 +107,17 @@ function ensureSessionFile(sessionManager: SessionManager): string {
 }
 
 function shouldRotateSessionFile(sessionFile: string): boolean {
-  // 暂时不限制文件大小. 主链路会通过 summary 压缩内容.
   // TODO, 未来可以新增创建新会话的能力.
-  return false;
-  // try {
-  //   const stat = fs.statSync(sessionFile);
-  //   return stat.size > MAX_SESSION_FILE_SIZE;
-  // } catch {
-  //   return true;
-  // }
+  // 当前自动创建新的 session, 避免 session 文件过大
+  // 后续主链路存在的信息摘要功能, 会压缩 session 内容.
+  // 但他会过滤掉部分没有实际含义的内容, 譬如记忆查询, 文件读取
+  // 这些低价值内容不会进行压缩. 因此 session 文件整体大小会不断膨胀.
+  try {
+    const stat = fs.statSync(sessionFile);
+    return stat.size > MAX_SESSION_FILE_SIZE;
+  } catch {
+    return true;
+  }
 }
 
 function createSessionEntry(params: {

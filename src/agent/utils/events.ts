@@ -40,6 +40,14 @@ export type RuntimeStreamEvent =
       finalError?: string;
     }
   | {
+      type: "compaction_start";
+    }
+  | {
+      type: "compaction_end";
+      tokensBefore?: number;
+      error?: string;
+    }
+  | {
       type: "context_snapshot";
       seq: number;
       reason: "before_prompt";

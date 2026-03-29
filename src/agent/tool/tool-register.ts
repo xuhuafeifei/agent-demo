@@ -173,7 +173,13 @@ export class ToolRegister {
    * 下述工具的返回值本就会成为系统提示词的一部分，因此不应该出现在 历史对话信息 中
    */
   getFilterContextToolNames(): string[] {
-    return ["memorySearch", "persistMemory", "loadSkill"];
+    return [
+      "memorySearch",
+      "persistMemory",
+      "loadSkill",
+      "read",
+      "reminderTask",
+    ];
   }
 
   /**
