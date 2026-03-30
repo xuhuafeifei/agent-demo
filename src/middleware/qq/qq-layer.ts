@@ -196,8 +196,17 @@ export async function startQQLayer(): Promise<void> {
         await runWithSingleFlight({
           message: inboundText,
           channel: "qq",
-          onEvent: () => {
-            // qq-layer 当前使用最终回包模式，不转发中间流式事件
+          onEvent: (event) => {
+            // 监听 error 事件，向用户发送错误消息
+            if (event.type === "error" && event.error) {
+              qqLogger.error(`QQ 消息处理错误: ${event.error}`);
+              void sendC2CMessage({
+                accessToken: currentToken,
+                openid: userOpenId,
+                content: `处理指令时发生错误: ${event.error}`,
+                replyToMessageId: inboundMessageId,
+              });
+            }
           },
           onBusy: async () => {
             // 当系统繁忙时回复消息
