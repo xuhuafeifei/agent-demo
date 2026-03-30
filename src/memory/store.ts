@@ -92,6 +92,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
   id INTEGER PRIMARY KEY,
   embedding float[${embeddingDimensions}]
 );
+
+CREATE TABLE IF NOT EXISTS embedding_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  text_hash TEXT NOT NULL UNIQUE,
+  embedding BLOB NOT NULL,
+  last_access_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_embedding_cache_hash ON embedding_cache(text_hash);
 `);
 
   // 旧库可能是 384 维，配置切到 768 后会在查询时报维度不匹配。
@@ -391,5 +399,118 @@ export async function closeMemoryDb(): Promise<void> {
   if (dbInstance) {
     dbInstance.close();
     dbInstance = null; // 置空便于下次 start 时重新 openDb
+  }
+}
+
+/**
+ * 查询 embedding 缓存。
+ */
+export async function queryEmbeddingCache(
+  textHash: string,
+): Promise<number[] | null> {
+  const db = await openDb();
+  const row = db
+    .prepare("SELECT embedding FROM embedding_cache WHERE text_hash = ?")
+    .get(textHash);
+  if (!row || !row.embedding) return null;
+
+  // 更新 last_access_at
+  db.prepare(
+    "UPDATE embedding_cache SET last_access_at = CURRENT_TIMESTAMP WHERE text_hash = ?",
+  ).run(textHash);
+
+  try {
+    return JSON.parse(String(row.embedding));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 写入 embedding 缓存。
+ */
+export async function upsertEmbeddingCache(params: {
+  textHash: string;
+  embedding: number[];
+}): Promise<void> {
+  const db = await openDb();
+  const { textHash, embedding } = params;
+
+  db.prepare(
+    `INSERT INTO embedding_cache(text_hash, embedding, last_access_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(text_hash) DO UPDATE SET
+       embedding = excluded.embedding,
+       last_access_at = CURRENT_TIMESTAMP`,
+  ).run(textHash, JSON.stringify(embedding));
+}
+
+/**
+ * 批量查询 embedding 缓存。
+ */
+export async function batchQueryEmbeddingCache(
+  textHashes: string[],
+): Promise<Map<string, number[]>> {
+  if (textHashes.length === 0) return new Map();
+
+  const db = await openDb();
+  const placeholders = textHashes.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT text_hash, embedding FROM embedding_cache WHERE text_hash IN (${placeholders})`,
+    )
+    .all(...textHashes);
+
+  const result = new Map<string, number[]>();
+  for (const row of rows) {
+    try {
+      const embedding = JSON.parse(String(row.embedding));
+      result.set(String(row.text_hash), embedding);
+    } catch {
+      // 解析失败跳过
+    }
+  }
+
+  // 批量更新 last_access_at
+  for (const hash of textHashes) {
+    if (result.has(hash)) {
+      db.prepare(
+        "UPDATE embedding_cache SET last_access_at = CURRENT_TIMESTAMP WHERE text_hash = ?",
+      ).run(hash);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 批量写入 embedding 缓存。
+ */
+export async function batchUpsertEmbeddingCache(
+  params: Array<{
+    textHash: string;
+    embedding: number[];
+  }>,
+): Promise<void> {
+  if (params.length === 0) return;
+
+  const db = await openDb();
+  const insert = db.prepare(
+    `INSERT INTO embedding_cache(text_hash, embedding, last_access_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(text_hash) DO UPDATE SET
+       embedding = excluded.embedding,
+       last_access_at = CURRENT_TIMESTAMP`,
+  );
+
+  db.exec("BEGIN");
+  try {
+    for (const item of params) {
+      insert.run(item.textHash, JSON.stringify(item.embedding));
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
 }

@@ -7,10 +7,15 @@ import {
   expandHome,
   resolveEmbeddingModelDir,
 } from "../utils/path.js";
+import { sha256 } from "../utils/hash.js";
 import type { FgbgUserConfig } from "../../types.js";
 import { readFgbgUserConfig, writeFgbgUserConfig } from "../../config/index.js";
 import { getMemoryIndexManager } from "../index.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import {
+  batchUpsertEmbeddingCache,
+  batchQueryEmbeddingCache,
+} from "../store.js";
 
 const memoryLogger = getSubsystemConsoleLogger("memory");
 
@@ -105,9 +110,18 @@ async function downloadFile(
             return;
           }
 
-          memoryLogger.info("redirect to %s (depth: %d)", redirectUrl, redirectDepth + 1);
+          memoryLogger.info(
+            "redirect to %s (depth: %d)",
+            redirectUrl,
+            redirectDepth + 1,
+          );
           try {
-            const result = await downloadFile(redirectUrl, destPath, config, redirectDepth + 1);
+            const result = await downloadFile(
+              redirectUrl,
+              destPath,
+              config,
+              redirectDepth + 1,
+            );
             resolve(result);
           } catch (error) {
             reject(error);
@@ -477,6 +491,7 @@ async function createLocalContext(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
+      // todo. 这里的arm64, macOs写死了，后续需要优化，支持其他平台
       `node-llama-cpp is unavailable (${message}). Install it with native arm64 Node on macOS.`,
     );
   }
@@ -595,16 +610,63 @@ export function ensureEmbeddingProviderReady(): FgbgUserConfig {
  * 单文本 embedding。内部按当前配置选用 local / remote 策略。
  */
 export async function embeddingText(text: string): Promise<number[]> {
-  const config = ensureEmbeddingProviderReady();
-  const strategy = getOrCreateStrategy(config);
-  return strategy.embedText(text);
+  // 复用 batch 方法，享受并发和缓存能力
+  const results = await batchEmbeddingText([text]);
+  return results[0];
 }
 
 /**
  * 批量 embedding。
  */
 export async function batchEmbeddingText(texts: string[]): Promise<number[][]> {
-  const config = ensureEmbeddingProviderReady();
-  const strategy = getOrCreateStrategy(config);
-  return strategy.embedTextBatch(texts);
+  // 计算所有文本的 hash
+  const hashes = texts.map((text) => sha256(text));
+
+  // 批量查询缓存
+  const cacheMap = await batchQueryEmbeddingCache(hashes);
+
+  // 分离命中和未命中的文本
+  const results: number[][] = new Array(texts.length);
+  const missingIndices: number[] = [];
+
+  for (let i = 0; i < texts.length; i++) {
+    const cached = cacheMap.get(hashes[i]);
+    if (cached) {
+      results[i] = cached;
+    } else {
+      missingIndices.push(i);
+    }
+  }
+
+  if (missingIndices.length > 0) {
+    memoryLogger.info(
+      `[cache-hits] hit ratio=${cacheMap.size}/${texts.length}, hits=${cacheMap.size}, missing=${missingIndices.length}`,
+    );
+
+    // 计算未命中的 embedding（并发执行）
+    const missingTexts = missingIndices.map((i) => texts[i]);
+    const config = ensureEmbeddingProviderReady();
+    const strategy = getOrCreateStrategy(config);
+    const missingEmbeddings = await strategy.embedTextBatch(missingTexts);
+
+    // 填充结果并准备缓存写入
+    const cacheItems = missingIndices.map((i, idx) => ({
+      textHash: hashes[i],
+      embedding: missingEmbeddings[idx],
+    }));
+
+    // 填充完整结果
+    for (let idx = 0; idx < missingIndices.length; idx++) {
+      results[missingIndices[idx]] = missingEmbeddings[idx];
+    }
+
+    // 批量写入缓存
+    await batchUpsertEmbeddingCache(cacheItems);
+  } else {
+    memoryLogger.debug(
+      ` embedding cache: ${cacheMap.size}/${texts.length} hits`,
+    );
+  }
+
+  return results;
 }
