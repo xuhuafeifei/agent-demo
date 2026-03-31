@@ -25,6 +25,35 @@ function isNearBottom(element, threshold = 36) {
   return distance <= threshold;
 }
 
+async function copyToClipboard(text) {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (err) {
+    console.warn("Clipboard API failed, falling back", err);
+  }
+  
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    textArea.style.top = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    textArea.remove();
+    return successful;
+  } catch (err) {
+    console.error("Fallback clipboard failed", err);
+    return false;
+  }
+}
+
 function updateScrollBottomButtonVisibility() {
   if (!scrollBottomBtn) return;
   scrollBottomBtn.classList.toggle("visible", !autoScrollEnabled);
@@ -459,13 +488,13 @@ function appendContextDiffBlock(
   cvButton.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(currentSnapshot || "");
+    const success = await copyToClipboard(currentSnapshot || "");
+    if (success) {
       cvButton.textContent = "Copied";
       setTimeout(() => {
         cvButton.textContent = "CV";
       }, 1200);
-    } catch (_err) {
+    } else {
       cvButton.textContent = "Fail";
       setTimeout(() => {
         cvButton.textContent = "CV";
@@ -984,18 +1013,20 @@ chatContainer.addEventListener("click", async (e) => {
     let textToCopy = "";
     if (messageEl.classList.contains("assistant")) {
       const markdowns = messageEl.querySelectorAll(".timeline-markdown:not(.user)");
-      textToCopy = Array.from(markdowns).map(m => m.dataset.markdown || "").join("\n\n");
+      textToCopy = Array.from(markdowns).map(m => m.dataset.markdown || m.textContent || "").join("\n\n");
     } else {
       const userContent = messageEl.querySelector(".timeline-markdown.user");
       textToCopy = userContent ? userContent.textContent : "";
     }
     
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      const originalText = e.target.textContent;
-      e.target.textContent = "Copied";
-      setTimeout(() => e.target.textContent = originalText, 1200);
-    } catch (err) {}
+    if (textToCopy) {
+      const success = await copyToClipboard(textToCopy);
+      if (success) {
+        const originalText = e.target.textContent;
+        e.target.textContent = "Copied";
+        setTimeout(() => e.target.textContent = originalText, 1200);
+      }
+    }
   }
   
   if (e.target.classList.contains("details-copy-btn")) {
@@ -1003,13 +1034,13 @@ chatContainer.addEventListener("click", async (e) => {
     e.stopPropagation();
     const details = e.target.closest("details");
     const pre = details.querySelector("pre");
-    if (pre) {
-      try {
-        await navigator.clipboard.writeText(pre.textContent);
+    if (pre && pre.textContent) {
+      const success = await copyToClipboard(pre.textContent);
+      if (success) {
         const originalText = e.target.textContent;
         e.target.textContent = "Copied";
         setTimeout(() => e.target.textContent = originalText, 1200);
-      } catch (err) {}
+      }
     }
   }
 
@@ -1018,13 +1049,13 @@ chatContainer.addEventListener("click", async (e) => {
     e.stopPropagation();
     const wrapper = e.target.closest(".code-block-wrapper");
     const code = wrapper.querySelector("code");
-    if (code) {
-      try {
-        await navigator.clipboard.writeText(code.textContent);
+    if (code && code.textContent) {
+      const success = await copyToClipboard(code.textContent);
+      if (success) {
         const originalText = e.target.textContent;
         e.target.textContent = "Copied";
         setTimeout(() => e.target.textContent = originalText, 1200);
-      } catch (err) {}
+      }
     }
   }
 });
