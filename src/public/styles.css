@@ -144,6 +144,17 @@ body {
 .message.user .content {
   background: #2563eb;
   color: #fff;
+  position: relative;
+}
+
+.message.user .msg-copy-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+.message.user .msg-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .message.assistant .content {
@@ -151,6 +162,31 @@ body {
   background: #ffffff;
   color: #1f2937;
   position: relative;
+}
+
+.msg-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  color: #64748b;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 5;
+}
+
+.message:hover .msg-copy-btn {
+  opacity: 1;
+}
+
+.msg-copy-btn:hover {
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .context-usage-tag {
@@ -225,7 +261,8 @@ body {
   transform: rotate(90deg);
 }
 
-.context-cv-btn {
+.context-cv-btn,
+.details-copy-btn {
   border: 1px solid #d6dee8;
   background: #ffffff;
   color: #334155;
@@ -234,9 +271,11 @@ body {
   line-height: 1;
   padding: 4px 8px;
   cursor: pointer;
+  margin-left: auto;
 }
 
-.context-cv-btn:hover {
+.context-cv-btn:hover,
+.details-copy-btn:hover {
   background: #f8fafc;
 }
 
@@ -767,10 +806,56 @@ body {
   margin: 0.6em 0;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #fffdfd;
-  color: #151515;
+  background: #f6f8fa;
+  color: #24292e;
   overflow: auto;
   font-size: 0.84em;
+}
+
+.code-block-wrapper {
+  margin: 0.6em 0;
+  border-radius: 8px;
+  background: #f6f8fa;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #e2e8f0;
+  border-bottom: 1px solid #cbd5e1;
+  font-size: 0.75rem;
+  color: #475569;
+}
+
+.code-block-lang {
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.code-copy-btn {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.code-copy-btn:hover {
+  background: #cbd5e1;
+  color: #1e293b;
+}
+
+.code-block-wrapper pre {
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
 }
 
 .message.user .content code {

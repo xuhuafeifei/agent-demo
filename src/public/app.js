@@ -47,6 +47,19 @@ function initScrollBottomButton() {
       top: chatContainer.scrollHeight,
       behavior: "smooth",
     });
+    
+    const openDetailsList = chatContainer.querySelectorAll("details[open]");
+    if (openDetailsList.length > 0) {
+      const lastOpenDetails = openDetailsList[openDetailsList.length - 1];
+      const pres = lastOpenDetails.querySelectorAll("pre");
+      pres.forEach(pre => {
+        pre.scrollTo({
+          top: pre.scrollHeight,
+          behavior: "smooth",
+        });
+      });
+    }
+    
     updateScrollBottomButtonVisibility();
   });
   chatPanel.appendChild(btn);
@@ -54,7 +67,23 @@ function initScrollBottomButton() {
   updateScrollBottomButtonVisibility();
 }
 
-const md = window.markdownit({ html: false, linkify: true, breaks: true });
+const md = window.markdownit({ 
+  html: false, 
+  linkify: true, 
+  breaks: true,
+  highlight: function (str, lang) {
+    let highlighted = '';
+    if (lang && window.hljs && hljs.getLanguage(lang)) {
+      try {
+        highlighted = hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
+      } catch (__) {}
+    }
+    if (!highlighted) {
+      highlighted = md.utils.escapeHtml(str);
+    }
+    return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-block-lang">${lang || ''}</span><button class="code-copy-btn">CV</button></div><pre class="hljs"><code>${highlighted}</code></pre></div>`;
+  }
+});
 const schedulerState = {
   filter: "all",
   selectedId: "",
@@ -119,8 +148,11 @@ function renderMarkdown(text) {
       "tr",
       "th",
       "td",
+      "span",
+      "div",
+      "button"
     ],
-    ALLOWED_ATTR: ["href", "target", "rel"],
+    ALLOWED_ATTR: ["href", "target", "rel", "class", "data-language"],
   });
 }
 
@@ -149,6 +181,16 @@ function scrollToBottom(options = {}) {
   const { force = false } = options;
   if (!force && !autoScrollEnabled) return;
   chatContainer.scrollTop = chatContainer.scrollHeight;
+  
+  const openDetailsList = chatContainer.querySelectorAll("details[open]");
+  if (openDetailsList.length > 0) {
+    const lastOpenDetails = openDetailsList[openDetailsList.length - 1];
+    const pres = lastOpenDetails.querySelectorAll("pre");
+    pres.forEach(pre => {
+      pre.scrollTop = pre.scrollHeight;
+    });
+  }
+  
   if (autoScrollEnabled) updateScrollBottomButtonVisibility();
 }
 
@@ -179,6 +221,13 @@ function appendTimelineDetails(messageEl, kind, title, contentText) {
   details.open = false;
   const summary = document.createElement("summary");
   summary.textContent = title;
+  
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "details-copy-btn";
+  copyBtn.textContent = "CV";
+  summary.appendChild(copyBtn);
+
   const pre = document.createElement("pre");
   pre.textContent = contentText;
   details.appendChild(summary);
@@ -200,6 +249,13 @@ function appendThinkingUpdate(messageEl, thinking) {
     details.open = true;
     const summary = document.createElement("summary");
     summary.textContent = "思考过程（实时）";
+    
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "details-copy-btn";
+    copyBtn.textContent = "CV";
+    summary.appendChild(copyBtn);
+
     details.appendChild(summary);
     details.appendChild(document.createElement("pre"));
     stream.appendChild(details);
@@ -235,6 +291,13 @@ function addMessage(
   const contentEl = document.createElement("div");
   contentEl.className = "content";
   messageEl.appendChild(contentEl);
+
+  if (role === "assistant" || role === "user") {
+    const msgCopyBtn = document.createElement("button");
+    msgCopyBtn.className = "msg-copy-btn";
+    msgCopyBtn.textContent = "CV";
+    contentEl.appendChild(msgCopyBtn);
+  }
 
   if (role === "assistant") {
     const stream = document.createElement("div");
@@ -274,6 +337,9 @@ function updateStreamingIndicator(messageEl, text) {
     indicator.className = "streaming-indicator";
     stream.appendChild(indicator);
   }
+  
+  indicator.classList.remove("error");
+
   // Remove existing dots container if any
   const dots = indicator.querySelector(".dots");
   if (dots) dots.remove();
@@ -896,7 +962,72 @@ function bindSchedulerActions() {
 
 sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", clearHistory);
-chatContainer.addEventListener("scroll", refreshAutoScrollState);
+chatContainer.addEventListener("scroll", (e) => {
+  if (e.target === chatContainer) {
+    refreshAutoScrollState();
+  } else if (e.target.tagName === "PRE") {
+    if (!isNearBottom(e.target)) {
+      autoScrollEnabled = false;
+      updateScrollBottomButtonVisibility();
+    } else if (isNearBottom(chatContainer)) {
+      autoScrollEnabled = true;
+      updateScrollBottomButtonVisibility();
+    }
+  }
+}, true);
+
+chatContainer.addEventListener("click", async (e) => {
+  if (e.target.classList.contains("msg-copy-btn")) {
+    e.preventDefault();
+    e.stopPropagation();
+    const messageEl = e.target.closest(".message");
+    let textToCopy = "";
+    if (messageEl.classList.contains("assistant")) {
+      const markdowns = messageEl.querySelectorAll(".timeline-markdown:not(.user)");
+      textToCopy = Array.from(markdowns).map(m => m.dataset.markdown || "").join("\n\n");
+    } else {
+      const userContent = messageEl.querySelector(".timeline-markdown.user");
+      textToCopy = userContent ? userContent.textContent : "";
+    }
+    
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      const originalText = e.target.textContent;
+      e.target.textContent = "Copied";
+      setTimeout(() => e.target.textContent = originalText, 1200);
+    } catch (err) {}
+  }
+  
+  if (e.target.classList.contains("details-copy-btn")) {
+    e.preventDefault();
+    e.stopPropagation();
+    const details = e.target.closest("details");
+    const pre = details.querySelector("pre");
+    if (pre) {
+      try {
+        await navigator.clipboard.writeText(pre.textContent);
+        const originalText = e.target.textContent;
+        e.target.textContent = "Copied";
+        setTimeout(() => e.target.textContent = originalText, 1200);
+      } catch (err) {}
+    }
+  }
+
+  if (e.target.classList.contains("code-copy-btn")) {
+    e.preventDefault();
+    e.stopPropagation();
+    const wrapper = e.target.closest(".code-block-wrapper");
+    const code = wrapper.querySelector("code");
+    if (code) {
+      try {
+        await navigator.clipboard.writeText(code.textContent);
+        const originalText = e.target.textContent;
+        e.target.textContent = "Copied";
+        setTimeout(() => e.target.textContent = originalText, 1200);
+      } catch (err) {}
+    }
+  }
+});
 messageInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();

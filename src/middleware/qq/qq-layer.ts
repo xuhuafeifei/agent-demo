@@ -93,7 +93,9 @@ export async function sendQQDirectMessage(
       content,
     });
     return true;
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    qqLogger.error(`sendQQDirectMessage failed: ${message}`);
     return false;
   }
 }
