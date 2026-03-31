@@ -98,12 +98,17 @@ body {
 .chat-container {
   flex: 1;
   min-height: 0;
-  height: 100%;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   scrollbar-gutter: stable;
   padding: 16px;
   background: #f8fafc;
+}
+
+.chat-container::after {
+  content: "";
+  display: block;
+  height: 16px;
 }
 
 .message {
@@ -158,7 +163,7 @@ body {
 }
 
 .message.assistant .content {
-  width: 100%;
+  flex: 1;
   background: #ffffff;
   color: #1f2937;
   position: relative;
@@ -471,6 +476,7 @@ body {
 }
 
 .input-container {
+  flex-shrink: 0;
   border-top: 1px solid #e8edf3;
   background: #f8fafc;
   padding: 14px 16px;
