@@ -29,6 +29,9 @@ type DbLike = {
 let dbInstance: DbLike | null = null;
 const memoryLogger = getSubsystemConsoleLogger("memory");
 
+// Embedding 缓存限制
+const EMBEDDING_CACHE_MAX_SIZE = 1000;
+
 /**
  * 打开并初始化数据库（惰性初始化）。
  */
@@ -427,7 +430,49 @@ export async function queryEmbeddingCache(
 }
 
 /**
- * 写入 embedding 缓存。
+ * 淘汰最不常用的 embedding 缓存条目，保留最新访问的条目
+ */
+async function evictOldEmbeddingCacheEntries(db: DbLike): Promise<void> {
+  // 查询当前缓存总数
+  const countResult = db
+    .prepare("SELECT COUNT(*) as count FROM embedding_cache")
+    .get();
+  memoryLogger.info(
+    `[cache-evict] current embedding cache count: ${countResult?.count || 0}`,
+  );
+  const currentCount = Number(countResult?.count || 0);
+
+  if (currentCount <= EMBEDDING_CACHE_MAX_SIZE) {
+    return; // 未超过限制，无需淘汰
+  }
+
+  // 计算需要淘汰的条目数
+  const entriesToEvict = currentCount - EMBEDDING_CACHE_MAX_SIZE;
+
+  // 查找最不常用的条目（按 last_access_at 升序）
+  const oldEntries = db
+    .prepare(
+      "SELECT id FROM embedding_cache ORDER BY last_access_at ASC LIMIT ?",
+    )
+    .all(entriesToEvict);
+
+  if (oldEntries.length > 0) {
+    const idsToDelete = oldEntries.map((row) => Number(row.id));
+
+    // 删除最不常用的条目
+    const placeholders = idsToDelete.map(() => "?").join(",");
+    db.prepare(`DELETE FROM embedding_cache WHERE id IN (${placeholders})`).run(
+      ...idsToDelete,
+    );
+
+    memoryLogger.info(
+      `[cache-evict] evicted ${idsToDelete.length} old embedding cache entries`,
+    );
+  }
+}
+
+/**
+ * 写入 embedding 缓存，并在超过限制时淘汰最不常用的条目。
  */
 export async function upsertEmbeddingCache(params: {
   textHash: string;
@@ -443,6 +488,9 @@ export async function upsertEmbeddingCache(params: {
        embedding = excluded.embedding,
        last_access_at = CURRENT_TIMESTAMP`,
   ).run(textHash, JSON.stringify(embedding));
+
+  // 检查并淘汰超过限制的缓存
+  await evictOldEmbeddingCacheEntries(db);
 }
 
 /**
@@ -484,7 +532,7 @@ export async function batchQueryEmbeddingCache(
 }
 
 /**
- * 批量写入 embedding 缓存。
+ * 批量写入 embedding 缓存，并在超过限制时淘汰最不常用的条目。
  */
 export async function batchUpsertEmbeddingCache(
   params: Array<{
@@ -513,4 +561,7 @@ export async function batchUpsertEmbeddingCache(
     db.exec("ROLLBACK");
     throw error;
   }
+
+  // 检查并淘汰超过限制的缓存
+  await evictOldEmbeddingCacheEntries(db);
 }

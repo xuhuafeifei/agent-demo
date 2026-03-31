@@ -246,10 +246,11 @@ export async function startQQLayer(): Promise<void> {
         qqReady = false;
         activeAccessToken = "";
         eventBus.emitSync("qq:offline", { accountId: account.accountId });
-        qqLogger.warn("QQ Gateway 连接断开，5 秒后重连");
+        const waitSecond = 1;
+        qqLogger.warn(`QQ Gateway 连接断开，${waitSecond} 秒后重连`);
         setTimeout(() => {
           void connect();
-        }, 5000);
+        }, waitSecond * 1000);
       });
 
       // 处理连接错误
