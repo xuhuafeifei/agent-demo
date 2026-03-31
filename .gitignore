@@ -63,3 +63,8 @@ tmp/
 temp/
 *.tmp
 .tmp-font/
+
+.claude
+
+temp-package/
+mariozechner-pi-coding-agent-*.tgz
