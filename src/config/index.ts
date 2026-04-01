@@ -292,3 +292,7 @@ export function writeFgbgUserConfig(cfg: FgbgUserConfig): void {
     mode: 0o600,
   });
 }
+
+export function getDefaultFgbgUserConfig(): FgbgUserConfig {
+  return resolveFgbgUserConfig({} as FgbgUserRawConfig);
+}

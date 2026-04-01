@@ -7,6 +7,13 @@ import {
   ModelUnavailableError,
 } from "../../agent/run.js";
 import type { RuntimeStreamEvent } from "../../agent/utils/events.js";
+import type { FgbgUserConfig } from "../../types.js";
+import {
+  evicateFgbgUserConfigCache,
+  getDefaultFgbgUserConfig,
+  readFgbgUserConfig,
+  writeFgbgUserConfig,
+} from "../../config/index.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
@@ -123,6 +130,106 @@ function writeSse(res: Response, data: RuntimeStreamEvent): void {
   res.write(`data: ${JSON.stringify(normalized)}\n\n`);
 }
 
+type RecursivePartial<T> = {
+  [P in keyof T]?: T[P] extends Array<infer U>
+    ? RecursivePartial<U>[]
+    : T[P] extends object
+      ? RecursivePartial<T[P]>
+      : T[P];
+};
+
+const PROTECTED_PATHS = new Set(["models.providers.qwen-portal.apiKey"]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function deepEqual(value: unknown, expectation: unknown): boolean {
+  if (value === expectation) return true;
+  if (value === undefined || expectation === undefined || value === null || expectation === null) {
+    return value === expectation;
+  }
+  if (Array.isArray(value) && Array.isArray(expectation)) {
+    if (value.length !== expectation.length) return false;
+    return value.every((item, idx) => deepEqual(item, expectation[idx]));
+  }
+  if (isPlainObject(value) && isPlainObject(expectation)) {
+    const keys = new Set([...Object.keys(value), ...Object.keys(expectation)]);
+    return Array.from(keys).every((key) =>
+      deepEqual(value[key], expectation[key])
+    );
+  }
+  return false;
+}
+
+function collectDefaultPaths(
+  current: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+  prefix: string,
+  acc: Set<string>,
+) {
+  Object.keys(current).forEach((key) => {
+    const nextPrefix = prefix ? `${prefix}.${key}` : key;
+    const currentValue = current[key];
+    const defaultValue = defaults[key];
+    if (isPlainObject(currentValue) && isPlainObject(defaultValue)) {
+      collectDefaultPaths(currentValue, defaultValue, nextPrefix, acc);
+      return;
+    }
+    if (defaultValue !== undefined && deepEqual(currentValue, defaultValue)) {
+      acc.add(nextPrefix);
+    }
+  });
+}
+
+function buildConfigMetadata(config: FgbgUserConfig) {
+  const defaults = getDefaultFgbgUserConfig();
+  const defaultPaths = new Set<string>();
+  collectDefaultPaths(config, defaults, "", defaultPaths);
+  return {
+    defaultPaths: Array.from(defaultPaths),
+    protectedPaths: Array.from(PROTECTED_PATHS),
+  };
+}
+
+function cloneConfig(config: FgbgUserConfig): FgbgUserConfig {
+  if (typeof structuredClone === "function") {
+    return structuredClone(config);
+  }
+  return JSON.parse(JSON.stringify(config));
+}
+
+function applyConfigPatch(target: Record<string, unknown>, patch: Record<string, unknown>) {
+  Object.keys(patch).forEach((key) => {
+    const newValue = patch[key];
+    if (isPlainObject(newValue)) {
+      if (!isPlainObject(target[key])) {
+        target[key] = {};
+      }
+      applyConfigPatch(target[key] as Record<string, unknown>, newValue as Record<string, unknown>);
+      return;
+    }
+    target[key] = newValue;
+  });
+}
+
+function hasProtectedPath(
+  node: Record<string, unknown>,
+  path: string[] = [],
+): boolean {
+  return Object.keys(node).some((key) => {
+    const nested = node[key];
+    const nextPath = [...path, key];
+    if (PROTECTED_PATHS.has(nextPath.join("."))) {
+      return true;
+    }
+    if (isPlainObject(nested)) {
+      return hasProtectedPath(nested as Record<string, unknown>, nextPath);
+    }
+    return false;
+  });
+}
+
 export function createWebLayer() {
   const router = Router();
 
@@ -193,6 +300,78 @@ export function createWebLayer() {
       res.json({ success: true, message: "对话历史已清除" });
     } catch (error: unknown) {
       const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
+  router.get("/config/fgbg", (_req, res) => {
+    try {
+      const config = readFgbgUserConfig();
+      res.json({
+        success: true,
+        config,
+        metadata: buildConfigMetadata(config),
+      });
+    } catch (error: unknown) {
+      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/get] %s", runtimeError.message, runtimeError);
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
+  router.patch("/config/fgbg", async (req, res) => {
+    const patchRaw =
+      req.body && typeof req.body === "object" ? req.body : {};
+    const patch = patchRaw as RecursivePartial<FgbgUserConfig>;
+    if (hasProtectedPath(patch as Record<string, unknown>)) {
+      return res.status(403).json({
+        success: false,
+        error: "尝试修改受保护字段（例如 qwen API Key），操作被拒绝。",
+      });
+    }
+
+    try {
+      const current = readFgbgUserConfig();
+      const updated = cloneConfig(current);
+      applyConfigPatch(updated as Record<string, unknown>, patch as Record<string, unknown>);
+      writeFgbgUserConfig(updated);
+      evicateFgbgUserConfigCache();
+      const refreshed = readFgbgUserConfig();
+      res.json({
+        success: true,
+        config: refreshed,
+        metadata: buildConfigMetadata(refreshed),
+      });
+    } catch (error: unknown) {
+      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/patch] %s", runtimeError.message, runtimeError);
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
+  router.post("/config/fgbg/reset", (_req, res) => {
+    try {
+      const defaults = getDefaultFgbgUserConfig();
+      writeFgbgUserConfig(defaults);
+      evicateFgbgUserConfigCache();
+      const refreshed = readFgbgUserConfig();
+      res.json({
+        success: true,
+        config: refreshed,
+        metadata: buildConfigMetadata(refreshed),
+      });
+    } catch (error: unknown) {
+      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/reset] %s", runtimeError.message, runtimeError);
       res.status(500).json({
         success: false,
         error: runtimeError.message,

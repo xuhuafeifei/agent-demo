@@ -22,10 +22,10 @@ const app = express();
 const HOST = process.env.HOST?.trim() || "0.0.0.0";
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 6727;
 
-// 静态文件目录：编译后 __dirname 为 dist/，页面在 src/public
+// 静态文件目录：编译后 __dirname 为 dist/，页面在 dist/public（由 scripts/copy-public.mjs 复制）
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const publicDir = path.join(__dirname, "..", "src", "public");
+const publicDir = path.join(__dirname, "public");
 const serverLogger = getSubsystemConsoleLogger("server");
 
 // 中间件
@@ -71,18 +71,12 @@ function startServer(port: number) {
 async function bootstrap() {
   ensureLoggingSetting();
   logRuntimePaths();
+  // 先把服务跑起来
   try {
-    await getMemoryIndexManager().start();
+    startServer(PORT);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    serverLogger.error("disabled: %s", message);
-  }
-  try {
-    // 启动心跳调度：定时扫描 task_schedule 表并分发任务
-    await startWatchDog();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    serverLogger.error("[watch-dog] failed to start: %s", message);
+    serverLogger.error("[server] failed to start: %s", message);
   }
   try {
     await startQQLayer();
@@ -90,7 +84,20 @@ async function bootstrap() {
     const message = error instanceof Error ? error.message : String(error);
     serverLogger.error("[qq-layer] failed to start: %s", message);
   }
-  startServer(PORT);
+  // 之后在运行这些插件类内容
+  try {
+    getMemoryIndexManager().start();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    serverLogger.error("[memory-index-manager] failed to start: %s", message);
+  }
+  try {
+    // 启动心跳调度：定时扫描 task_schedule 表并分发任务
+    startWatchDog();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    serverLogger.error("[watch-dog] failed to start: %s", message);
+  }
 }
 
 void bootstrap();

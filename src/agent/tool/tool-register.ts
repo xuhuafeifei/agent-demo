@@ -16,6 +16,7 @@ import {
   createShiftTimeTool,
   createValidateCronTool,
 } from "./watch-dog.js";
+import { createShellExecuteTool } from "./shell-execute.js";
 import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
 import { readFgbgUserConfig } from "../../config/index.js";
 
@@ -32,6 +33,7 @@ export const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
     "createReminderTask",
     "createAgentTask",
     "compactContext",
+    "shellExecute",
   ],
   // innerTools: 运维/调试工具（偏“人类/系统调试入口”）
   innerTools: ["listTaskSchedules", "runTaskByName", "deleteTaskByName"],
@@ -118,6 +120,10 @@ const TOOL_REGISTRY: Record<
   compactContext: {
     factory: () => createCompactContextTool(),
     description: "compactContext() - compress session context to reduce size",
+  },
+  shellExecute: {
+    factory: () => createShellExecuteTool(),
+    description: "shellExecute(command) - execute any shell command on macOS system",
   },
 };
 
