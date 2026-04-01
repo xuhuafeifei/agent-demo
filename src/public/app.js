@@ -610,6 +610,154 @@ function finalizeAssistantBlocks(messageEl) {
   });
 }
 
+// ==========================================
+// Qwen Code Style Timeline Message Functions
+// ==========================================
+
+/**
+ * Create a timeline message container with status bullet and connector line
+ * @param {string} type - 'thinking' | 'execute' | 'success' | 'error' | 'warning'
+ * @param {string} label - Header label (e.g., "Thinking", "Execute")
+ * @param {boolean} isLoading - Whether this is a loading state
+ * @returns {HTMLDivElement}
+ */
+function createTimelineMessage(type, label, isLoading = false) {
+  const container = document.createElement("div");
+  container.className = `timeline-message-container status-${type}${isLoading ? "-loading" : ""}`;
+
+  const header = document.createElement("div");
+  header.className = "timeline-message-header";
+
+  const labelEl = document.createElement("span");
+  labelEl.className = `timeline-message-label ${type}`;
+  labelEl.textContent = label;
+
+  header.appendChild(labelEl);
+  container.appendChild(header);
+
+  return container;
+}
+
+/**
+ * Add content to a timeline message
+ * @param {HTMLDivElement} container
+ * @param {string} content
+ * @param {boolean} isThinking - Whether this is thinking content (styled differently)
+ */
+function addTimelineMessageContent(container, content, isThinking = false) {
+  const contentEl = document.createElement("div");
+  contentEl.className = `timeline-message-content${isThinking ? " thinking-content" : ""}`;
+  contentEl.innerHTML = renderMarkdown(content);
+  container.appendChild(contentEl);
+}
+
+/**
+ * Create a tool call card with IN/OUT format
+ * @param {string} command - The command executed
+ * @param {string} output - The command output
+ * @returns {HTMLDivElement}
+ */
+function createToolCallCard(command, output) {
+  const card = document.createElement("div");
+  card.className = "toolcall-card";
+
+  if (command) {
+    const commandRow = document.createElement("div");
+    commandRow.className = "toolcall-row";
+    commandRow.innerHTML = `
+      <span class="toolcall-label in">IN</span>
+      <span class="toolcall-value">${command}</span>
+    `;
+    card.appendChild(commandRow);
+  }
+
+  if (output) {
+    const outputRow = document.createElement("div");
+    outputRow.className = "toolcall-row";
+    outputRow.innerHTML = `
+      <span class="toolcall-label out">OUT</span>
+      <span class="toolcall-value">${output}</span>
+    `;
+    card.appendChild(outputRow);
+  }
+
+  return card;
+}
+
+/**
+ * Create a collapsible details element
+ * @param {string} summary - Summary text
+ * @param {string} content - Detailed content
+ * @param {boolean} open - Whether to be open by default
+ * @returns {HTMLDetailsElement}
+ */
+function createCollapsibleDetails(summary, content, open = false) {
+  const details = document.createElement("details");
+  details.className = "timeline-details";
+  details.open = open;
+
+  const summaryEl = document.createElement("summary");
+  summaryEl.textContent = summary;
+  details.appendChild(summaryEl);
+
+  const pre = document.createElement("pre");
+  pre.textContent = content;
+  details.appendChild(pre);
+
+  return details;
+}
+
+/**
+ * Append a thinking message to the stream
+ * @param {HTMLElement} messageEl
+ * @param {string} content
+ * @param {boolean} isLoading
+ */
+function appendThinkingMessage(messageEl, content, isLoading = false) {
+  const stream = getAssistantStream(messageEl);
+  if (!stream) return;
+
+  const thinkingMsg = createTimelineMessage("thinking", "Thinking", isLoading);
+  addTimelineMessageContent(thinkingMsg, content, true);
+  stream.appendChild(thinkingMsg);
+  scrollToBottom();
+}
+
+/**
+ * Append an execute message to the stream
+ * @param {HTMLElement} messageEl
+ * @param {string} label - Execute label
+ * @param {string} command - Command executed
+ * @param {string} output - Command output
+ * @param {string} status - 'success' | 'error' | 'loading'
+ */
+function appendExecuteMessage(
+  messageEl,
+  label,
+  command,
+  output,
+  status = "success",
+) {
+  const stream = getAssistantStream(messageEl);
+  if (!stream) return;
+
+  const executeMsg = createTimelineMessage(
+    "execute",
+    label,
+    status === "loading",
+  );
+  if (status === "success") {
+    executeMsg.classList.remove("status-execute-loading");
+    executeMsg.classList.add("status-execute");
+  }
+
+  const toolCallCard = createToolCallCard(command, output);
+  executeMsg.appendChild(toolCallCard);
+
+  stream.appendChild(executeMsg);
+  scrollToBottom();
+}
+
 function addMessage(
   content,
   role,
@@ -643,7 +791,10 @@ function addMessage(
     stream.className = "timeline-stream";
     contentEl.appendChild(stream);
     if (content) {
-      appendTimelineMarkdown(messageEl, content);
+      // Use new timeline message format for assistant content
+      const timelineMsg = createTimelineMessage("success", "Response", false);
+      addTimelineMessageContent(timelineMsg, content, false);
+      stream.appendChild(timelineMsg);
     }
     if (isStreaming) {
       updateStreamingIndicator(messageEl, "Thinking");

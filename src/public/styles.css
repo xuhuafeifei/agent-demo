@@ -1747,6 +1747,247 @@ body {
 }
 
 /* ===========================================
+   Timeline Message Layout (Qwen Code Style)
+   =========================================== */
+.timeline-message-container {
+  position: relative;
+  --timeline-bullet-size: 10px;
+  --timeline-bullet-left: 8px;
+  --timeline-line-left: 12px;
+  --timeline-center-offset: 15px;
+  padding-left: 30px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-radius: 6px;
+  user-select: text;
+}
+
+/* Timeline connector line */
+.timeline-message-container::after {
+  content: "";
+  position: absolute;
+  left: var(--timeline-line-left);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--border);
+}
+
+/* First item: line starts from bullet center */
+.timeline-message-container:first-child::after {
+  top: var(--timeline-center-offset);
+}
+
+/* Last item: line ends at bullet center */
+.timeline-message-container:last-child::after {
+  bottom: calc(100% - var(--timeline-center-offset));
+}
+
+/* Single item: no line */
+.timeline-message-container:first-child:last-child::after {
+  display: none;
+}
+
+/* Status bullet points */
+.timeline-message-container::before {
+  content: "\25cf";
+  position: absolute;
+  left: var(--timeline-bullet-left);
+  top: 8px;
+  font-size: var(--timeline-bullet-size);
+  line-height: 1;
+  z-index: 1;
+}
+
+/* Status colors */
+.timeline-message-container.status-thinking::before {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.timeline-message-container.status-thinking-loading::before {
+  color: var(--muted);
+  animation: timeline-pulse 1s linear infinite;
+}
+
+.timeline-message-container.status-execute::before {
+  color: var(--accent-muted);
+}
+
+.timeline-message-container.status-execute-loading::before {
+  color: var(--accent-muted);
+  animation: timeline-pulse 1s linear infinite;
+}
+
+.timeline-message-container.status-success::before {
+  color: var(--ok);
+}
+
+.timeline-message-container.status-error::before {
+  color: var(--danger);
+}
+
+.timeline-message-container.status-warning::before {
+  color: var(--warn);
+}
+
+@keyframes timeline-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Timeline message header */
+.timeline-message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.timeline-message-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-strong);
+  font-style: italic;
+}
+
+.timeline-message-label.thinking {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.timeline-message-label.execute {
+  color: var(--text-strong);
+}
+
+.timeline-message-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+.timeline-message-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+/* Timeline message content */
+.timeline-message-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.timeline-message-content.thinking-content {
+  color: var(--muted);
+  opacity: 0.8;
+  padding-left: 8px;
+  margin-top: 4px;
+}
+
+/* Tool call card styles */
+.toolcall-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin: 6px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.toolcall-row {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.toolcall-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.toolcall-label.in {
+  color: var(--muted);
+}
+
+.toolcall-label.out {
+  color: var(--ok-muted);
+}
+
+.toolcall-value {
+  color: var(--chat-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Collapsible details styling */
+.timeline-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  margin: 8px 0;
+}
+
+.timeline-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-strong);
+  list-style: none;
+}
+
+.timeline-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.timeline-details summary::after {
+  content: "⌄";
+  font-size: 14px;
+  transition: transform 0.2s ease;
+  color: var(--muted);
+}
+
+.timeline-details[open] summary::after {
+  content: "⌃";
+  transform: translateY(-1px);
+}
+
+.timeline-details pre {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--chat-text);
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 400px;
+}
+
+/* ===========================================
    Responsive
    =========================================== */
 @media (max-width: 768px) {
