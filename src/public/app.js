@@ -1,4 +1,4 @@
-const chatContainer = document.getElementById("chat-container");
+const chatContainer = document.getElementById("chat-thread");
 const messageInput = document.getElementById("message-input");
 const sendBtn = document.getElementById("send-btn");
 const clearBtn = document.getElementById("clear-btn");
@@ -9,7 +9,6 @@ const schedulerNewBtn = document.getElementById("scheduler-new-btn");
 const schedulerFilterButtons = Array.from(
   document.querySelectorAll(".scheduler-filter"),
 );
-const chatPanel = document.querySelector(".chat-panel");
 const contextIndicator = document.querySelector(".context-indicator");
 const contextIndicatorCircle = contextIndicator?.querySelector(
   "circle:nth-child(2)",
@@ -35,7 +34,7 @@ async function copyToClipboard(text) {
   } catch (err) {
     console.warn("Clipboard API failed, falling back", err);
   }
-  
+
   try {
     const textArea = document.createElement("textarea");
     textArea.value = text;
@@ -45,7 +44,7 @@ async function copyToClipboard(text) {
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
-    const successful = document.execCommand('copy');
+    const successful = document.execCommand("copy");
     textArea.remove();
     return successful;
   } catch (err) {
@@ -65,7 +64,8 @@ function refreshAutoScrollState() {
 }
 
 function initScrollBottomButton() {
-  if (!chatPanel || scrollBottomBtn) return;
+  const chatViewPanel = document.getElementById("chat-view");
+  if (!chatViewPanel || scrollBottomBtn) return;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "scroll-bottom-btn";
@@ -76,42 +76,45 @@ function initScrollBottomButton() {
       top: chatContainer.scrollHeight,
       behavior: "smooth",
     });
-    
+
     const openDetailsList = chatContainer.querySelectorAll("details[open]");
     if (openDetailsList.length > 0) {
       const lastOpenDetails = openDetailsList[openDetailsList.length - 1];
       const pres = lastOpenDetails.querySelectorAll("pre");
-      pres.forEach(pre => {
+      pres.forEach((pre) => {
         pre.scrollTo({
           top: pre.scrollHeight,
           behavior: "smooth",
         });
       });
     }
-    
+
     updateScrollBottomButtonVisibility();
   });
-  chatPanel.appendChild(btn);
+  chatViewPanel.appendChild(btn);
   scrollBottomBtn = btn;
   updateScrollBottomButtonVisibility();
 }
 
-const md = window.markdownit({ 
-  html: false, 
-  linkify: true, 
+const md = window.markdownit({
+  html: false,
+  linkify: true,
   breaks: true,
   highlight: function (str, lang) {
-    let highlighted = '';
+    let highlighted = "";
     if (lang && window.hljs && hljs.getLanguage(lang)) {
       try {
-        highlighted = hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
+        highlighted = hljs.highlight(str, {
+          language: lang,
+          ignoreIllegals: true,
+        }).value;
       } catch (__) {}
     }
     if (!highlighted) {
       highlighted = md.utils.escapeHtml(str);
     }
-    return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-block-lang">${lang || ''}</span><button class="code-copy-btn">CV</button></div><pre class="hljs"><code>${highlighted}</code></pre></div>`;
-  }
+    return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-block-lang">${lang || ""}</span><button class="code-copy-btn">CV</button></div><pre class="hljs"><code>${highlighted}</code></pre></div>`;
+  },
 });
 const schedulerState = {
   filter: "all",
@@ -141,10 +144,88 @@ const schedulerState = {
   ],
 };
 
-const viewSwitchButtons = Array.from(document.querySelectorAll(".view-switch-btn"));
+// Navigation handling - OpenClaw style sidebar
+const navItems = Array.from(document.querySelectorAll(".nav-item"));
+const navSections = Array.from(
+  document.querySelectorAll(".nav-section__label"),
+);
+const navCollapseToggle = document.querySelector(".nav-collapse-toggle");
+const sidebar = document.querySelector(".sidebar");
+const shell = document.querySelector(".shell");
+const breadcrumbCurrent = document.getElementById("breadcrumb-current");
+
+const viewSwitchButtons = Array.from(
+  document.querySelectorAll(".view-switch-btn"),
+);
 const mainLayout = document.getElementById("main-layout");
 const chatView = document.getElementById("chat-view");
+const schedulerView = document.getElementById("scheduler-view");
 const configView = document.getElementById("config-view");
+
+// View names for breadcrumb
+const viewNames = {
+  "#chat": "聊天",
+  "#scheduler": "任务调度",
+  "#config": "配置",
+};
+
+// Navigation section collapse handling
+navSections.forEach((section) => {
+  section.addEventListener("click", () => {
+    const parent = section.closest(".nav-section");
+    parent.classList.toggle("nav-section--collapsed");
+  });
+});
+
+// Sidebar collapse toggle
+navCollapseToggle?.addEventListener("click", () => {
+  sidebar?.classList.toggle("sidebar--collapsed");
+  shell?.classList.toggle("shell--nav-collapsed");
+});
+
+// Navigation item click handling
+navItems.forEach((item) => {
+  item.addEventListener("click", (e) => {
+    e.preventDefault();
+    const route = item.getAttribute("data-route");
+    if (route) {
+      // Update active state
+      navItems.forEach((nav) => nav.classList.remove("active"));
+      item.classList.add("active");
+
+      // Update breadcrumb
+      const viewName = viewNames[route] || "聊天";
+      if (breadcrumbCurrent) {
+        breadcrumbCurrent.textContent = viewName;
+      }
+
+      // Switch views
+      switchView(route);
+    }
+  });
+});
+
+function switchView(route) {
+  // Hide all views
+  chatView?.classList.add("hidden");
+  schedulerView?.classList.add("hidden");
+  configView?.classList.add("hidden");
+
+  // Show target view
+  if (route === "#chat") {
+    chatView?.classList.remove("hidden");
+  } else if (route === "#scheduler") {
+    schedulerView?.classList.remove("hidden");
+  } else if (route === "#config") {
+    configView?.classList.remove("hidden");
+  }
+
+  // Update content class for chat focus mode
+  const content = document.getElementById("main-content");
+  if (content) {
+    content.classList.toggle("content--chat", route === "#chat");
+  }
+}
 const configRefreshBtn = document.getElementById("config-refresh-btn");
 const configResetBtn = document.getElementById("config-reset-btn");
 const configSaveBtn = document.getElementById("config-save-btn");
@@ -152,7 +233,9 @@ const configRevertBtn = document.getElementById("config-revert-btn");
 const configCardsContainer = document.getElementById("config-cards");
 const configMetaUpdated = document.getElementById("config-meta-updated");
 const configMetaState = document.getElementById("config-meta-state");
-const configDefaultStripElement = document.getElementById("config-default-strip");
+const configDefaultStripElement = document.getElementById(
+  "config-default-strip",
+);
 const configToast = document.getElementById("config-toast");
 
 const configState = {
@@ -386,7 +469,7 @@ function renderMarkdown(text) {
       "td",
       "span",
       "div",
-      "button"
+      "button",
     ],
     ALLOWED_ATTR: ["href", "target", "rel", "class", "data-language"],
   });
@@ -417,16 +500,16 @@ function scrollToBottom(options = {}) {
   const { force = false } = options;
   if (!force && !autoScrollEnabled) return;
   chatContainer.scrollTop = chatContainer.scrollHeight;
-  
+
   const openDetailsList = chatContainer.querySelectorAll("details[open]");
   if (openDetailsList.length > 0) {
     const lastOpenDetails = openDetailsList[openDetailsList.length - 1];
     const pres = lastOpenDetails.querySelectorAll("pre");
-    pres.forEach(pre => {
+    pres.forEach((pre) => {
       pre.scrollTop = pre.scrollHeight;
     });
   }
-  
+
   if (autoScrollEnabled) updateScrollBottomButtonVisibility();
 }
 
@@ -457,7 +540,7 @@ function appendTimelineDetails(messageEl, kind, title, contentText) {
   details.open = false;
   const summary = document.createElement("summary");
   summary.textContent = title;
-  
+
   const copyBtn = document.createElement("button");
   copyBtn.type = "button";
   copyBtn.className = "details-copy-btn";
@@ -485,7 +568,7 @@ function appendThinkingUpdate(messageEl, thinking) {
     details.open = true;
     const summary = document.createElement("summary");
     summary.textContent = "思考过程（实时）";
-    
+
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "details-copy-btn";
@@ -573,7 +656,7 @@ function updateStreamingIndicator(messageEl, text) {
     indicator.className = "streaming-indicator";
     stream.appendChild(indicator);
   }
-  
+
   indicator.classList.remove("error");
 
   // Remove existing dots container if any
@@ -617,7 +700,15 @@ function normalizeUiEvent(data) {
   if (String(data.type || "").startsWith("tool_execution_")) {
     return { ...data, uiEventType: "tool", uiPayload: { phase: data.type } };
   }
-  if (["error", "auto_retry_start", "auto_retry_end", "compaction_start", "compaction_end"].includes(data.type)) {
+  if (
+    [
+      "error",
+      "auto_retry_start",
+      "auto_retry_end",
+      "compaction_start",
+      "compaction_end",
+    ].includes(data.type)
+  ) {
     return { ...data, uiEventType: "context", uiPayload: { phase: data.type } };
   }
   return data;
@@ -1035,7 +1126,9 @@ function handleStreamEvent(data, state, assistantMessageEl) {
           assistantMessageEl,
           "context",
           "上下文变化 · compaction",
-          event.tokensBefore ? `压缩完成，压缩前 Token 数：${event.tokensBefore}` : "会话已压缩过，跳过本次压缩"
+          event.tokensBefore
+            ? `压缩完成，压缩前 Token 数：${event.tokensBefore}`
+            : "会话已压缩过，跳过本次压缩",
         );
       }
       return;
@@ -1203,7 +1296,8 @@ function pathArrayToString(pathArray) {
 }
 
 function getValueByPath(source, pathArray) {
-  if (!source || !Array.isArray(pathArray) || !pathArray.length) return undefined;
+  if (!source || !Array.isArray(pathArray) || !pathArray.length)
+    return undefined;
   return pathArray.reduce((acc, segment) => {
     if (acc && typeof acc === "object" && segment in acc) {
       return acc[segment];
@@ -1236,13 +1330,22 @@ function deleteNestedValue(target, pathArray) {
     cursor = cursor[segment];
   });
   const last = stack.pop();
-  if (last && last.parent && Object.prototype.hasOwnProperty.call(last.parent, last.key)) {
+  if (
+    last &&
+    last.parent &&
+    Object.prototype.hasOwnProperty.call(last.parent, last.key)
+  ) {
     delete last.parent[last.key];
   }
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     const { parent, key } = stack[i];
     const child = parent[key];
-    if (child && typeof child === "object" && !Array.isArray(child) && !Object.keys(child).length) {
+    if (
+      child &&
+      typeof child === "object" &&
+      !Array.isArray(child) &&
+      !Object.keys(child).length
+    ) {
       delete parent[key];
     }
   }
@@ -1251,7 +1354,12 @@ function deleteNestedValue(target, pathArray) {
 function isSameValue(original, next) {
   if (original === next) return true;
   if (original == null && next == null) return true;
-  if (typeof original === "number" && typeof next === "number" && Number.isNaN(original) && Number.isNaN(next)) {
+  if (
+    typeof original === "number" &&
+    typeof next === "number" &&
+    Number.isNaN(original) &&
+    Number.isNaN(next)
+  ) {
     return true;
   }
   return false;
@@ -1289,7 +1397,8 @@ function createFieldControl(field, pathString, controlId) {
       option.textContent = optionDef.label ?? optionDef.value;
       control.appendChild(option);
     });
-    const fallbackValue = field.options && field.options[0] ? field.options[0].value : "";
+    const fallbackValue =
+      field.options && field.options[0] ? field.options[0].value : "";
     control.value = fieldValue ?? fallbackValue;
   } else if (field.type === "number") {
     control = document.createElement("input");
@@ -1335,7 +1444,7 @@ function renderConfigCards() {
   if (!configCardsContainer) return;
   configCardsContainer.innerHTML = "";
   if (!configState.snapshot) {
-    configCardsContainer.innerHTML = "<p class=\"muted\">未加载配置</p>";
+    configCardsContainer.innerHTML = '<p class="muted">未加载配置</p>';
     return;
   }
 
@@ -1414,7 +1523,8 @@ function createQwenProviderNote(config) {
   const wrapper = document.createElement("div");
   wrapper.className = "config-sensitive-note";
   const provider = config?.models?.providers?.["qwen-portal"];
-  const hasKey = typeof provider?.apiKey === "string" && provider.apiKey.trim().length > 0;
+  const hasKey =
+    typeof provider?.apiKey === "string" && provider.apiKey.trim().length > 0;
   wrapper.innerHTML = `<strong>qwen-portal / coder-model</strong><br/>
     ${hasKey ? "凭证已存在，API Key 由本地脚本维护，不会透传到浏览器。" : "未检测到 qwen API Key，需运行脚本生成后自动注入。"}<br/>
     <code>node scripts/qwen-oauth-login.ts</code>（或 <code>npm run qwen-auth</code>）`;
@@ -1427,7 +1537,9 @@ function updateMetaTooltip() {
     configMetaUpdated.textContent = `最后保存：${touchedAt.toLocaleString()}`;
   }
   if (configMetaState) {
-    configMetaState.textContent = configState.isLoading ? "缓存状态：加载中" : "缓存状态：同步完成";
+    configMetaState.textContent = configState.isLoading
+      ? "缓存状态：加载中"
+      : "缓存状态：同步完成";
   }
 }
 
@@ -1469,7 +1581,8 @@ async function loadConfig({ forceRefresh = false } = {}) {
     configState.initialized = true;
     renderConfigLoaded();
   } catch (error) {
-    configCardsContainer.innerHTML = '<p class="muted">配置加载失败，请重试。</p>';
+    configCardsContainer.innerHTML =
+      '<p class="muted">配置加载失败，请重试。</p>';
     showToast(`加载失败：${error.message || error}`, "error");
   } finally {
     configState.isLoading = false;
@@ -1557,7 +1670,9 @@ function handleRevertChanges() {
 }
 
 async function handleResetConfig() {
-  const confirmReset = confirm("恢复默认会重写当前配置并且无法撤销，是否继续？");
+  const confirmReset = confirm(
+    "恢复默认会重写当前配置并且无法撤销，是否继续？",
+  );
   if (!confirmReset) return;
   configState.isSaving = true;
   updateButtons();
@@ -1588,38 +1703,48 @@ async function handleResetConfig() {
 }
 
 function handleRefreshConfig() {
-  if (configState.dirtyPaths.size && !confirm("存在未保存的变更，刷新将丢失它们，是否继续？")) {
+  if (
+    configState.dirtyPaths.size &&
+    !confirm("存在未保存的变更，刷新将丢失它们，是否继续？")
+  ) {
     return;
   }
   loadConfig({ forceRefresh: true });
 }
 
 function renderRoute() {
-  const rawHash = window.location.hash;
-  const target = rawHash === "#config" ? "config" : "chat";
-  const configVisible = target === "config";
-  mainLayout?.classList.toggle("hidden", configVisible);
-  configView?.classList.toggle("hidden", !configVisible);
-  viewSwitchButtons.forEach((button) => {
-    const route = (button.dataset.route || "#chat").replace("#", "");
-    button.classList.toggle("is-active", route === target);
+  const rawHash = window.location.hash || "#chat";
+  const target =
+    rawHash === "#config"
+      ? "#config"
+      : rawHash === "#scheduler"
+        ? "#scheduler"
+        : "#chat";
+
+  // Update nav items active state
+  navItems.forEach((nav) => {
+    const route = nav.getAttribute("data-route") || "#chat";
+    nav.classList.toggle("active", route === target);
   });
-  if (configVisible) {
+
+  // Update breadcrumb
+  const viewName = viewNames[target] || "聊天";
+  if (breadcrumbCurrent) {
+    breadcrumbCurrent.textContent = viewName;
+  }
+
+  // Switch views
+  switchView(target);
+
+  // Load config if needed
+  if (target === "#config") {
     ensureConfigLoaded();
   }
 }
 
-viewSwitchButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const targetRoute = button.dataset.route || "#chat";
-    if (window.location.hash !== targetRoute) {
-      window.location.hash = targetRoute;
-    } else {
-      renderRoute();
-    }
-  });
-});
+// Listen for hash changes
 window.addEventListener("hashchange", renderRoute);
+// Initial route render
 renderRoute();
 
 configRefreshBtn?.addEventListener("click", handleRefreshConfig);
@@ -1629,19 +1754,23 @@ configRevertBtn?.addEventListener("click", handleRevertChanges);
 
 sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", clearHistory);
-chatContainer.addEventListener("scroll", (e) => {
-  if (e.target === chatContainer) {
-    refreshAutoScrollState();
-  } else if (e.target.tagName === "PRE") {
-    if (!isNearBottom(e.target)) {
-      autoScrollEnabled = false;
-      updateScrollBottomButtonVisibility();
-    } else if (isNearBottom(chatContainer)) {
-      autoScrollEnabled = true;
-      updateScrollBottomButtonVisibility();
+chatContainer.addEventListener(
+  "scroll",
+  (e) => {
+    if (e.target === chatContainer) {
+      refreshAutoScrollState();
+    } else if (e.target.tagName === "PRE") {
+      if (!isNearBottom(e.target)) {
+        autoScrollEnabled = false;
+        updateScrollBottomButtonVisibility();
+      } else if (isNearBottom(chatContainer)) {
+        autoScrollEnabled = true;
+        updateScrollBottomButtonVisibility();
+      }
     }
-  }
-}, true);
+  },
+  true,
+);
 
 chatContainer.addEventListener("click", async (e) => {
   if (e.target.classList.contains("msg-copy-btn")) {
@@ -1650,23 +1779,27 @@ chatContainer.addEventListener("click", async (e) => {
     const messageEl = e.target.closest(".message");
     let textToCopy = "";
     if (messageEl.classList.contains("assistant")) {
-      const markdowns = messageEl.querySelectorAll(".timeline-markdown:not(.user)");
-      textToCopy = Array.from(markdowns).map(m => m.dataset.markdown || m.textContent || "").join("\n\n");
+      const markdowns = messageEl.querySelectorAll(
+        ".timeline-markdown:not(.user)",
+      );
+      textToCopy = Array.from(markdowns)
+        .map((m) => m.dataset.markdown || m.textContent || "")
+        .join("\n\n");
     } else {
       const userContent = messageEl.querySelector(".timeline-markdown.user");
       textToCopy = userContent ? userContent.textContent : "";
     }
-    
+
     if (textToCopy) {
       const success = await copyToClipboard(textToCopy);
       if (success) {
         const originalText = e.target.textContent;
         e.target.textContent = "Copied";
-        setTimeout(() => e.target.textContent = originalText, 1200);
+        setTimeout(() => (e.target.textContent = originalText), 1200);
       }
     }
   }
-  
+
   if (e.target.classList.contains("details-copy-btn")) {
     e.preventDefault();
     e.stopPropagation();
@@ -1677,7 +1810,7 @@ chatContainer.addEventListener("click", async (e) => {
       if (success) {
         const originalText = e.target.textContent;
         e.target.textContent = "Copied";
-        setTimeout(() => e.target.textContent = originalText, 1200);
+        setTimeout(() => (e.target.textContent = originalText), 1200);
       }
     }
   }
@@ -1692,7 +1825,7 @@ chatContainer.addEventListener("click", async (e) => {
       if (success) {
         const originalText = e.target.textContent;
         e.target.textContent = "Copied";
-        setTimeout(() => e.target.textContent = originalText, 1200);
+        setTimeout(() => (e.target.textContent = originalText), 1200);
       }
     }
   }

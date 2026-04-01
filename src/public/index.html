@@ -4,171 +4,359 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent Demo</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="app-header">
-        <div class="header-left">
-          <div>
-            <h1>Agent Demo</h1>
-            <p>左侧对话与调试时间线，右侧任务调度面板（预留）</p>
-          </div>
-          <nav class="view-switch" aria-label="视图切换">
-            <button class="view-switch-btn is-active" data-route="#chat">聊天</button>
-            <button class="view-switch-btn" data-route="#config">配置</button>
-          </nav>
-        </div>
-        <div class="header-actions">
-          <button class="btn btn-secondary" id="clear-btn">清除历史</button>
-        </div>
-      </header>
-
-      <main class="main-layout" id="main-layout">
-        <div class="workspace-column">
-          <section id="chat-view" class="chat-panel">
-            <div class="chat-container" id="chat-container"></div>
-
-            <div class="input-container">
-            <div class="input-wrapper">
-              <textarea
-                id="message-input"
-                placeholder="Plan, @ for context, / for commands"
-                rows="1"
-              ></textarea>
-              <div class="input-toolbar">
-                <div class="toolbar-left">
-                  <button class="toolbar-btn pill-btn">
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <path
-                        d="M8 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8 0a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"
-                      />
-                    </svg>
-                    Agent
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                  </button>
-                  <button class="toolbar-btn text-btn">
-                    Gemini 3.1 Pro
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    >
-                      <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                  </button>
+    <div class="shell">
+      <!-- Sidebar Navigation -->
+      <nav class="shell-nav">
+        <div class="sidebar">
+          <div class="sidebar-shell">
+            <div class="sidebar-shell__header">
+              <div class="sidebar-brand">
+                <img
+                  src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%231d4ed8'/%3E%3Cpath d='M10 16l4 4 8-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"
+                  alt="Logo"
+                  class="sidebar-brand__logo"
+                />
+                <div class="sidebar-brand__copy">
+                  <span class="sidebar-brand__eyebrow">Agent</span>
+                  <span class="sidebar-brand__title">Agent Demo</span>
                 </div>
-                <div class="toolbar-right">
-                  <div class="context-indicator" title="0% context used">
-                    <svg width="16" height="16" viewBox="0 0 36 36">
-                      <circle
-                        cx="18"
-                        cy="18"
-                        r="14"
+              </div>
+              <button
+                class="nav-collapse-toggle"
+                type="button"
+                aria-label="折叠导航"
+              >
+                <span class="nav-collapse-toggle__icon">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                </span>
+              </button>
+            </div>
+
+            <div class="sidebar-nav">
+              <div class="nav-section">
+                <button class="nav-section__label">
+                  <span class="nav-section__label-text">聊天</span>
+                  <span class="nav-section__chevron">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </span>
+                </button>
+                <div class="nav-section__items">
+                  <a href="#chat" class="nav-item active" data-route="#chat">
+                    <span class="nav-item__icon">
+                      <svg
+                        viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#e2e8f0"
-                        stroke-width="4"
-                      ></circle>
-                      <circle
-                        cx="18"
-                        cy="18"
-                        r="14"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <path
+                          d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                        ></path>
+                      </svg>
+                    </span>
+                    <span class="nav-item__text">聊天</span>
+                  </a>
+                </div>
+              </div>
+
+              <div class="nav-section">
+                <button class="nav-section__label">
+                  <span class="nav-section__label-text">控制</span>
+                  <span class="nav-section__chevron">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </span>
+                </button>
+                <div class="nav-section__items">
+                  <a href="#scheduler" class="nav-item" data-route="#scheduler">
+                    <span class="nav-item__icon">
+                      <svg
+                        viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#94a3b8"
-                        stroke-width="4"
-                        stroke-dasharray="88"
-                        stroke-dashoffset="88"
-                        transform="rotate(-90 18 18)"
-                      ></circle>
-                    </svg>
-                  </div>
-                  <button class="icon-btn">
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <rect
+                          x="3"
+                          y="3"
+                          width="18"
+                          height="18"
+                          rx="2"
+                          ry="2"
+                        ></rect>
+                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                      </svg>
+                    </span>
+                    <span class="nav-item__text">任务调度</span>
+                  </a>
+                </div>
+              </div>
+
+              <div class="nav-section">
+                <button class="nav-section__label">
+                  <span class="nav-section__label-text">设置</span>
+                  <span class="nav-section__chevron">
                     <svg
-                      width="18"
-                      height="18"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
                       stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
                     >
-                      <rect
-                        x="3"
-                        y="3"
-                        width="18"
-                        height="18"
-                        rx="2"
-                        ry="2"
-                      ></rect>
-                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                      <polyline points="21 15 16 10 5 21"></polyline>
+                      <polyline points="6 9 12 15 18 9"></polyline>
                     </svg>
-                  </button>
-                  <button class="icon-btn mic-btn">
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path
-                        d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"
-                      ></path>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                      <line x1="12" y1="19" x2="12" y2="22"></line>
-                    </svg>
-                  </button>
-                  <button id="send-btn" class="icon-btn send-btn">
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <line x1="22" y1="2" x2="11" y2="13"></line>
-                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                    </svg>
-                  </button>
+                  </span>
+                </button>
+                <div class="nav-section__items">
+                  <a href="#config" class="nav-item" data-route="#config">
+                    <span class="nav-item__icon">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path
+                          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                        ></path>
+                      </svg>
+                    </span>
+                    <span class="nav-item__text">配置</span>
+                  </a>
                 </div>
               </div>
             </div>
+
+            <div class="sidebar-shell__footer">
+              <div class="sidebar-version">
+                <span class="sidebar-version__label">版本</span>
+                <span class="sidebar-version__text">v1.0.0</span>
+                <span
+                  class="sidebar-version__status sidebar-connection-status--online"
+                ></span>
+              </div>
             </div>
-          </section>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topnav-shell">
+          <div class="dashboard-header">
+            <div class="dashboard-header__breadcrumb">
+              <span class="dashboard-header__breadcrumb-link">Agent Demo</span>
+              <span class="dashboard-header__breadcrumb-sep">›</span>
+              <span
+                class="dashboard-header__breadcrumb-current"
+                id="breadcrumb-current"
+                >聊天</span
+              >
+            </div>
+          </div>
+          <div class="topnav-shell__actions">
+            <button class="btn btn--icon" id="clear-btn" title="清除历史">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path
+                  d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                ></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="content content--chat" id="main-content">
+        <!-- Chat View -->
+        <div id="chat-view" class="view-panel">
+          <div class="chat" id="chat-container">
+            <div class="chat-thread" id="chat-thread"></div>
+          </div>
+
+          <div class="chat-compose">
+            <div class="chat-compose__row">
+              <div class="chat-compose__field">
+                <div class="input-wrapper">
+                  <textarea
+                    id="message-input"
+                    placeholder="Message Assistant (Enter to send)"
+                    rows="1"
+                  ></textarea>
+                  <div class="input-toolbar">
+                    <div class="toolbar-left">
+                      <button class="toolbar-btn pill-btn">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path
+                            d="M8 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm8 0a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"
+                          />
+                        </svg>
+                        Agent
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </button>
+                      <button class="toolbar-btn text-btn">
+                        Gemini 3.1 Pro
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="toolbar-right">
+                      <div class="context-indicator" title="0% context used">
+                        <svg width="16" height="16" viewBox="0 0 36 36">
+                          <circle
+                            cx="18"
+                            cy="18"
+                            r="14"
+                            fill="none"
+                            stroke="#e2e8f0"
+                            stroke-width="4"
+                          ></circle>
+                          <circle
+                            cx="18"
+                            cy="18"
+                            r="14"
+                            fill="none"
+                            stroke="#94a3b8"
+                            stroke-width="4"
+                            stroke-dasharray="88"
+                            stroke-dashoffset="88"
+                            transform="rotate(-90 18 18)"
+                          ></circle>
+                        </svg>
+                      </div>
+                      <button class="icon-btn">
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <rect
+                            x="3"
+                            y="3"
+                            width="18"
+                            height="18"
+                            rx="2"
+                            ry="2"
+                          ></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                      </button>
+                      <button class="icon-btn mic-btn">
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path
+                            d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"
+                          ></path>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                          <line x1="12" y1="19" x2="12" y2="22"></line>
+                        </svg>
+                      </button>
+                      <button id="send-btn" class="icon-btn send-btn">
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <line x1="22" y1="2" x2="11" y2="13"></line>
+                          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <aside class="scheduler-panel">
-          <div class="scheduler-header">
-            <h2>任务调度</h2>
-            <span class="scheduler-status">空壳模式</span>
+        <!-- Scheduler View -->
+        <div id="scheduler-view" class="view-panel hidden">
+          <div class="dashboard-header">
+            <h2 class="page-title">任务调度</h2>
+            <span class="pill">空壳模式</span>
           </div>
           <div class="scheduler-filter-row">
             <button
@@ -209,42 +397,92 @@
               新建任务
             </button>
           </div>
-        </aside>
-      </main>
-
-      <section id="config-view" class="config-panel hidden">
-        <div class="config-view-shell">
-          <div class="config-hero">
-            <div>
-              <h2>配置中心</h2>
-              <p>直观调节 `fgbg.json` 的核心设置并保存到后端。</p>
-            </div>
-            <div class="config-hero-actions">
-              <button id="config-refresh-btn" class="btn btn-secondary" type="button">刷新配置</button>
-              <button id="config-reset-btn" class="btn btn-secondary" type="button">恢复默认</button>
-            </div>
-          </div>
-
-          <div class="config-meta-strip">
-            <span class="meta-chip" id="config-meta-updated">等待加载</span>
-            <span class="meta-chip" id="config-meta-state">缓存状态：未加载</span>
-          </div>
-          <div class="config-default-strip" id="config-default-strip">
-            <p>默认项将自动补齐，清除后端会重新应用系统默认。</p>
-          </div>
-
-          <div class="config-cards" id="config-cards">
-            <p class="muted">正在加载配置...</p>
-          </div>
-
-          <div class="config-toolbar">
-            <button id="config-save-btn" class="btn btn-primary" type="button" disabled>保存变更</button>
-            <button id="config-revert-btn" class="btn btn-secondary" type="button" disabled>撤销修改</button>
-          </div>
-
-          <div class="config-toast hidden" id="config-toast" role="status"></div>
         </div>
-      </section>
+
+        <!-- Config View -->
+        <div id="config-view" class="view-panel hidden">
+          <div class="config-layout">
+            <div class="config-actions">
+              <div class="config-actions-info">
+                <h2>配置中心</h2>
+                <p>直观调节 <code>fgbg.json</code> 的核心设置并保存到后端。</p>
+                <div class="config-actions-meta">
+                  <span class="meta-chip" id="config-meta-updated"
+                    >等待加载</span
+                  >
+                  <span class="meta-chip" id="config-meta-state"
+                    >缓存状态：未加载</span
+                  >
+                </div>
+              </div>
+              <div class="config-actions-controls">
+                <button
+                  id="config-refresh-btn"
+                  class="btn btn-secondary"
+                  type="button"
+                >
+                  刷新配置
+                </button>
+                <button
+                  id="config-reset-btn"
+                  class="btn btn-secondary"
+                  type="button"
+                >
+                  恢复默认
+                </button>
+              </div>
+            </div>
+            <div class="config-search">
+              <div class="config-search__input-row">
+                <span class="config-search__icon" aria-hidden="true">🔍</span>
+                <input
+                  class="config-search__input"
+                  type="search"
+                  placeholder="搜索字段、类别..."
+                />
+                <button
+                  class="config-search__clear"
+                  type="button"
+                  aria-label="清除搜索"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div class="config-main">
+              <div class="config-default-strip" id="config-default-strip">
+                <p>默认项将自动补齐，清除后端会重新应用系统默认。</p>
+              </div>
+              <div class="config-cards" id="config-cards">
+                <p class="muted">正在加载配置...</p>
+              </div>
+              <div class="config-toolbar">
+                <button
+                  id="config-save-btn"
+                  class="btn btn-primary"
+                  type="button"
+                  disabled
+                >
+                  保存变更
+                </button>
+                <button
+                  id="config-revert-btn"
+                  class="btn btn-secondary"
+                  type="button"
+                  disabled
+                >
+                  撤销修改
+                </button>
+              </div>
+              <div
+                class="config-toast hidden"
+                id="config-toast"
+                role="status"
+              ></div>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
