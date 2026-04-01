@@ -492,10 +492,6 @@ function getMessageContent(message) {
   return "";
 }
 
-function getAssistantStream(messageEl) {
-  return messageEl?.querySelector(".timeline-stream");
-}
-
 function scrollToBottom(options = {}) {
   const { force = false } = options;
   if (!force && !autoScrollEnabled) return;
@@ -513,346 +509,388 @@ function scrollToBottom(options = {}) {
   if (autoScrollEnabled) updateScrollBottomButtonVisibility();
 }
 
-function appendTimelineMarkdown(messageEl, text, className = "") {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return null;
-  let node = stream.lastElementChild;
-  if (
-    !node ||
-    !node.classList.contains("timeline-markdown") ||
-    node.dataset.finished === "1"
-  ) {
-    node = document.createElement("div");
-    node.className = `timeline-markdown ${className}`.trim();
-    node.dataset.markdown = "";
-    stream.appendChild(node);
+function resolveInsertAfterElement(reference) {
+  if (!reference) return null;
+  if (typeof reference === "string") {
+    return document.getElementById(reference);
   }
-  node.dataset.markdown = text;
-  node.innerHTML = renderMarkdown(text);
-  return node;
+  if (reference instanceof HTMLElement) return reference;
+  return null;
 }
 
-function appendTimelineDetails(messageEl, kind, title, contentText) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  const details = document.createElement("details");
-  details.className = `timeline-details ${kind}`;
-  details.open = false;
-  const summary = document.createElement("summary");
-  summary.textContent = title;
+// ==========================================
+// VS Code Style Flat Message Functions
+// ==========================================
 
+/**
+ * Create a flat message element with role-based styling
+ * @param {string} role - 'user' | 'assistant' | 'thinking' | 'tool' | 'error'
+ * @param {string} content - Message content
+ * @param {string} id - Unique message ID
+ * @param {Object} options - Additional options
+ * @returns {HTMLDivElement}
+ */
+function createFlatMessage(role, content, id, options = {}) {
+  const {
+    timestamp = Date.now(),
+    fileContext = null,
+    isStreaming = false,
+    streamingLabel = "Thinking",
+  } = options;
+
+  const messageEl = document.createElement("div");
+  messageEl.className = `flat-message flat-message-${role}`;
+  messageEl.id = id;
+  messageEl.dataset.role = role;
+  messageEl.dataset.timestamp = timestamp;
+
+  // Status indicator (bullet point)
+  const indicator = document.createElement("div");
+  indicator.className = `flat-message-indicator flat-message-indicator-${role}`;
+  messageEl.appendChild(indicator);
+
+  // Message content container
+  const contentContainer = document.createElement("div");
+  contentContainer.className = "flat-message-content";
+
+  if (role === "user") {
+    // User message with file context
+    const userContent = document.createElement("div");
+    userContent.className = "flat-message-user-content";
+    userContent.innerHTML = renderMarkdown(content);
+    contentContainer.appendChild(userContent);
+
+    // File context context
+    if (fileContext) {
+      const fileContextEl = document.createElement("div");
+      fileContextEl.className = "flat-message-file-context";
+      fileContextEl.textContent = fileContext;
+      contentContainer.appendChild(fileContextEl);
+    }
+  } else if (role === "assistant") {
+    // Assistant message with markdown rendering
+    const assistantContent = document.createElement("div");
+    assistantContent.className = "flat-message-assistant-content";
+    assistantContent.innerHTML = renderMarkdown(content || "");
+    contentContainer.appendChild(assistantContent);
+
+    // Streaming indicator
+    if (isStreaming) {
+      const streamingIndicator = document.createElement("div");
+      streamingIndicator.className = "flat-message-streaming";
+      streamingIndicator.innerHTML = `
+        <span class="streaming-label">${streamingLabel}</span>
+        <span class="streaming-dots"><span></span><span></span><span></span></span>
+      `.trim();
+      contentContainer.appendChild(streamingIndicator);
+    }
+  } else if (role === "thinking") {
+    // Thinking message (collapsible)
+    const thinkingContainer = document.createElement("div");
+    thinkingContainer.className = "flat-message-thinking";
+
+    const thinkingHeader = document.createElement("div");
+    thinkingHeader.className = "flat-message-thinking-header";
+    thinkingHeader.innerHTML = `
+      <span class="thinking-label">Thinking</span>
+>
+      <span class="thinking-toggle">▼</span>
+    `;
+
+    const thinkingContent = document.createElement("div");
+    thinkingContent.className = "flat-message-thinking-content";
+    thinkingContent.innerHTML = renderMarkdown(content || "");
+    thinkingContent.style.display = "none"; // Collapsed by default
+
+    const thinkingToggle = thinkingHeader.querySelector(".thinking-toggle");
+    thinkingHeader.addEventListener("click", () => {
+      const isExpanded = thinkingContent.style.display !== "none";
+      thinkingContent.style.display = isExpanded ? "none" : "block";
+      thinkingToggle.textContent = isExpanded ? "▼" : "▲";
+    });
+
+    thinkingContainer.appendChild(thinkingHeader);
+    thinkingContainer.appendChild(thinkingContent);
+    contentContainer.appendChild(thinkingContainer);
+  } else if (role === "tool") {
+    // Tool execution message
+    const toolContainer = document.createElement("div");
+    toolContainer.className = "flat-message-tool";
+
+    const toolHeader = document.createElement("div");
+    toolHeader.className = "flat-message-tool-header";
+    toolHeader.textContent = content.toolName || "Tool Execution";
+
+    const toolContent = document.createElement("div");
+    toolContent.className = "flat-message-tool-content";
+    toolContent.innerHTML = renderMarkdown(content.output || "");
+
+    toolContainer.appendChild(toolHeader);
+    toolContainer.appendChild(toolContent);
+    contentContainer.appendChild(toolContainer);
+  } else if (role === "context") {
+    const contextWrapper = document.createElement("div");
+    contextWrapper.className = "flat-message-context";
+
+    const header = document.createElement("div");
+    header.className = "flat-message-context-header";
+    const title =
+      content && typeof content === "object" && content.title
+        ? content.title
+        : "上下文事件";
+    header.textContent = title;
+    contextWrapper.appendChild(header);
+
+    const bodyText =
+      content && typeof content === "object"
+        ? content.body
+        : typeof content === "string"
+          ? content
+          : "";
+    if (bodyText) {
+      const body = document.createElement("div");
+      body.className = "flat-message-context-body";
+      body.innerHTML = renderMarkdown(bodyText);
+      contextWrapper.appendChild(body);
+    }
+
+    if (content && typeof content === "object" && content.snapshot) {
+      const snapshotDetails = document.createElement("details");
+      snapshotDetails.className = "context-subsection";
+      snapshotDetails.open = false;
+      const summary = document.createElement("summary");
+      summary.textContent = "当前上下文快照";
+      const copyBtn = createContextCopyButton(content.snapshot);
+      summary.appendChild(copyBtn);
+      const snapshotPre = document.createElement("pre");
+      snapshotPre.className = "context-snapshot-pre";
+      snapshotPre.textContent = content.snapshot;
+      snapshotDetails.appendChild(summary);
+      snapshotDetails.appendChild(snapshotPre);
+      contextWrapper.appendChild(snapshotDetails);
+    }
+
+    if (content && Array.isArray(content.diffLines)) {
+      const diffDetails = document.createElement("details");
+      diffDetails.className = "context-subsection";
+      diffDetails.open = false;
+      const summary = document.createElement("summary");
+      summary.textContent = "注释差异";
+      diffDetails.appendChild(summary);
+      const diffPre = createContextDiffPre(content.diffLines);
+      diffDetails.appendChild(diffPre);
+      contextWrapper.appendChild(diffDetails);
+    }
+
+    contentContainer.appendChild(contextWrapper);
+  } else if (role === "error") {
+    // Error message
+    const errorContent = document.createElement("div");
+    errorContent.className = "flat-message-error";
+    errorContent.textContent = content;
+    contentContainer.appendChild(errorContent);
+  }
+
+  messageEl.appendChild(contentContainer);
+
+  // Copy button
   const copyBtn = document.createElement("button");
   copyBtn.type = "button";
-  copyBtn.className = "details-copy-btn";
+  copyBtn.className = "flat-message-copy-btn";
   copyBtn.textContent = "复制";
-  summary.appendChild(copyBtn);
-
-  const pre = document.createElement("pre");
-  pre.textContent = contentText;
-  details.appendChild(summary);
-  details.appendChild(pre);
-  stream.appendChild(details);
-  scrollToBottom();
-
-  if (kind === "context" && messageEl) {
-    addContextBadge(messageEl);
-  }
-}
-
-function addContextBadge(messageEl) {
-  if (!messageEl) return;
-  const content = messageEl.querySelector(".content");
-  if (!content) return;
-  let badge = content.querySelector(".bubble-context-badge");
-  if (!badge) {
-    badge = document.createElement("span");
-    badge.className = "bubble-context-badge";
-    badge.title = "上下文信息";
-    badge.textContent = "C";
-    content.appendChild(badge);
-  }
-}
-
-function appendThinkingUpdate(messageEl, thinking) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  let details = stream.querySelector(
-    "details.timeline-details.thinking[data-live='1']",
-  );
-  if (!details) {
-    details = document.createElement("details");
-    details.className = "timeline-details thinking";
-    details.dataset.live = "1";
-    details.open = true;
-    const summary = document.createElement("summary");
-    summary.textContent = "思考过程（实时）";
-
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "details-copy-btn";
-    copyBtn.textContent = "复制";
-    summary.appendChild(copyBtn);
-
-    details.appendChild(summary);
-    details.appendChild(document.createElement("pre"));
-    stream.appendChild(details);
-  }
-  details.querySelector("pre").textContent = thinking || "";
-  scrollToBottom();
-}
-
-function finalizeAssistantBlocks(messageEl) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  stream.querySelectorAll("details.timeline-details").forEach((el) => {
-    el.open = false;
-    el.removeAttribute("data-live");
+  copyBtn.addEventListener("click", async () => {
+    const textToCopy = content || "";
+    const success = await copyToClipboard(textToCopy);
+    if (success) {
+      copyBtn.textContent = "已复制";
+      setTimeout(() => {
+        copyBtn.textContent = "复制";
+      }, 1200);
+    }
   });
+  messageEl.appendChild(copyBtn);
+
+  return messageEl;
 }
 
-// ==========================================
-// Qwen Code Style Timeline Message Functions
-// ==========================================
-
-/**
- * Create a timeline message container with status bullet and connector line
- * @param {string} type - 'thinking' | 'execute' | 'success' | 'error' | 'warning'
- * @param {string} label - Header label (e.g., "Thinking", "Execute")
- * @param {boolean} isLoading - Whether this is a loading state
- * @returns {HTMLDivElement}
- */
-function createTimelineMessage(type, label, isLoading = false) {
-  const container = document.createElement("div");
-  container.className = `timeline-message-container status-${type}${isLoading ? "-loading" : ""}`;
-
-  const header = document.createElement("div");
-  header.className = "timeline-message-header";
-
-  const labelEl = document.createElement("span");
-  labelEl.className = `timeline-message-label ${type}`;
-  labelEl.textContent = label;
-
-  header.appendChild(labelEl);
-  container.appendChild(header);
-
-  return container;
-}
-
-/**
- * Add content to a timeline message
- * @param {HTMLDivElement} container
- * @param {string} content
- * @param {boolean} isThinking - Whether this is thinking content (styled differently)
- */
-function addTimelineMessageContent(container, content, isThinking = false) {
-  const contentEl = document.createElement("div");
-  contentEl.className = `timeline-message-content${isThinking ? " thinking-content" : ""}`;
-  contentEl.innerHTML = renderMarkdown(content);
-  container.appendChild(contentEl);
-}
-
-/**
- * Create a tool call card with IN/OUT format
- * @param {string} command - The command executed
- * @param {string} output - The command output
- * @returns {HTMLDivElement}
- */
-function createToolCallCard(command, output) {
-  const card = document.createElement("div");
-  card.className = "toolcall-card";
-
-  if (command) {
-    const commandRow = document.createElement("div");
-    commandRow.className = "toolcall-row";
-    commandRow.innerHTML = `
-      <span class="toolcall-label in">IN</span>
-      <span class="toolcall-value">${command}</span>
-    `;
-    card.appendChild(commandRow);
-  }
-
-  if (output) {
-    const outputRow = document.createElement("div");
-    outputRow.className = "toolcall-row";
-    outputRow.innerHTML = `
-      <span class="toolcall-label out">OUT</span>
-      <span class="toolcall-value">${output}</span>
-    `;
-    card.appendChild(outputRow);
-  }
-
-  return card;
-}
-
-/**
- * Create a collapsible details element
- * @param {string} summary - Summary text
- * @param {string} content - Detailed content
- * @param {boolean} open - Whether to be open by default
- * @returns {HTMLDetailsElement}
- */
-function createCollapsibleDetails(summary, content, open = false) {
-  const details = document.createElement("details");
-  details.className = "timeline-details";
-  details.open = open;
-
-  const summaryEl = document.createElement("summary");
-  summaryEl.textContent = summary;
-  details.appendChild(summaryEl);
-
+function createContextDiffPre(lines) {
   const pre = document.createElement("pre");
-  pre.textContent = content;
-  details.appendChild(pre);
-
-  return details;
-}
-
-/**
- * Append a thinking message to the stream
- * @param {HTMLElement} messageEl
- * @param {string} content
- * @param {boolean} isLoading
- */
-function appendThinkingMessage(messageEl, content, isLoading = false) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-
-  const thinkingMsg = createTimelineMessage("thinking", "Thinking", isLoading);
-  addTimelineMessageContent(thinkingMsg, content, true);
-  stream.appendChild(thinkingMsg);
-  scrollToBottom();
-}
-
-/**
- * Append an execute message to the stream
- * @param {HTMLElement} messageEl
- * @param {string} label - Execute label
- * @param {string} command - Command executed
- * @param {string} output - Command output
- * @param {string} status - 'success' | 'error' | 'loading'
- */
-function appendExecuteMessage(
-  messageEl,
-  label,
-  command,
-  output,
-  status = "success",
-) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-
-  const executeMsg = createTimelineMessage(
-    "execute",
-    label,
-    status === "loading",
-  );
-  if (status === "success") {
-    executeMsg.classList.remove("status-execute-loading");
-    executeMsg.classList.add("status-execute");
-  }
-
-  const toolCallCard = createToolCallCard(command, output);
-  executeMsg.appendChild(toolCallCard);
-
-  stream.appendChild(executeMsg);
-  scrollToBottom();
-}
-
-function addMessage(
-  content,
-  role,
-  id = `msg-${Date.now()}`,
-  isStreaming = false,
-) {
-  const messageEl = document.createElement("div");
-  messageEl.className = `message ${role}`;
-  messageEl.id = id;
-
-  const avatar = document.createElement("div");
-  avatar.className = "avatar";
-  avatar.textContent = role === "user" ? "U" : "A";
-  messageEl.appendChild(avatar);
-
-  const contentEl = document.createElement("div");
-  contentEl.className = "content";
-  messageEl.appendChild(contentEl);
-
-  if (role === "assistant" || role === "user") {
-    const msgCopyBtn = document.createElement("button");
-    msgCopyBtn.type = "button";
-    msgCopyBtn.className = "msg-copy-btn";
-    msgCopyBtn.textContent = "复制";
-    msgCopyBtn.title = "复制消息内容";
-    contentEl.appendChild(msgCopyBtn);
-  }
-
-  if (role === "assistant") {
-    const stream = document.createElement("div");
-    stream.className = "timeline-stream";
-    contentEl.appendChild(stream);
-    if (content) {
-      // Use new timeline message format for assistant content
-      const timelineMsg = createTimelineMessage("success", "Response", false);
-      addTimelineMessageContent(timelineMsg, content, false);
-      stream.appendChild(timelineMsg);
+  pre.className = "context-diff-pre";
+  const linesToRender = Array.isArray(lines) && lines.length ? lines : ["  (Empty context)"];
+  linesToRender.forEach((line) => {
+    const span = document.createElement("span");
+    span.className = "context-diff-line";
+    if (typeof line === "string") {
+      if (line.startsWith("+")) {
+        span.classList.add("add");
+      } else if (line.startsWith("-")) {
+        span.classList.add("del");
+      } else {
+        span.classList.add("ctx");
+      }
     }
-    if (isStreaming) {
-      updateStreamingIndicator(messageEl, "Thinking");
-    }
+    span.textContent = line || " ";
+    pre.appendChild(span);
+  });
+  return pre;
+}
+
+function createContextCopyButton(text) {
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "context-copy-btn";
+  copyBtn.textContent = "复制";
+  copyBtn.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const success = await copyToClipboard(text || "");
+    copyBtn.textContent = success ? "已复制" : "复制失败";
+    setTimeout(() => {
+      copyBtn.textContent = "复制";
+    }, 1200);
+  });
+  return copyBtn;
+}
+
+function updateThinkingContent(messageEl, thinking) {
+  const thinkingContent = messageEl?.querySelector(".flat-message-thinking-content");
+  if (thinkingContent) {
+    thinkingContent.innerHTML = renderMarkdown(thinking || "");
+    thinkingContent.style.display = "block";
+  }
+}
+
+function ensureThinkingMessage(state, assistantMessageEl) {
+  if (!assistantMessageEl) return;
+  const existingId = state.currentThinkingMessageId;
+  let thinkingEl = existingId ? document.getElementById(existingId) : null;
+  if (!thinkingEl) {
+    thinkingEl = addFlatMessage("thinking", state.fullThinking, {
+      insertAfter: assistantMessageEl,
+    });
+    state.currentThinkingMessageId = thinkingEl.id;
   } else {
-    const body = document.createElement("div");
-    body.className = "timeline-markdown user";
-    body.innerHTML = renderMarkdown(content);
-    contentEl.appendChild(body);
+    updateThinkingContent(thinkingEl, state.fullThinking);
   }
+}
 
-  chatContainer.appendChild(messageEl);
+function addContextDiffMessage(
+  assistantMessageEl,
+  seq,
+  reason,
+  annotatedLines,
+  currentSnapshot,
+) {
+  addFlatMessage(
+    "context",
+    {
+      title: `上下文Diff #${seq} · ${reason}`,
+      snapshot: currentSnapshot,
+      diffLines: annotatedLines,
+    },
+    { insertAfter: assistantMessageEl },
+  );
+}
+
+function addContextStatusMessage(assistantMessageEl, title, body) {
+  const options = assistantMessageEl ? { insertAfter: assistantMessageEl } : {};
+  addFlatMessage("context", { title, body }, options);
+}
+
+/**
+ * Add a flat message to chat thread
+ * @param {string} role - Message role
+ * @param {string} content - Message content
+ * @param {Object} options - Additional options
+ * @returns {HTMLDivElement}
+ */
+function addFlatMessage(role, content, options = {}) {
+  const id = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const { insertAfter, ...createOptions } = options;
+  const messageEl = createFlatMessage(role, content, id, createOptions);
+  const target = resolveInsertAfterElement(insertAfter);
+  if (target && target.parentNode) {
+    target.parentNode.insertBefore(messageEl, target.nextSibling);
+  } else {
+    chatContainer.appendChild(messageEl);
+  }
   scrollToBottom({ force: true });
   return messageEl;
 }
 
-function removeStreamingIndicator(messageEl) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  const indicator = stream.querySelector(".streaming-indicator");
-  if (indicator) indicator.remove();
+function addMessage(content, role, options = {}) {
+  return addFlatMessage(role, content, options);
 }
 
-function updateStreamingIndicator(messageEl, text) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  let indicator = stream.querySelector(".streaming-indicator");
-  if (!indicator) {
-    indicator = document.createElement("span");
-    indicator.className = "streaming-indicator thinking-indicator";
-    stream.appendChild(indicator);
+/**
+ * Update an existing flat message
+ * @param {string} id - Message ID
+ * @param {string} content - New content
+ */
+function updateFlatMessage(id, content) {
+  const messageEl = document.getElementById(id);
+  if (!messageEl) return;
+
+  const contentContainer = messageEl.querySelector(".flat-message-assistant-content");
+  if (contentContainer) {
+    contentContainer.innerHTML = renderMarkdown(content || "");
+    scrollToBottom();
   }
+}
 
-  indicator.classList.remove("error");
+/**
+ * Remove streaming indicator from a message
+ * @param {string} id - Message ID
+ */
+function removeStreamingIndicator(id) {
+  const messageEl = document.getElementById(id);
+  if (!messageEl) return;
 
-  // Remove existing dots container if any
-  const dots = indicator.querySelector(".thinking-dots");
-  if (dots) dots.remove();
+  const streamingIndicator = messageEl.querySelector(".flat-message-streaming");
+  if (streamingIndicator) {
+    streamingIndicator.remove();
+  }
+}
 
-  // Set text and re-append dots
-  indicator.textContent = text ? `${text} ` : "";
-
-  const dotsContainer = document.createElement("span");
-  dotsContainer.className = "thinking-dots";
-  dotsContainer.innerHTML = "<span></span><span></span><span></span>";
-  indicator.appendChild(dotsContainer);
-
-  // Ensure indicator is always at the end
-  stream.appendChild(indicator);
+function updateStreamingIndicator(messageEl, text = "", { error = false } = {}) {
+  if (!messageEl) return;
+  const contentContainer = messageEl.querySelector(".flat-message-content");
+  if (!contentContainer) return;
+  let indicator = messageEl.querySelector(".flat-message-streaming");
+  if (!indicator) {
+    indicator = document.createElement("div");
+    indicator.className = "flat-message-streaming";
+    indicator.innerHTML = `
+      <span class="streaming-label">${text || "Streaming"}</span>
+      <span class="streaming-dots"><span></span><span></span><span></span></span>
+    `.trim();
+    contentContainer.appendChild(indicator);
+  } else {
+    let labelEl = indicator.querySelector(".streaming-label");
+    if (!labelEl) {
+      labelEl = document.createElement("span");
+      labelEl.className = "streaming-label";
+      indicator.prepend(labelEl);
+    }
+    labelEl.textContent = text || "Streaming";
+    if (!indicator.querySelector(".streaming-dots")) {
+      const dots = document.createElement("span");
+      dots.className = "streaming-dots";
+      dots.innerHTML = "<span></span><span></span><span></span>";
+      indicator.appendChild(dots);
+    }
+  }
+  indicator.classList.toggle("flat-message-streaming-error", error);
 }
 
 function appendTimestamp(messageEl, llmElapsedMs) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  const ts = document.createElement("div");
-  ts.className = "timestamp";
+  if (!messageEl) return;
+  let ts = messageEl.querySelector(".flat-message-timestamp");
+  if (!ts) {
+    ts = document.createElement("div");
+    ts.className = "flat-message-timestamp";
+    messageEl.appendChild(ts);
+  }
   ts.textContent = `完成时间 ${new Date().toLocaleTimeString("zh-CN")}${typeof llmElapsedMs === "number" ? ` · LLM耗时 ${formatDuration(llmElapsedMs)}` : ""}`;
-  stream.appendChild(ts);
   scrollToBottom();
 }
 
@@ -935,182 +973,52 @@ function buildLineDiffUnified(oldText, newText, maxLines = 1200) {
   return out;
 }
 
-function appendContextDiffBlock(
-  messageEl,
-  seq,
-  reason,
-  annotatedLines,
-  currentSnapshot,
-) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  const details = document.createElement("details");
-  details.className = "timeline-details context";
-  details.open = false;
-
-  const summary = document.createElement("summary");
-  summary.textContent = `上下文Diff #${seq} · ${reason}`;
-  const cvButton = document.createElement("button");
-  cvButton.type = "button";
-  cvButton.className = "context-cv-btn";
-  cvButton.textContent = "复制";
-  cvButton.addEventListener("click", async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const success = await copyToClipboard(currentSnapshot || "");
-    if (success) {
-      cvButton.textContent = "Copied";
-      setTimeout(() => {
-        cvButton.textContent = "复制";
-      }, 1200);
-    } else {
-      cvButton.textContent = "Fail";
-      setTimeout(() => {
-        cvButton.textContent = "复制";
-      }, 1200);
-    }
-  });
-  summary.appendChild(cvButton);
-  details.appendChild(summary);
-
-  const container = document.createElement("div");
-  container.className = "context-diff-container";
-
-  const snapshotDetails = document.createElement("details");
-  snapshotDetails.className = "context-subsection";
-  snapshotDetails.open = false;
-  const snapshotSummary = document.createElement("summary");
-  snapshotSummary.textContent = "Current Context Snapshot";
-  snapshotDetails.appendChild(snapshotSummary);
-  const snapshotPre = document.createElement("pre");
-  snapshotPre.className = "context-snapshot-pre";
-  snapshotPre.textContent = currentSnapshot;
-  snapshotDetails.appendChild(snapshotPre);
-  container.appendChild(snapshotDetails);
-
-  const annotatedDetails = document.createElement("details");
-  annotatedDetails.className = "context-subsection";
-  annotatedDetails.open = false;
-  const annotatedSummary = document.createElement("summary");
-  annotatedSummary.textContent = "Annotated Full Context";
-  annotatedDetails.appendChild(annotatedSummary);
-  const diffPre = document.createElement("pre");
-  diffPre.className = "context-diff-pre";
-  const linesToRender =
-    annotatedLines.length > 0 ? annotatedLines : ["  (Empty context)"];
-  linesToRender.forEach((line) => {
-    const span = document.createElement("span");
-    span.className = "context-diff-line";
-    if (line.startsWith("+")) {
-      span.classList.add("add");
-    } else if (line.startsWith("-")) {
-      span.classList.add("del");
-    } else {
-      span.classList.add("ctx");
-    }
-    span.textContent = line || " ";
-    diffPre.appendChild(span);
-  });
-  annotatedDetails.appendChild(diffPre);
-  container.appendChild(annotatedDetails);
-
-  details.appendChild(container);
-  stream.appendChild(details);
-  scrollToBottom();
-}
-
-function updateTimelineError(messageEl, text) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  let errorEl = stream.querySelector(".timeline-error-text");
-  if (!errorEl) {
-    errorEl = document.createElement("div");
-    errorEl.className = "timeline-error-text";
-    stream.appendChild(errorEl);
-  }
-  errorEl.textContent = text;
-  // Ensure it stays before the streaming indicator if present
-  const indicator = stream.querySelector(".streaming-indicator");
-  if (indicator) {
-    stream.insertBefore(errorEl, indicator);
-  } else {
-    stream.appendChild(errorEl);
-  }
-  scrollToBottom();
-}
-
-function clearTimelineError(messageEl) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  const errorEl = stream.querySelector(".timeline-error-text");
-  if (errorEl) errorEl.remove();
-}
-
-function finalizeCurrentThinking(messageEl, state) {
-  const stream = getAssistantStream(messageEl);
-  if (!stream) return;
-  const liveThinking = stream.querySelectorAll(
-    "details.timeline-details.thinking[data-live='1']",
-  );
-  liveThinking.forEach((el) => {
-    el.removeAttribute("data-live");
-    el.open = false;
-  });
-  if (state) {
-    state.fullThinking = "";
-  }
-}
-
 function handleStreamEvent(data, state, assistantMessageEl) {
   const event = normalizeUiEvent(data);
   const eventType = event.uiEventType;
 
   if (event.type === "context_used") {
-    // 添加 context used 标签
     const tokenUsage = event.totalTokens;
     const contextWindow = event.contextWindow;
     const percentage = Math.round((tokenUsage / contextWindow) * 100);
 
-    // 更新底部工具栏的 context indicator
-    if (contextIndicator && contextIndicatorCircle) {
+    if (contextIndicator && contextIndicatorCircle && contextWindow) {
       const exactPercentage = ((tokenUsage / contextWindow) * 100).toFixed(1);
       contextIndicator.title = `${exactPercentage}% context used`;
 
-      const circumference = 88; // 2 * pi * 14
+      const circumference = 88;
       const offset = circumference - (circumference * percentage) / 100;
       contextIndicatorCircle.setAttribute("stroke-dashoffset", offset);
 
-      // 根据使用量改变颜色
       const indicatorColor =
         percentage > 90
-          ? "#ef4444" // 红色
+          ? "#ef4444"
           : percentage > 75
-            ? "#f59e0b" // 黄色
-            : "#94a3b8"; // 默认灰色
+            ? "#f59e0b"
+            : "#94a3b8";
       contextIndicatorCircle.setAttribute("stroke", indicatorColor);
     }
 
-    // 找到对话框内容元素
-    const contentEl = assistantMessageEl.querySelector(".content");
+    const contentEl = assistantMessageEl?.querySelector(
+      ".flat-message-assistant-content",
+    );
     if (contentEl) {
-      // 创建标签元素
-      const usageTag = document.createElement("div");
-      usageTag.className = "context-usage-tag";
+      let usageTag = contentEl.querySelector(".context-usage-tag");
+      if (!usageTag) {
+        usageTag = document.createElement("div");
+        usageTag.className = "context-usage-tag";
+        contentEl.appendChild(usageTag);
+      }
       usageTag.textContent = `${percentage}%`;
-
-      // 计算背景颜色（从绿色到红色渐变）
       const color =
         percentage > 90
-          ? "#FF6B6B" // 红色
+          ? "#FF6B6B"
           : percentage > 75
-            ? "#FFD93D" // 黄色
+            ? "#FFD93D"
             : percentage > 50
-              ? "#6BCF7F" // 浅绿色
-              : "#4ECDC4"; // 蓝色
-
+              ? "#6BCF7F"
+              : "#4ECDC4";
       usageTag.style.backgroundColor = color;
-
-      contentEl.appendChild(usageTag);
     }
 
     console.log(
@@ -1126,7 +1034,7 @@ function handleStreamEvent(data, state, assistantMessageEl) {
     const diffLines = buildLineDiffUnified(prev, current);
     state.prevContextText = current;
     lastContextSnapshotGlobal = current;
-    appendContextDiffBlock(
+    addContextDiffMessage(
       assistantMessageEl,
       event.seq ?? 0,
       event.reason ?? "unknown",
@@ -1138,24 +1046,15 @@ function handleStreamEvent(data, state, assistantMessageEl) {
 
   if (eventType === "message") {
     if (event.type === "message_start") {
-      finalizeCurrentThinking(assistantMessageEl, state);
-      state.fullText = ""; // Reset text for the new message/turn
-      const stream = getAssistantStream(assistantMessageEl);
-      if (
-        stream &&
-        stream.lastElementChild &&
-        stream.lastElementChild.classList.contains("timeline-markdown")
-      ) {
-        stream.lastElementChild.dataset.finished = "1";
-      }
+      state.currentThinkingMessageId = null;
+      state.fullText = "";
       if (!state.llmStartedAt) {
         state.llmStartedAt = performance.now();
       }
       return;
     }
     if (event.type === "message_update") {
-      finalizeCurrentThinking(assistantMessageEl, state);
-      removeStreamingIndicator(assistantMessageEl);
+      if (!assistantMessageEl) return;
       if (typeof event.delta === "string" && event.delta) {
         state.fullText += event.delta;
       } else if (typeof event.text === "string") {
@@ -1163,139 +1062,117 @@ function handleStreamEvent(data, state, assistantMessageEl) {
       } else {
         state.fullText = getMessageContent(event.message || {});
       }
-      appendTimelineMarkdown(assistantMessageEl, state.fullText);
+      updateFlatMessage(assistantMessageEl.id, state.fullText);
       scrollToBottom();
       return;
     }
     if (event.type === "message_end") {
-      finalizeCurrentThinking(assistantMessageEl, state);
+      if (!assistantMessageEl) return;
       if (typeof event.text === "string" && event.text) {
         state.fullText = event.text;
       } else {
         state.fullText = getMessageContent(event.message || {});
       }
-      if (!state.fullText) {
-        return;
-      }
-      const node = appendTimelineMarkdown(assistantMessageEl, state.fullText);
-      if (node) node.dataset.finished = "1";
+      updateFlatMessage(assistantMessageEl.id, state.fullText);
       state.llmEndedAt = performance.now();
       return;
     }
   }
 
   if (eventType === "thinking") {
+    state.fullThinking = "";
     if (typeof event.thinking === "string") state.fullThinking = event.thinking;
     if (typeof event.thinkingDelta === "string")
       state.fullThinking += event.thinkingDelta;
-    appendThinkingUpdate(assistantMessageEl, state.fullThinking);
+    ensureThinkingMessage(state, assistantMessageEl);
     updateStreamingIndicator(assistantMessageEl, "Thinking");
     return;
   }
 
   if (eventType === "tool") {
-    finalizeCurrentThinking(assistantMessageEl, state);
     const payload = event.uiPayload || event;
-    const title = `工具调用 · ${event.toolName || payload.toolName || "unknown"} · ${(payload.phase || event.type || "update").toString()}`;
-    appendTimelineDetails(
-      assistantMessageEl,
+    const toolName = event.toolName || payload.toolName || "unknown";
+    const label = `工具调用 · ${toolName} · ${(payload.phase || event.type || "update").toString()}`;
+    addFlatMessage(
       "tool",
-      title,
-      formatJson(payload),
+      {
+        toolName: label,
+        output: formatJson(payload),
+      },
+      { insertAfter: assistantMessageEl },
     );
-    updateStreamingIndicator(
-      assistantMessageEl,
-      `Tooling: ${event.toolName || payload.toolName || "unknown"}`,
-    );
+    updateStreamingIndicator(assistantMessageEl, `Tooling: ${toolName}`);
     return;
   }
 
   if (eventType === "context") {
     if (event.type === "error") {
-      // 确保 assistantMessageEl 存在且有 stream
-      if (!assistantMessageEl) {
-        // 如果没有当前的 assistant 消息元素，创建一个错误消息
-        const errorEl = addMessage(
-          `错误：${event.error || "未知错误"}`,
-          "assistant",
-          `msg-error-${Date.now()}`,
-          false,
-        );
-        // 标记为错误消息
-        errorEl.classList.add("is-error");
-        return;
+      const message = `错误：${event.error || "未知错误"}`;
+      if (assistantMessageEl) {
+        updateStreamingIndicator(assistantMessageEl, "Error", { error: true });
+        addContextStatusMessage(assistantMessageEl, "请求失败", message);
+      } else {
+        addMessage(message, "assistant");
       }
-
-      finalizeCurrentThinking(assistantMessageEl, state);
-      updateTimelineError(
-        assistantMessageEl,
-        `错误：${event.error || "未知错误"}`,
-      );
-      updateStreamingIndicator(assistantMessageEl, "Error");
-      const indicator = getAssistantStream(assistantMessageEl)?.querySelector(
-        ".streaming-indicator",
-      );
-      if (indicator) indicator.classList.add("error");
       return;
-    } else if (
+    }
+    if (
       event.type === "auto_retry_start" &&
       event.attempt != null &&
       event.maxAttempts != null
     ) {
       if (!assistantMessageEl) return;
-      finalizeCurrentThinking(assistantMessageEl, state);
       updateStreamingIndicator(
         assistantMessageEl,
         `Auto Retry (${event.attempt}/${event.maxAttempts})`,
+        { error: true },
       );
-      const indicator = getAssistantStream(assistantMessageEl)?.querySelector(
-        ".streaming-indicator",
-      );
-      if (indicator) indicator.classList.add("error");
-
-      updateTimelineError(
+      addContextStatusMessage(
         assistantMessageEl,
+        "自动重试",
         `正在重试 (${event.attempt}/${event.maxAttempts})，原因：${event.errorMessage || "未知"}`,
       );
       return;
-    } else if (event.type === "auto_retry_end") {
+    }
+    if (event.type === "auto_retry_end") {
       if (!assistantMessageEl) return;
-      const indicator = getAssistantStream(assistantMessageEl)?.querySelector(
-        ".streaming-indicator",
+      const success = Boolean(event.success);
+      updateStreamingIndicator(
+        assistantMessageEl,
+        success ? "Thinking" : "Retry Failed",
+        { error: !success },
       );
-      if (indicator) indicator.classList.remove("error");
-      if (!event.success) {
-        updateStreamingIndicator(assistantMessageEl, "Retry Failed");
-        if (indicator) indicator.classList.add("error");
-        updateTimelineError(
+      addContextStatusMessage(
+        assistantMessageEl,
+        "自动重试结果",
+        success
+          ? "重试成功，继续思考。"
+          : `重试结束，未成功。${event.finalError ? ` 原因：${event.finalError}` : ""}`,
+      );
+      return;
+    }
+    if (event.type === "compaction_start") {
+      if (!assistantMessageEl) return;
+      updateStreamingIndicator(assistantMessageEl, "Compressing Context...");
+      return;
+    }
+    if (event.type === "compaction_end") {
+      if (!assistantMessageEl) return;
+      if (event.error) {
+        updateStreamingIndicator(
           assistantMessageEl,
-          `重试结束，未成功。${event.finalError ? " 原因：" + event.finalError : ""}`,
+          "Compression Failed",
+          { error: true },
+        );
+        addContextStatusMessage(
+          assistantMessageEl,
+          "上下文变化 · compaction",
+          `压缩失败：${event.error}`,
         );
       } else {
         updateStreamingIndicator(assistantMessageEl, "Thinking");
-        clearTimelineError(assistantMessageEl);
-      }
-      return;
-    } else if (event.type === "compaction_start") {
-      if (!assistantMessageEl) return;
-      finalizeCurrentThinking(assistantMessageEl, state);
-      updateStreamingIndicator(assistantMessageEl, "Compressing Context...");
-      return;
-    } else if (event.type === "compaction_end") {
-      if (!assistantMessageEl) return;
-      const indicator = getAssistantStream(assistantMessageEl)?.querySelector(
-        ".streaming-indicator",
-      );
-      if (event.error) {
-        updateStreamingIndicator(assistantMessageEl, "Compression Failed");
-        if (indicator) indicator.classList.add("error");
-        updateTimelineError(assistantMessageEl, `压缩失败：${event.error}`);
-      } else {
-        if (indicator) indicator.classList.remove("error");
-        updateStreamingIndicator(assistantMessageEl, "Thinking");
-        appendTimelineDetails(
+        addContextStatusMessage(
           assistantMessageEl,
-          "context",
           "上下文变化 · compaction",
           event.tokensBefore
             ? `压缩完成，压缩前 Token 数：${event.tokensBefore}`
@@ -1304,7 +1181,6 @@ function handleStreamEvent(data, state, assistantMessageEl) {
       }
       return;
     }
-    // appendTimelineDetails(assistantMessageEl, "context", `上下文变化 · ${event.type}`, formatJson(event.uiPayload || event));
     return;
   }
 }
@@ -1320,18 +1196,14 @@ async function sendMessage() {
   messageInput.value = "";
   messageInput.style.height = "auto";
 
-  const assistantMessageEl = addMessage(
-    "",
-    "assistant",
-    `msg-${Date.now()}`,
-    true,
-  );
+  const assistantMessageEl = addMessage("", "assistant", { isStreaming: true });
   const streamState = {
     fullText: "",
     fullThinking: "",
     llmStartedAt: 0,
     llmEndedAt: 0,
     prevContextText: lastContextSnapshotGlobal,
+    currentThinkingMessageId: null,
   };
 
   try {
@@ -1363,15 +1235,13 @@ async function sendMessage() {
       }
     }
   } catch (error) {
-    appendTimelineDetails(
+    addContextStatusMessage(
       assistantMessageEl,
-      "context",
       "请求失败",
       String(error?.message || error),
     );
   } finally {
-    removeStreamingIndicator(assistantMessageEl);
-    finalizeAssistantBlocks(assistantMessageEl);
+    removeStreamingIndicator(assistantMessageEl?.id);
     appendTimestamp(
       assistantMessageEl,
       streamState.llmStartedAt && streamState.llmEndedAt
@@ -1944,40 +1814,15 @@ chatContainer.addEventListener(
 );
 
 chatContainer.addEventListener("click", async (e) => {
-  if (e.target.classList.contains("msg-copy-btn")) {
+  if (e.target.classList.contains("flat-message-copy-btn")) {
     e.preventDefault();
     e.stopPropagation();
-    const messageEl = e.target.closest(".message");
-    let textToCopy = "";
-    if (messageEl.classList.contains("assistant")) {
-      const markdowns = messageEl.querySelectorAll(
-        ".timeline-markdown:not(.user)",
-      );
-      textToCopy = Array.from(markdowns)
-        .map((m) => m.dataset.markdown || m.textContent || "")
-        .join("\n\n");
-    } else {
-      const userContent = messageEl.querySelector(".timeline-markdown.user");
-      textToCopy = userContent ? userContent.textContent : "";
-    }
-
+    const messageEl = e.target.closest(".flat-message");
+    const contentEl = messageEl?.querySelector(".flat-message-content");
+    const textToCopy =
+      contentEl?.textContent?.trim() || messageEl?.textContent?.trim() || "";
     if (textToCopy) {
       const success = await copyToClipboard(textToCopy);
-      if (success) {
-        const originalText = e.target.textContent;
-        e.target.textContent = "Copied";
-        setTimeout(() => (e.target.textContent = originalText), 1200);
-      }
-    }
-  }
-
-  if (e.target.classList.contains("details-copy-btn")) {
-    e.preventDefault();
-    e.stopPropagation();
-    const details = e.target.closest("details");
-    const pre = details.querySelector("pre");
-    if (pre && pre.textContent) {
-      const success = await copyToClipboard(pre.textContent);
       if (success) {
         const originalText = e.target.textContent;
         e.target.textContent = "Copied";
