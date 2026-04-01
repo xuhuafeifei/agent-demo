@@ -68,3 +68,5 @@ temp/
 
 temp-package/
 mariozechner-pi-coding-agent-*.tgz
+
+.qwen

@@ -171,7 +171,7 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
     nextRun,
   );
   storeLogger.info(
-    "[watch-dog-store] upsert task_schedule name=%s type=%s kind=%s status=%s next=%s",
+    "upsert task_schedule name=%s type=%s kind=%s status=%s next=%s",
     input.task_name,
     input.task_type,
     input.schedule_kind,
@@ -369,7 +369,7 @@ export async function insertTaskDetail(params: {
     params.executor ?? null,
   );
   storeLogger.info(
-    "[watch-dog-store] insert task_schedule_detail task_id=%s status=%s executor=%s start=%s end=%s",
+    "insert task_schedule_detail tas_id=%s status=%s executor=%s start=%s end=%s",
     params.taskId,
     params.status,
     params.executor ?? "unknown",

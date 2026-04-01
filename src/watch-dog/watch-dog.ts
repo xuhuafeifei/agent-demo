@@ -209,8 +209,13 @@ async function tickOnce(): Promise<void> {
 function scheduleNext(): void {
   const cfg = getHeartbeatConfig();
   const delay = cfg.intervalMs;
+
+  const id = Math.random().toString(36).slice(2, 7);
+
   // 用 setTimeout 便于动态读取 interval，避免 setInterval 固定周期
   timer = setTimeout(async () => {
+    logger.debug("[watch-dog] timer fired id=%s", id);
+
     timer = null;
     await tickOnce();
     scheduleNext();

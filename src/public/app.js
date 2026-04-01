@@ -544,7 +544,7 @@ function appendTimelineDetails(messageEl, kind, title, contentText) {
   const copyBtn = document.createElement("button");
   copyBtn.type = "button";
   copyBtn.className = "details-copy-btn";
-  copyBtn.textContent = "CV";
+  copyBtn.textContent = "复制";
   summary.appendChild(copyBtn);
 
   const pre = document.createElement("pre");
@@ -553,6 +553,24 @@ function appendTimelineDetails(messageEl, kind, title, contentText) {
   details.appendChild(pre);
   stream.appendChild(details);
   scrollToBottom();
+
+  if (kind === "context" && messageEl) {
+    addContextBadge(messageEl);
+  }
+}
+
+function addContextBadge(messageEl) {
+  if (!messageEl) return;
+  const content = messageEl.querySelector(".content");
+  if (!content) return;
+  let badge = content.querySelector(".bubble-context-badge");
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "bubble-context-badge";
+    badge.title = "上下文信息";
+    badge.textContent = "C";
+    content.appendChild(badge);
+  }
 }
 
 function appendThinkingUpdate(messageEl, thinking) {
@@ -572,7 +590,7 @@ function appendThinkingUpdate(messageEl, thinking) {
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
     copyBtn.className = "details-copy-btn";
-    copyBtn.textContent = "CV";
+    copyBtn.textContent = "复制";
     summary.appendChild(copyBtn);
 
     details.appendChild(summary);
@@ -613,8 +631,10 @@ function addMessage(
 
   if (role === "assistant" || role === "user") {
     const msgCopyBtn = document.createElement("button");
+    msgCopyBtn.type = "button";
     msgCopyBtn.className = "msg-copy-btn";
-    msgCopyBtn.textContent = "CV";
+    msgCopyBtn.textContent = "复制";
+    msgCopyBtn.title = "复制消息内容";
     contentEl.appendChild(msgCopyBtn);
   }
 
@@ -653,21 +673,21 @@ function updateStreamingIndicator(messageEl, text) {
   let indicator = stream.querySelector(".streaming-indicator");
   if (!indicator) {
     indicator = document.createElement("span");
-    indicator.className = "streaming-indicator";
+    indicator.className = "streaming-indicator thinking-indicator";
     stream.appendChild(indicator);
   }
 
   indicator.classList.remove("error");
 
   // Remove existing dots container if any
-  const dots = indicator.querySelector(".dots");
+  const dots = indicator.querySelector(".thinking-dots");
   if (dots) dots.remove();
 
   // Set text and re-append dots
   indicator.textContent = text ? `${text} ` : "";
 
   const dotsContainer = document.createElement("span");
-  dotsContainer.className = "dots";
+  dotsContainer.className = "thinking-dots";
   dotsContainer.innerHTML = "<span></span><span></span><span></span>";
   indicator.appendChild(dotsContainer);
 
@@ -782,7 +802,7 @@ function appendContextDiffBlock(
   const cvButton = document.createElement("button");
   cvButton.type = "button";
   cvButton.className = "context-cv-btn";
-  cvButton.textContent = "CV";
+  cvButton.textContent = "复制";
   cvButton.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -790,12 +810,12 @@ function appendContextDiffBlock(
     if (success) {
       cvButton.textContent = "Copied";
       setTimeout(() => {
-        cvButton.textContent = "CV";
+        cvButton.textContent = "复制";
       }, 1200);
     } else {
       cvButton.textContent = "Fail";
       setTimeout(() => {
-        cvButton.textContent = "CV";
+        cvButton.textContent = "复制";
       }, 1200);
     }
   });

@@ -4,15 +4,15 @@
    =========================================== */
 
 /* ===========================================
-   CSS Variables - Light Theme
+   CSS Variables - Light Green Theme
    =========================================== */
 :root {
-  /* Background - Clean light theme */
+  /* Background - Clean light theme with green tint */
   --bg: #ffffff;
-  --bg-accent: #f8f9fc;
-  --bg-elevated: #f5f7fb;
-  --bg-hover: #eef1f6;
-  --bg-muted: #f0f2f7;
+  --bg-accent: #f7faf8;
+  --bg-elevated: #f2f7f4;
+  --bg-hover: #e8f0eb;
+  --bg-muted: #f0f4f1;
 
   /* Card / Surface */
   --card: #ffffff;
@@ -22,38 +22,38 @@
 
   /* Panel */
   --panel: #ffffff;
-  --panel-strong: #f5f7fb;
-  --panel-hover: #eef1f6;
+  --panel-strong: #f2f7f4;
+  --panel-hover: #e8f0eb;
   --chrome: rgba(255, 255, 255, 0.96);
   --chrome-strong: rgba(255, 255, 255, 0.98);
 
   /* Text */
-  --text: #4a4a5a;
+  --text: #4a5a50;
   --text-strong: #1a1a1a;
-  --chat-text: #2d2d3a;
-  --muted: #787885;
-  --muted-strong: #6a6a75;
-  --muted-foreground: #787885;
+  --chat-text: #2d3a32;
+  --muted: #78857d;
+  --muted-strong: #6a756e;
+  --muted-foreground: #78857d;
 
   /* Border */
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --border-hover: #9ca3af;
-  --input: #e5e7eb;
-  --ring: #1d4ed8;
+  --border: #dfe5e1;
+  --border-strong: #cfd8d3;
+  --border-hover: #a8b5ac;
+  --input: #dfe5e1;
+  --ring: #22c55e;
 
-  /* Accent - Blue for light theme */
-  --accent: #1d4ed8;
-  --accent-hover: #1e40af;
-  --accent-muted: #3b82f6;
-  --accent-subtle: rgba(29, 78, 216, 0.08);
-  --accent-foreground: #ffffff;
-  --accent-glow: rgba(29, 78, 216, 0.15);
-  --primary: #1d4ed8;
+  /* Accent - Light Green */
+  --accent: #86efac;
+  --accent-hover: #4ade80;
+  --accent-muted: #22c55e;
+  --accent-subtle: rgba(134, 239, 172, 0.25);
+  --accent-foreground: #14532d;
+  --accent-glow: rgba(134, 239, 172, 0.3);
+  --primary: #22c55e;
   --primary-foreground: #ffffff;
 
   /* Secondary */
-  --secondary: #f5f7fb;
+  --secondary: #f2f7f4;
   --secondary-foreground: #1a1a1a;
 
   /* Semantic */
@@ -68,10 +68,10 @@
   --danger: #ef4444;
   --danger-muted: rgba(239, 68, 68, 0.75);
   --danger-subtle: rgba(239, 68, 68, 0.08);
-  --info: #3b82f6;
+  --info: #22c55e;
 
   /* Focus */
-  --focus: rgba(29, 78, 216, 0.2);
+  --focus: rgba(134, 239, 172, 0.3);
   --focus-ring:
     0 0 0 2px var(--bg),
     0 0 0 3px color-mix(in srgb, var(--ring) 80%, transparent);
@@ -813,24 +813,204 @@ body {
   min-width: 0;
   border-radius: var(--radius-lg);
   padding: 12px 16px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
   font-size: 14px;
   line-height: 1.6;
+  position: relative;
+}
+
+/* Message copy button - appears below on hover */
+.msg-copy-btn {
+  position: absolute;
+  bottom: -32px;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  height: 24px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    opacity var(--duration-fast) ease,
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) ease;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+
+.message:hover .msg-copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-2px);
+}
+
+.msg-copy-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+}
+
+.msg-copy-btn:active {
+  transform: translateY(0);
 }
 
 .message.user .content {
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: var(--accent-subtle);
+  color: var(--chat-text);
   position: relative;
+  border: 1px solid var(--border);
   border-bottom-right-radius: 4px;
 }
 
 .message.assistant .content {
   flex: 1;
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--chat-text);
   position: relative;
+  border: none;
+  padding-left: 0;
+}
+
+.timeline-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.timeline-markdown {
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
   border: 1px solid var(--border);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.02);
+  position: relative;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.timeline-markdown.user {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border: none;
+  box-shadow: none;
+}
+
+.timeline-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.timeline-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-strong);
+  list-style: none;
+}
+
+.timeline-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.timeline-details summary .details-copy-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--bg);
+  color: var(--muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.timeline-details .details-copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.timeline-details:hover .details-copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.timeline-details summary::after {
+  content: "⌄";
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: var(--muted);
+}
+
+.timeline-details[open] summary {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.timeline-details[open] summary::after {
+  content: "⌃";
+  transform: translateY(-1px);
+}
+
+.timeline-details.context {
+  display: none;
+}
+
+.timeline-details p,
+.timeline-details pre {
+  margin: 0;
+}
+
+.timeline-details pre {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: #f7f9fd;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  font-size: 13px;
+  color: #1f2937;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+
+.bubble-context-badge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(29, 78, 216, 0.3);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+  cursor: default;
 }
 
 /* Chat Compose */
@@ -839,6 +1019,7 @@ body {
   padding: 16px 24px 24px;
   background: var(--bg);
   border-top: 1px solid var(--border);
+  box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.08);
 }
 
 .chat-compose__row {
@@ -855,12 +1036,13 @@ body {
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  background: linear-gradient(180deg, #ffffff, var(--bg-elevated));
   padding: 12px 16px;
   transition:
     border-color var(--duration-fast) ease,
     background var(--duration-fast) ease,
     box-shadow var(--duration-fast) ease;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
 }
 
 .input-wrapper:focus-within {
@@ -987,12 +1169,21 @@ body {
 }
 
 .send-btn {
-  background: var(--accent) !important;
+  background: #dc2626 !important;
   color: #fff !important;
+  border-radius: var(--radius-full);
+  padding: 10px 22px;
+  box-shadow: 0 8px 20px rgba(220, 38, 38, 0.35);
 }
 
 .send-btn:hover {
-  background: var(--accent-hover) !important;
+  background: #c81c1c !important;
+}
+
+.chat-compose {
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  padding-bottom: 16px;
 }
 
 /* ===========================================
@@ -1365,6 +1556,44 @@ body {
   font-size: 13px;
 }
 
+.scroll-bottom-btn {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(20px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+  z-index: 50;
+}
+
+.scroll-bottom-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  box-shadow: 0 25px 55px rgba(15, 23, 42, 0.3);
+}
+
+.scroll-bottom-btn:hover {
+  background: #dc2626;
+}
+
 .hidden {
   display: none !important;
 }
@@ -1454,6 +1683,67 @@ body {
   background: var(--bg-elevated);
   color: var(--text);
   border: 1px solid var(--border);
+}
+
+/* ===========================================
+   Thinking Animation - Green Pulsing
+   =========================================== */
+.streaming-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--accent-subtle);
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--accent-muted) 30%, transparent);
+  color: var(--accent-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.thinking-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-muted);
+  animation: thinking-pulse 1.4s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* ===========================================
