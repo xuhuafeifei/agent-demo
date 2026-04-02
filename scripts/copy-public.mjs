@@ -17,6 +17,6 @@ fs.mkdirSync(dest, { recursive: true });
 for (const name of fs.readdirSync(src)) {
   const srcPath = path.join(src, name);
   const destPath = path.join(dest, name);
-  fs.copyFileSync(srcPath, destPath);
+  fs.cpSync(srcPath, destPath, { recursive: true, force: true });
 }
 console.log("[copy-public] 已复制 src/public -> dist/public");

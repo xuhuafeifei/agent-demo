@@ -4,14 +4,16 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
+    "web:dev": "vite --config web/vite.config.mjs",
+    "web:build": "vite build --config web/vite.config.mjs",
     "generate-js-dts": "node scripts/generate-js-dts.js",
     "qwen-auth": "tsc && node dist/scripts/qwen-oauth-login.js",
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
-    "build": "tsc && node scripts/copy-public.mjs",
-    "dev:debug": "NODE_DEBUG=memory,agent tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
-    "dev:inspect": "NODE_DEBUG=memory,agent tsc && node scripts/copy-public.mjs && node --inspect scripts/require-runtime.mjs && node --inspect dist/server.js",
+    "build": "npm run web:build && tsc && node scripts/copy-public.mjs",
+    "dev:debug": "npm run web:build && NODE_DEBUG=memory,agent tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
+    "dev:inspect": "npm run web:build && NODE_DEBUG=memory,agent tsc && node scripts/copy-public.mjs && node --inspect scripts/require-runtime.mjs && node --inspect dist/server.js",
     "start": "node scripts/require-runtime.mjs && node dist/server.js",
-    "dev": "tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
+    "dev": "npm run web:build && tsc && node scripts/copy-public.mjs && node scripts/require-runtime.mjs && node dist/server.js",
     "watch": "tsc -w"
   },
   "keywords": [],
@@ -25,18 +27,31 @@
     "chokidar": "^5.0.0",
     "cors": "^2.8.6",
     "cron-parser": "^5.5.0",
+    "dompurify": "^3.3.3",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "^1.7.0",
+    "markdown-it": "^14.1.1",
     "node-llama-cpp": "^3.17.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "sqlite-vec": "^0.1.7-alpha.2",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
     "@types/cors": "^2.8.19",
     "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.6",
     "@types/node": "^25.2.0",
     "@types/ws": "^8.18.1",
-    "typescript": "^5.9.3"
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.3"
   }
 }

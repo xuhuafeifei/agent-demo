@@ -280,11 +280,3 @@ export function stopWatchDog(): void {
     logger.info("[watch-dog] stopped");
   }
 }
-
-/**
- * 手动执行一次看门狗检查
- * 用于测试或手动触发任务执行
- */
-export async function runWatchDogOnce(): Promise<void> {
-  await tickOnce();
-}
