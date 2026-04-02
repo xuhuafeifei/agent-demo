@@ -198,7 +198,7 @@ function AssistantMessage({ content, streaming }) {
  * Thinking 消息组件（可折叠）
  */
 function ThinkingMessage({ id, content }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <section className="thinking-item" key={id}>
@@ -224,16 +224,31 @@ function ThinkingMessage({ id, content }) {
 }
 
 /**
- * ToolCall 卡片组件
+ * ToolCall 卡片组件（可折叠，支持滚轮）
  */
 function ToolCallCard({ toolCall }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <section className={`tool-card status-${toolCall.status || "running"}`}>
-      <div className="tool-content">
-        <div className="tool-title">{toolCall.title || "工具调用"}</div>
-        <div className="tool-path">{toolCall.content || "-"}</div>
-        <div className="tool-status">{toolCall.detail || "进行中..."}</div>
-      </div>
+    <section className={`tool-card status-${toolCall.status || "running"} ${expanded ? "expanded" : "collapsed"}`}>
+      <button
+        className="tool-toggle"
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={`tool-${toolCall.id}`}
+        onClick={() => setExpanded((prev) => !prev)}
+      >
+        <div className="tool-header">
+          <span className="tool-title">{toolCall.title || "工具调用"}</span>
+          <span className="tool-status">{toolCall.detail || "进行中..."}</span>
+        </div>
+        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {expanded ? (
+        <div id={`tool-${toolCall.id}`} className="tool-content">
+          <div className="tool-path">{toolCall.content || "-"}</div>
+        </div>
+      ) : null}
     </section>
   );
 }

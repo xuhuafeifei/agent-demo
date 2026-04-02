@@ -641,7 +641,11 @@ textarea {
 }
 
 /* ===========================
-   ToolCall Card
+   (删除旧的 ToolCall Card 样式)
+   =========================== */
+
+/* ===========================
+   ToolCall Card (可折叠，支持滚轮)
    =========================== */
 .tool-card {
   position: relative;
@@ -678,31 +682,83 @@ textarea {
   color: var(--status-red);
 }
 
-.tool-content {
-  background: var(--bg-code);
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-top: 4px;
+.tool-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+
+.tool-toggle:hover {
+  color: var(--text-primary);
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
 }
 
 .tool-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 8px;
-}
-
-.tool-path {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
 }
 
 .tool-status {
   font-size: 12px;
   color: var(--text-placeholder);
+}
+
+.tool-content {
+  background: var(--bg-code);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  max-height: 400px;
+  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #a8a8a8 #f5f5f5;
+}
+
+.tool-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.tool-content::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.tool-content::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #d4d4d4, #a8a8a8);
+  border-radius: 4px;
+  border: 2px solid #f5f5f5;
+  min-height: 20px;
+  min-width: 20px;
+}
+
+.tool-content::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #b8b8b8, #909090);
+}
+
+.tool-path {
+  font-family: "JetBrainsBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
 }
 
 /* ===========================
