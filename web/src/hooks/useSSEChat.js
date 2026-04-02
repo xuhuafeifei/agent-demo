@@ -47,6 +47,8 @@ export function useSSEChat() {
     appendThinkingChunk,
     addToolCall,
     updateToolCall,
+    addContextSnapshot,
+    addContextUsed,
     breakAssistantSegment,
   } = useChatStore();
 
@@ -97,6 +99,14 @@ export function useSSEChat() {
           breakAssistantSegment();
           break;
 
+        case "context_snapshot":
+          addContextSnapshot(payload);
+          break;
+
+        case "context_used":
+          addContextUsed(payload);
+          break;
+
         case "error":
           appendStreamChunk(`\n\n**错误**: ${payload?.error || "未知错误"}`);
           break;
@@ -116,6 +126,8 @@ export function useSSEChat() {
       appendThinkingChunk,
       addToolCall,
       updateToolCall,
+      addContextSnapshot,
+      addContextUsed,
       breakAssistantSegment,
     ]
   );

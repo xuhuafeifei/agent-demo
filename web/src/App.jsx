@@ -25,6 +25,7 @@ import {
 import { useChatStore } from "./store/chatStore";
 import { useSSEChat } from "./hooks/useSSEChat";
 import { renderMarkdown, copyText } from "./utils/markdown";
+import SettingsPage from "./components/SettingsPage";
 import "./styles.css";
 
 const SIDEBAR_KEY = "agent_demo_sidebar_collapsed";
@@ -148,7 +149,13 @@ function Sidebar({
 /**
  * 顶部栏组件
  */
-function Header({ isMobile, onOpenMobile }) {
+function Header({ isMobile, onOpenMobile, contextEvents, activeNav }) {
+  const [contextOpen, setContextOpen] = useState(false);
+  const sortedEvents = useMemo(
+    () => [...(contextEvents || [])].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
+    [contextEvents]
+  );
+
   return (
     <header className="header-bar">
       <div className="header-left">
@@ -170,6 +177,47 @@ function Header({ isMobile, onOpenMobile }) {
       </div>
 
       <div className="header-right">
+        {activeNav === "chat" ? (
+          <div className="context-dropdown">
+            <button
+              className="search-btn context-btn"
+              type="button"
+              onClick={() => setContextOpen((prev) => !prev)}
+            >
+              <span className="search-left">
+                <span>上下文快照</span>
+              </span>
+              <kbd>{contextEvents?.length || 0}</kbd>
+            </button>
+            {contextOpen ? (
+              <div className="context-panel">
+                {!sortedEvents.length ? (
+                  <div className="context-empty">暂无上下文快照</div>
+                ) : (
+                  sortedEvents.map((event) => (
+                    <div key={event.id} className="context-item">
+                      {event.kind === "snapshot" ? (
+                        <>
+                          <div className="context-meta">
+                            <strong>snapshot</strong>
+                            <span>{event.reason || "-"}</span>
+                          </div>
+                          <pre>{event.contextText || "-"}</pre>
+                        </>
+                      ) : (
+                        <div className="context-meta">
+                          <strong>used</strong>
+                          <span>window: {event.contextWindow ?? "-"}</span>
+                          <span>{event.model || "-"}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <button className="search-btn" type="button">
           <span className="search-left">
             <Search size={14} />
@@ -311,11 +359,21 @@ function UserMessage({ content }) {
 function MessageList({
   allMessages,
   isStreaming,
+  isThinking,
   scrollRef,
   onScrollChange,
   forceScrollToBottom,
 }) {
   const userHasScrolledRef = useRef(false);
+  const lastThinkingId = useMemo(() => {
+    for (let i = allMessages.length - 1; i >= 0; i -= 1) {
+      const item = allMessages[i];
+      if (item.type === "message" && item.data?.role === "thinking") {
+        return item.data.id;
+      }
+    }
+    return null;
+  }, [allMessages]);
 
   // 强制置底（用户发送消息时）
   useEffect(() => {
@@ -393,7 +451,7 @@ function MessageList({
                   key={msg.id}
                   id={msg.id}
                   content={msg.content}
-                  isStreaming={isStreaming}
+                  isStreaming={isStreaming && isThinking && msg.id === lastThinkingId}
                 />
               );
             }
@@ -525,6 +583,8 @@ export default function App() {
   const allMessages = getAllMessages();
 
   const isStreaming = useChatStore((state) => state.isStreaming);
+  const isThinking = useChatStore((state) => state.isThinking);
+  const contextEvents = useChatStore((state) => state.contextEvents);
   const addUserMessage = useChatStore((state) => state.addUserMessage);
   const endStreaming = useChatStore((state) => state.endStreaming);
 
@@ -612,20 +672,29 @@ export default function App() {
           <Header
             isMobile={isMobile}
             onOpenMobile={() => setMobileOpen(true)}
+            contextEvents={contextEvents}
+            activeNav={activeNav}
           />
           <main className="chat-main">
-            <MessageList
-              allMessages={allMessages}
-              isStreaming={isStreaming}
-              scrollRef={scrollRef}
-              onScrollChange={setShowScrollButton}
-              forceScrollToBottom={forceScrollToBottom}
-            />
-            <InputArea
-              onSend={handleSendMessage}
-              scrollRef={scrollRef}
-              showScrollButton={showScrollButton}
-            />
+            {activeNav === "setting" ? (
+              <SettingsPage />
+            ) : (
+              <>
+                <MessageList
+                  allMessages={allMessages}
+                  isStreaming={isStreaming}
+              isThinking={isThinking}
+                  scrollRef={scrollRef}
+                  onScrollChange={setShowScrollButton}
+                  forceScrollToBottom={forceScrollToBottom}
+                />
+                <InputArea
+                  onSend={handleSendMessage}
+                  scrollRef={scrollRef}
+                  showScrollButton={showScrollButton}
+                />
+              </>
+            )}
           </main>
         </div>
       </div>

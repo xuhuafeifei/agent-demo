@@ -16,7 +16,9 @@ export const useChatStore = create((set, get) => {
   return {
     messages: [],
     toolCalls: [],
+    contextEvents: [],
     isStreaming: false,
+    isThinking: false,
 
     /**
      * 添加用户消息
@@ -54,6 +56,8 @@ export const useChatStore = create((set, get) => {
 
         return {
           isStreaming: true,
+          isThinking: false,
+          contextEvents: [],
           messages: [
             ...state.messages,
             {
@@ -102,7 +106,7 @@ export const useChatStore = create((set, get) => {
         // 更新上一个 event 类型
         lastEventType = 'agent_message_chunk';
 
-        return { messages: next };
+        return { messages: next, isThinking: false };
       });
     },
 
@@ -148,7 +152,7 @@ export const useChatStore = create((set, get) => {
         // 更新上一个 event 类型
         lastEventType = 'agent_thought_chunk';
 
-        return { messages: next };
+        return { messages: next, isThinking: true };
       });
     },
 
@@ -159,7 +163,7 @@ export const useChatStore = create((set, get) => {
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
       lastEventType = null;  // 重置 event 类型
-      set({ isStreaming: false });
+      set({ isStreaming: false, isThinking: false });
     },
 
     /**
@@ -188,6 +192,7 @@ export const useChatStore = create((set, get) => {
             id: uid(),
           },
         ],
+        isThinking: false,
       }));
 
       // ToolCall 添加后，断开 assistant 流
@@ -205,10 +210,41 @@ export const useChatStore = create((set, get) => {
         toolCalls: state.toolCalls.map((tool) =>
           tool.toolCallId === toolCallId ? { ...tool, ...update } : tool
         ),
+        isThinking: false,
       }));
       
       // 更新上一个 event 类型
       lastEventType = 'tool_call_update';
+    },
+
+    addContextSnapshot: (payload) => {
+      set((state) => ({
+        contextEvents: [
+          ...state.contextEvents,
+          {
+            id: uid(),
+            kind: "snapshot",
+            reason: payload?.reason || "",
+            contextText: payload?.contextText || "",
+            timestamp: payload?.timestamp ?? Date.now(),
+          },
+        ].slice(-20),
+      }));
+    },
+
+    addContextUsed: (payload) => {
+      set((state) => ({
+        contextEvents: [
+          ...state.contextEvents,
+          {
+            id: uid(),
+            kind: "used",
+            contextWindow: payload?.contextWindow,
+            model: payload?.model || "",
+            timestamp: payload?.timestamp ?? Date.now(),
+          },
+        ].slice(-20),
+      }));
     },
 
     /**
@@ -241,7 +277,7 @@ export const useChatStore = create((set, get) => {
      * 清空消息
      */
     clearMessages: () => {
-      set({ messages: [], toolCalls: [] });
+      set({ messages: [], toolCalls: [], contextEvents: [], isThinking: false });
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
       lastEventType = null;
