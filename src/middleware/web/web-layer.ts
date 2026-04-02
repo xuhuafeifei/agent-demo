@@ -25,6 +25,15 @@ type RuntimeUiEvent = RuntimeStreamEvent & {
   uiPayload?: Record<string, unknown>;
 };
 
+function writeNamedSse(
+  res: Response,
+  eventName: string,
+  data: Record<string, unknown>,
+): void {
+  res.write(`event: ${eventName}\n`);
+  res.write(`data: ${JSON.stringify({ ...data, type: eventName })}\n\n`);
+}
+
 function normalizeRuntimeEvent(event: RuntimeStreamEvent): RuntimeUiEvent {
   switch (event.type) {
     case "context_snapshot": {
@@ -144,6 +153,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function stringifySafe(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function deepEqual(value: unknown, expectation: unknown): boolean {
   if (value === expectation) return true;
   if (value === undefined || expectation === undefined || value === null || expectation === null) {
@@ -246,12 +263,84 @@ export function createWebLayer() {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("Access-Control-Allow-Origin", "*");
+    writeNamedSse(res, "streamStart", { startedAt: Date.now() });
+    writeNamedSse(res, "user_message_chunk", { content: message });
+
+    let assistantTextSoFar = "";
+    let thinkingTextSoFar = "";
+    const toolStartedAt = new Map<string, number>();
 
     try {
       await runWithSingleFlight({
         message,
         channel: "web",
         onEvent: (event: RuntimeStreamEvent) => {
+          if (event.type === "message_update") {
+            const delta =
+              typeof event.delta === "string"
+                ? event.delta
+                : typeof event.text === "string"
+                  ? event.text.slice(assistantTextSoFar.length)
+                  : "";
+            if (delta) {
+              assistantTextSoFar += delta;
+              writeNamedSse(res, "agent_message_chunk", { content: delta });
+            }
+          }
+
+          if (event.type === "message_end" && typeof event.text === "string") {
+            assistantTextSoFar = event.text;
+          }
+
+          if (event.type === "thinking_update") {
+            const chunk =
+              typeof event.thinkingDelta === "string"
+                ? event.thinkingDelta
+                : typeof event.thinking === "string"
+                  ? event.thinking.slice(thinkingTextSoFar.length)
+                  : "";
+            if (chunk) {
+              thinkingTextSoFar += chunk;
+              writeNamedSse(res, "agent_thought_chunk", { content: chunk });
+            }
+          }
+
+          if (event.type === "tool_execution_start") {
+            toolStartedAt.set(event.toolCallId, Date.now());
+            writeNamedSse(res, "tool_call", {
+              id: event.toolCallId,
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              title: `正在执行 ${event.toolName}`,
+              content: stringifySafe(event.args),
+            });
+          }
+
+          if (event.type === "tool_execution_update") {
+            writeNamedSse(res, "tool_call_update", {
+              id: event.toolCallId,
+              toolCallId: event.toolCallId,
+              status: "running",
+              detail: "执行中...",
+              content: stringifySafe(event.partialResult),
+            });
+          }
+
+          if (event.type === "tool_execution_end") {
+            const startedAt = toolStartedAt.get(event.toolCallId);
+            const elapsedMs =
+              typeof startedAt === "number" ? Date.now() - startedAt : 0;
+            writeNamedSse(res, "tool_call_update", {
+              id: event.toolCallId,
+              toolCallId: event.toolCallId,
+              status: event.isError ? "error" : "completed",
+              detail: event.isError
+                ? `执行失败 (${elapsedMs}ms)`
+                : `完成 (${elapsedMs}ms)`,
+              content: stringifySafe(event.result),
+            });
+          }
+
           writeSse(res, event);
         },
         onBusy: () => {
@@ -262,12 +351,13 @@ export function createWebLayer() {
       const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error(`[chat] ${runtimeError.message}`, error);
       if (error instanceof ModelUnavailableError) {
-        return res.status(503).json({
+        writeNamedSse(res, "error", {
           error: error.message,
           provider: error.provider,
           model: error.model,
           detail: error.detail,
         });
+        return;
       }
 
       writeSse(res, {
@@ -275,6 +365,7 @@ export function createWebLayer() {
         error: runtimeError.message,
       });
     } finally {
+      writeNamedSse(res, "streamEnd", { endedAt: Date.now() });
       res.end();
     }
   });
