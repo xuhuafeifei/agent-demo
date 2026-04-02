@@ -364,6 +364,11 @@ function MessageList({
         ) : null}
 
         {allMessages.map((item, idx) => {
+          // 跳过空内容的消息
+          if (item.data?.content === "" || item.data?.content === undefined) {
+            return null;
+          }
+
           if (item.type === "tool_call") {
             return <ToolCallCard key={item.data.id} toolCall={item.data} />;
           }
