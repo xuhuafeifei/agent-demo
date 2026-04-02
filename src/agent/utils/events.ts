@@ -8,6 +8,7 @@ export type RuntimeStreamEvent =
       toolCallId: string;
       toolName: string;
       args: unknown;
+      alias?: string; // 工具中文名别名
     }
   | {
       type: "tool_execution_update";
@@ -15,6 +16,7 @@ export type RuntimeStreamEvent =
       toolName: string;
       args: unknown;
       partialResult: unknown;
+      alias?: string; // 工具中文名别名
     }
   | {
       type: "tool_execution_end";
@@ -22,6 +24,7 @@ export type RuntimeStreamEvent =
       toolName: string;
       result: unknown;
       isError: boolean;
+      alias?: string; // 工具中文名别名
     }
   | { type: "agent_end" }
   | { type: "done" }

@@ -227,15 +227,22 @@ function AssistantMessage({ content, streaming }) {
 /**
  * Thinking 消息组件（可折叠）
  */
-function ThinkingMessage({ id, content }) {
+function ThinkingMessage({ id, content, isStreaming }) {
   const [expanded, setExpanded] = useState(false);
 
   // 处理连续的多个换行符，将3个及以上的换行符替换为2个换行符（即保留一个空行）
   const displayContent =
-    typeof content === "string" ? content.replace(/\n{3,}/g, "\n") : content;
+    typeof content === "string" ? content.replace(/\n{3,}/g, "") : content;
 
   return (
     <section className="thinking-item" key={id}>
+      {isStreaming && (
+        <div className="thinking-dots">
+          <span />
+          <span />
+          <span />
+        </div>
+      )}
       <button
         className="thinking-toggle"
         type="button"
@@ -386,6 +393,7 @@ function MessageList({
                   key={msg.id}
                   id={msg.id}
                   content={msg.content}
+                  isStreaming={isStreaming}
                 />
               );
             }

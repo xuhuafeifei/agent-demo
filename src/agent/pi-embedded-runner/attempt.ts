@@ -19,6 +19,29 @@ import { ToolRegister } from "../tool/tool-register.js";
 
 const attemptLogger = getSubsystemConsoleLogger("attempt");
 
+// 工具名称中文别名映射
+const TOOL_NAME_ALIASES: Record<string, string> = {
+  "bash_execute": "执行命令",
+  "file_read": "读取文件",
+  "file_write": "写入文件",
+  "file_edit": "编辑文件",
+  "web_search": "网络搜索",
+  "web_fetch": "获取网页",
+  "memory_search": "搜索记忆",
+  "memory_append": "添加记忆",
+  "code_interpreter": "代码执行",
+  "directory_list": "列出目录",
+  "directory_create": "创建目录",
+  "file_delete": "删除文件",
+  "file_move": "移动文件",
+  "file_copy": "复制文件",
+};
+
+// 获取工具中文名称
+function getToolDisplayName(toolName: string): string {
+  return TOOL_NAME_ALIASES[toolName] || toolName;
+}
+
 type AssistantMessageEvent = {
   type?: string;
   delta?: string;
@@ -396,6 +419,7 @@ export async function runEmbeddedPiAgent(params: {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           args: event.args,
+          alias: getToolDisplayName(event.toolName),
         });
         break;
       case "tool_execution_update":
@@ -405,6 +429,7 @@ export async function runEmbeddedPiAgent(params: {
           toolName: event.toolName,
           args: event.args,
           partialResult: event.partialResult,
+          alias: getToolDisplayName(event.toolName),
         });
         break;
       case "tool_execution_end":
@@ -414,6 +439,7 @@ export async function runEmbeddedPiAgent(params: {
           toolName: event.toolName,
           result: event.result,
           isError: event.isError,
+          alias: getToolDisplayName(event.toolName),
         });
         break;
       case "auto_retry_start": {

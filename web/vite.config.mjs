@@ -22,13 +22,16 @@ export default defineConfig({
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // 将 react 相关代码单独打包
-          'react-vendor': ['react', 'react-dom'],
-          // 将 lucide-react 图标库单独打包
-          'icons': ['lucide-react'],
-        }
-      }
+        manualChunks(id) {
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
+            return "react-vendor";
+          }
+          if (id.includes("node_modules/lucide-react")) {
+            return "icons";
+          }
+          return undefined;
+        },
+      },
     },
     // 启用压缩
     minify: 'terser',

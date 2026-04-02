@@ -20,6 +20,11 @@ const webLogger = getSubsystemConsoleLogger("web");
 
 type UiEventType = "message" | "thinking" | "tool" | "context" | "status";
 
+// 获取工具显示名称（优先使用 alias，否则使用 toolName）
+function getToolDisplayName(toolName: string, alias?: string): string {
+  return alias || toolName || "未知工具";
+}
+
 type RuntimeUiEvent = RuntimeStreamEvent & {
   uiEventType?: UiEventType;
   uiPayload?: Record<string, unknown>;
@@ -37,7 +42,12 @@ function writeNamedSse(
 function normalizeRuntimeEvent(event: RuntimeStreamEvent): RuntimeUiEvent {
   switch (event.type) {
     case "context_snapshot": {
-      const typedEvent = event as { type: "context_snapshot"; seq: number; reason: "before_prompt"; contextText: string };
+      const typedEvent = event as {
+        type: "context_snapshot";
+        seq: number;
+        reason: "before_prompt";
+        contextText: string;
+      };
       return {
         ...typedEvent,
         uiEventType: "context",
@@ -50,7 +60,12 @@ function normalizeRuntimeEvent(event: RuntimeStreamEvent): RuntimeUiEvent {
       };
     }
     case "context_used": {
-      const typedEvent = event as { type: "context_used"; totalTokens: number; threshold: number; contextWindow: number };
+      const typedEvent = event as {
+        type: "context_used";
+        totalTokens: number;
+        threshold: number;
+        contextWindow: number;
+      };
       return {
         ...typedEvent,
         uiEventType: "context",
@@ -163,7 +178,12 @@ function stringifySafe(value: unknown): string {
 
 function deepEqual(value: unknown, expectation: unknown): boolean {
   if (value === expectation) return true;
-  if (value === undefined || expectation === undefined || value === null || expectation === null) {
+  if (
+    value === undefined ||
+    expectation === undefined ||
+    value === null ||
+    expectation === null
+  ) {
     return value === expectation;
   }
   if (Array.isArray(value) && Array.isArray(expectation)) {
@@ -173,7 +193,7 @@ function deepEqual(value: unknown, expectation: unknown): boolean {
   if (isPlainObject(value) && isPlainObject(expectation)) {
     const keys = new Set([...Object.keys(value), ...Object.keys(expectation)]);
     return Array.from(keys).every((key) =>
-      deepEqual(value[key], expectation[key])
+      deepEqual(value[key], expectation[key]),
     );
   }
   return false;
@@ -216,14 +236,20 @@ function cloneConfig(config: FgbgUserConfig): FgbgUserConfig {
   return JSON.parse(JSON.stringify(config));
 }
 
-function applyConfigPatch(target: Record<string, unknown>, patch: Record<string, unknown>) {
+function applyConfigPatch(
+  target: Record<string, unknown>,
+  patch: Record<string, unknown>,
+) {
   Object.keys(patch).forEach((key) => {
     const newValue = patch[key];
     if (isPlainObject(newValue)) {
       if (!isPlainObject(target[key])) {
         target[key] = {};
       }
-      applyConfigPatch(target[key] as Record<string, unknown>, newValue as Record<string, unknown>);
+      applyConfigPatch(
+        target[key] as Record<string, unknown>,
+        newValue as Record<string, unknown>,
+      );
       return;
     }
     target[key] = newValue;
@@ -307,21 +333,23 @@ export function createWebLayer() {
 
           if (event.type === "tool_execution_start") {
             toolStartedAt.set(event.toolCallId, Date.now());
+            const displayName = getToolDisplayName(event.toolName, event.alias);
             writeNamedSse(res, "tool_call", {
               id: event.toolCallId,
               toolCallId: event.toolCallId,
               toolName: event.toolName,
-              title: `正在执行 ${event.toolName}`,
+              title: `正在执行 ${displayName}`,
               content: stringifySafe(event.args),
             });
           }
 
           if (event.type === "tool_execution_update") {
+            const displayName = getToolDisplayName(event.toolName, event.alias);
             writeNamedSse(res, "tool_call_update", {
               id: event.toolCallId,
               toolCallId: event.toolCallId,
               status: "running",
-              detail: "执行中...",
+              detail: `${displayName}执行中...`,
               content: stringifySafe(event.partialResult),
             });
           }
@@ -330,13 +358,14 @@ export function createWebLayer() {
             const startedAt = toolStartedAt.get(event.toolCallId);
             const elapsedMs =
               typeof startedAt === "number" ? Date.now() - startedAt : 0;
+            const displayName = getToolDisplayName(event.toolName, event.alias);
             writeNamedSse(res, "tool_call_update", {
               id: event.toolCallId,
               toolCallId: event.toolCallId,
               status: event.isError ? "error" : "completed",
               detail: event.isError
-                ? `执行失败 (${elapsedMs}ms)`
-                : `完成 (${elapsedMs}ms)`,
+                ? `${displayName}执行失败 (${elapsedMs}ms)`
+                : `${displayName}完成 (${elapsedMs}ms)`,
               content: stringifySafe(event.result),
             });
           }
@@ -348,7 +377,8 @@ export function createWebLayer() {
         },
       });
     } catch (error) {
-      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error(`[chat] ${runtimeError.message}`, error);
       if (error instanceof ModelUnavailableError) {
         writeNamedSse(res, "error", {
@@ -376,7 +406,8 @@ export function createWebLayer() {
       const history = getHistory();
       res.json({ success: true, history });
     } catch (error: unknown) {
-      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
       res.status(500).json({
         success: false,
         error: runtimeError.message,
@@ -390,7 +421,8 @@ export function createWebLayer() {
       clearHistory();
       res.json({ success: true, message: "对话历史已清除" });
     } catch (error: unknown) {
-      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
       res.status(500).json({
         success: false,
         error: runtimeError.message,
@@ -407,7 +439,8 @@ export function createWebLayer() {
         metadata: buildConfigMetadata(config),
       });
     } catch (error: unknown) {
-      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error("[config/get] %s", runtimeError.message, runtimeError);
       res.status(500).json({
         success: false,
@@ -417,8 +450,7 @@ export function createWebLayer() {
   });
 
   router.patch("/config/fgbg", async (req, res) => {
-    const patchRaw =
-      req.body && typeof req.body === "object" ? req.body : {};
+    const patchRaw = req.body && typeof req.body === "object" ? req.body : {};
     const patch = patchRaw as RecursivePartial<FgbgUserConfig>;
     if (hasProtectedPath(patch as Record<string, unknown>)) {
       return res.status(403).json({
@@ -430,7 +462,10 @@ export function createWebLayer() {
     try {
       const current = readFgbgUserConfig();
       const updated = cloneConfig(current);
-      applyConfigPatch(updated as Record<string, unknown>, patch as Record<string, unknown>);
+      applyConfigPatch(
+        updated as Record<string, unknown>,
+        patch as Record<string, unknown>,
+      );
       writeFgbgUserConfig(updated);
       evicateFgbgUserConfigCache();
       const refreshed = readFgbgUserConfig();
@@ -440,7 +475,8 @@ export function createWebLayer() {
         metadata: buildConfigMetadata(refreshed),
       });
     } catch (error: unknown) {
-      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error("[config/patch] %s", runtimeError.message, runtimeError);
       res.status(500).json({
         success: false,
@@ -461,7 +497,8 @@ export function createWebLayer() {
         metadata: buildConfigMetadata(refreshed),
       });
     } catch (error: unknown) {
-      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error("[config/reset] %s", runtimeError.message, runtimeError);
       res.status(500).json({
         success: false,

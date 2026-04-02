@@ -595,39 +595,75 @@ textarea {
    =========================== */
 .thinking-item {
   position: relative;
-  padding-left: 24px;
+  padding-left: 0;
   margin: 8px 0;
 }
 
 .thinking-item::before {
   content: "";
   position: absolute;
-  left: 8px;
-  top: 0;
+  left: -16px;
+  top: 16px;
   bottom: 0;
   width: 1px;
   background: var(--border-light);
 }
 
-.thinking-item::after {
-  content: "●";
+/* 三个跳跃的绿点（思考中） */
+.thinking-dots {
   position: absolute;
-  left: 4px;
+  left: -28px;
   top: 4px;
-  font-size: 8px;
-  color: var(--text-thinking);
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  height: 12px;
+}
+
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  background: var(--primary-green);
+  border-radius: 50%;
+  display: inline-block;
+  animation: thinking-bounce 1.4s infinite ease-in-out both;
+}
+
+.thinking-dots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0s;
+}
+
+@keyframes thinking-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .thinking-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   background: transparent;
   border: none;
   cursor: pointer;
   color: var(--text-thinking);
-  font-size: 14px;
-  /* font-style: normal; */
+  font-size: 15px;
+  font-style: normal;
   padding: 0;
   transition: color 0.15s ease;
 }
@@ -638,7 +674,7 @@ textarea {
 
 .thinking-content {
   color: var(--text-thinking);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.6;
   font-style: normal;
   white-space: pre-wrap;
@@ -659,14 +695,14 @@ textarea {
    =========================== */
 .tool-card {
   position: relative;
-  padding-left: 24px;
+  padding-left: 0;
   margin: 8px 0;
 }
 
 .tool-card::before {
   content: "";
   position: absolute;
-  left: 8px;
+  left: -16px;
   top: 0;
   bottom: 0;
   width: 1px;
@@ -676,7 +712,7 @@ textarea {
 .tool-card::after {
   content: "●";
   position: absolute;
-  left: 4px;
+  left: -24px;
   top: 4px;
   font-size: 8px;
   color: var(--status-gray);
