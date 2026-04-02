@@ -203,26 +203,6 @@ async function tickOnce(): Promise<void> {
 }
 
 /**
- * 调度下一次心跳检查
- * 使用 setTimeout 而非 setInterval，以便每次都能读取最新的配置
- */
-function scheduleNext(): void {
-  const cfg = getHeartbeatConfig();
-  const delay = cfg.intervalMs;
-
-  const id = Math.random().toString(36).slice(2, 7);
-
-  // 用 setTimeout 便于动态读取 interval，避免 setInterval 固定周期
-  timer = setTimeout(async () => {
-    logger.debug("[watch-dog] timer fired id=%s", id);
-
-    timer = null;
-    await tickOnce();
-    scheduleNext();
-  }, delay);
-}
-
-/**
  * 确保系统任务存在
  * 创建 cleanup_logs 系统任务，用于定期清理旧日志
  */
@@ -264,9 +244,23 @@ async function ensureSystemTasks(): Promise<void> {
 export async function startWatchDog(): Promise<void> {
   if (timer) return;
   await ensureSystemTasks();
-  await tickOnce();
-  scheduleNext();
+  tickLoop();
   logger.info("[watch-dog] started");
+}
+
+/**
+ * 核心 tick 循环. 用于触发调度事件. 方法异步操作. 不会阻塞主线程
+ */
+async function tickLoop(): Promise<void> {
+  while (true) {
+    try {
+      await tickOnce();
+    } catch (err) {
+      logger.error("[watch-dog] tick exception: %s", err);
+    }
+    const cfg = getHeartbeatConfig();
+    await new Promise(res => setTimeout(res, cfg.intervalMs));
+  }
 }
 
 /**

@@ -299,8 +299,19 @@ function UserMessage({ content }) {
 /**
  * 消息列表组件 - VSCode 方式：按时间戳排序渲染
  */
-function MessageList({ allMessages, isStreaming, scrollRef, onScrollChange }) {
+function MessageList({ allMessages, isStreaming, scrollRef, onScrollChange, forceScrollToBottom }) {
   const userHasScrolledRef = useRef(false);
+
+  // 强制置底（用户发送消息时）
+  useEffect(() => {
+    if (forceScrollToBottom) {
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        userHasScrolledRef.current = false;
+      }
+    }
+  }, [forceScrollToBottom, scrollRef]);
 
   // 自动滚动到底部（仅在用户没有手动滚动时）
   useEffect(() => {
@@ -485,6 +496,7 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [forceScrollToBottom, setForceScrollToBottom] = useState(false);
   const scrollRef = useRef(null);
 
   // VSCode 方式：获取排序后的所有消息
@@ -498,6 +510,17 @@ export default function App() {
   const { sendMessage } = useSSEChat();
 
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
+
+  const handleSendMessage = async (text) => {
+    addUserMessage(text);
+    setForceScrollToBottom(true);
+    try {
+      await sendMessage(text);
+    } catch (error) {
+      console.error(error);
+      endStreaming();
+    }
+  };
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_KEY) === "1";
