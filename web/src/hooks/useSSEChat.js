@@ -65,7 +65,10 @@ export function useSSEChat() {
           break;
 
         case "agent_thought_chunk":
-          appendThinkingChunk(payload?.content || payload?.thinkingDelta || "");
+          appendThinkingChunk(
+            payload?.content || payload?.thinkingDelta || "",
+            payload?.timestamp
+          );
           break;
 
         case "tool_call":

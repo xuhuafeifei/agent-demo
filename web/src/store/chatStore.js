@@ -3,33 +3,15 @@ import { create } from "zustand";
 const uid = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
 /**
- * @typedef {Object} TextMessage
- * @property {string} id
- * @property {'user' | 'assistant' | 'thinking'} role
- * @property {string} content
- * @property {number} timestamp
- */
-
-/**
- * @typedef {Object} ToolCallData
- * @property {string} id
- * @property {string} toolCallId
- * @property {string} [kind]
- * @property {string} [title]
- * @property {string} [content]
- * @property {'pending' | 'running' | 'completed' | 'error'} status
- * @property {string} [detail]
- * @property {number} timestamp
- */
-
-/**
- * 创建 Store - VSCode 方式：使用闭包变量追踪索引
+ * 创建 Store - VSCode 方式：使用闭包变量追踪索引 + event 类型判断
  */
 export const useChatStore = create((set, get) => {
   // 追踪当前流式消息的索引（类似 VSCode 的 useRef）
   let streamingMessageIndex = null;
   // 追踪当前 thinking 消息的索引（类似 VSCode 的 thinkingMessageIndexRef）
   let thinkingMessageIndex = null;
+  // 追踪上一个 event 类型，用于判断是否创建新消息
+  let lastEventType = null;
 
   return {
     messages: [],
@@ -51,10 +33,13 @@ export const useChatStore = create((set, get) => {
           },
         ],
       }));
+      
+      // 用户消息也更新 event 类型
+      lastEventType = 'user_message';
     },
 
     /**
-     * 开始流式响应 - VSCode 方式
+     * 开始流式响应
      */
     startStreaming: (timestamp) => {
       const ts = timestamp ?? Date.now();
@@ -62,6 +47,10 @@ export const useChatStore = create((set, get) => {
       set((state) => {
         const assistantIndex = state.messages.length;
         streamingMessageIndex = assistantIndex;
+
+        // 重置 event 类型追踪
+        lastEventType = null;
+        thinkingMessageIndex = null;
 
         return {
           isStreaming: true,
@@ -79,7 +68,7 @@ export const useChatStore = create((set, get) => {
     },
 
     /**
-     * 追加流式内容到 assistant 消息 - VSCode 方式
+     * 追加流式内容到 assistant 消息 - 根据上一个 event 类型判断
      */
     appendStreamChunk: (chunk, timestamp) => {
       const { isStreaming } = get();
@@ -90,70 +79,74 @@ export const useChatStore = create((set, get) => {
         let idx = streamingMessageIndex;
         const next = [...state.messages];
 
-        // 如果没有活跃的占位消息，创建新的
-        if (idx === null || idx < 0 || idx >= next.length) {
+        // 关键逻辑：根据上一个 event 类型判断
+        if (lastEventType === 'agent_message_chunk' && idx !== null && idx >= 0 && idx < next.length) {
+          // 上一次也是 assistant，追加到当前消息
+          const target = next[idx];
+          next[idx] = {
+            ...target,
+            content: (target.content || '') + chunk,
+          };
+        } else {
+          // 上一次不是 assistant（可能是 tool_call 或 thinking），创建新的 assistant 消息
           idx = next.length;
           streamingMessageIndex = idx;
           next.push({
             id: uid(),
             role: "assistant",
-            content: "",
+            content: chunk,
             timestamp: timestamp ?? Date.now(),
           });
         }
 
-        // 追加 chunk
-        const target = next[idx];
-        next[idx] = {
-          ...target,
-          content: (target.content || "") + chunk,
-        };
+        // 更新上一个 event 类型
+        lastEventType = 'agent_message_chunk';
 
         return { messages: next };
       });
     },
 
     /**
-     * 追加思考内容 - VSCode 方式（独立索引追踪）
+     * 追加思考内容 - 根据上一个 event 类型判断是否创建新消息
      */
-    appendThinkingChunk: (chunk) => {
+    appendThinkingChunk: (chunk, baseTimestamp) => {
       const { isStreaming, messages } = get();
 
       if (!isStreaming) return;
 
       set((state) => {
-        let idx = thinkingMessageIndex;
         const next = [...state.messages];
 
-        // 如果没有活跃的 thinking 消息，创建新的
-        if (idx === null || idx < 0 || idx >= next.length) {
-          idx = next.length;
-          thinkingMessageIndex = idx;
+        // 获取 assistant 消息的时间戳
+        const assistantIdx = streamingMessageIndex;
+        const assistantTs =
+          assistantIdx !== null &&
+          assistantIdx >= 0 &&
+          assistantIdx < next.length
+            ? next[assistantIdx].timestamp
+            : (baseTimestamp ?? Date.now());
 
-          // 获取 assistant 消息的时间戳
-          const assistantIdx = streamingMessageIndex;
-          const assistantTs =
-            assistantIdx !== null &&
-            assistantIdx >= 0 &&
-            assistantIdx < next.length
-              ? next[assistantIdx].timestamp
-              : Date.now();
-
-          // Thinking 时间戳比 assistant 早 1ms，确保排序在前面
+        // 关键逻辑：根据上一个 event 类型判断
+        if (lastEventType === 'agent_thought_chunk' && thinkingMessageIndex !== null) {
+          // 上一次也是 thinking，追加到当前消息
+          const target = next[thinkingMessageIndex];
+          next[thinkingMessageIndex] = {
+            ...target,
+            content: (target.content || '') + chunk,
+          };
+        } else {
+          // 上一次不是 thinking（可能是 tool_call 或其他），创建新的 thinking 消息
+          thinkingMessageIndex = next.length;
           next.push({
             id: uid(),
             role: "thinking",
-            content: "",
+            content: chunk,
             timestamp: assistantTs - 1,
           });
         }
 
-        // 追加 chunk
-        const target = next[idx];
-        next[idx] = {
-          ...target,
-          content: (target.content || "") + chunk,
-        };
+        // 更新上一个 event 类型
+        lastEventType = 'agent_thought_chunk';
 
         return { messages: next };
       });
@@ -165,11 +158,12 @@ export const useChatStore = create((set, get) => {
     endStreaming: () => {
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
+      lastEventType = null;  // 重置 event 类型
       set({ isStreaming: false });
     },
 
     /**
-     * 断开 assistant 流 - VSCode 显式断开机制
+     * 断开 assistant 流
      */
     breakAssistantSegment: () => {
       streamingMessageIndex = null;
@@ -198,6 +192,9 @@ export const useChatStore = create((set, get) => {
 
       // ToolCall 添加后，断开 assistant 流
       get().breakAssistantSegment();
+      
+      // 更新上一个 event 类型
+      lastEventType = 'tool_call';
     },
 
     /**
@@ -209,6 +206,9 @@ export const useChatStore = create((set, get) => {
           tool.toolCallId === toolCallId ? { ...tool, ...update } : tool
         ),
       }));
+      
+      // 更新上一个 event 类型
+      lastEventType = 'tool_call_update';
     },
 
     /**
@@ -244,6 +244,7 @@ export const useChatStore = create((set, get) => {
       set({ messages: [], toolCalls: [] });
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
+      lastEventType = null;
     },
   };
 });
