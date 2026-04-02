@@ -110,6 +110,9 @@ async function copyText(text) {
   }
 }
 
+/**
+ * 侧边栏组件
+ */
 function Sidebar({ collapsed, onToggle, activeNav, onSelectNav, isMobile, mobileOpen, onCloseMobile }) {
   const [tooltip, setTooltip] = useState({ show: false, text: "", x: 0, y: 0 });
   const tooltipTimerRef = useRef(null);
@@ -188,6 +191,9 @@ function Sidebar({ collapsed, onToggle, activeNav, onSelectNav, isMobile, mobile
   );
 }
 
+/**
+ * 顶部栏组件
+ */
 function Header({ isMobile, onOpenMobile }) {
   return (
     <header className="header-bar">
@@ -226,13 +232,19 @@ function Header({ isMobile, onOpenMobile }) {
   );
 }
 
+/**
+ * Assistant 消息组件（无边框设计）
+ */
 function AssistantMessage({ content, streaming }) {
   const [copied, setCopied] = useState(false);
 
   return (
     <article className="message assistant">
       <div className="llm-response">
-        <div className={`llm-content ${streaming ? "streaming" : ""}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
+        <div
+          className={`llm-content ${streaming ? "streaming" : ""}`}
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+        />
         <div className="copy-wrap">
           <button
             className={`copy-btn ${copied ? "copied" : ""}`}
@@ -253,6 +265,9 @@ function AssistantMessage({ content, streaming }) {
   );
 }
 
+/**
+ * Thinking 消息组件（可折叠）
+ */
 function ThinkingMessage({ id, content }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -269,43 +284,73 @@ function ThinkingMessage({ id, content }) {
         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
       {expanded ? (
-        <div id={`thinking-${id}`} className="thinking-content">
-          {content}
-        </div>
+        <div
+          id={`thinking-${id}`}
+          className="thinking-content"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+        />
       ) : null}
     </section>
   );
 }
 
-function ToolCallList({ toolCalls }) {
-  if (!toolCalls.length) return null;
-
+/**
+ * ToolCall 卡片组件
+ */
+function ToolCallCard({ toolCall }) {
   return (
-    <div>
-      {toolCalls.map((tool) => (
-        <section key={tool.id} className={`tool-card status-${tool.status || "running"}`}>
-          <div className="tool-content">
-            <div className="tool-title">{tool.title || "工具调用"}</div>
-            <div className="tool-path">{tool.content || "-"}</div>
-            <div className="tool-status">{tool.detail || "进行中..."}</div>
-          </div>
-        </section>
-      ))}
-    </div>
+    <section className={`tool-card status-${toolCall.status || "running"}`}>
+      <div className="tool-content">
+        <div className="tool-title">{toolCall.title || "工具调用"}</div>
+        <div className="tool-path">{toolCall.content || "-"}</div>
+        <div className="tool-status">{toolCall.detail || "进行中..."}</div>
+      </div>
+    </section>
   );
 }
 
+/**
+ * 消息列表组件（完全按照 VSCode 的方式渲染）
+ */
 function MessageList({ allMessages, isStreaming }) {
   const scrollRef = useRef(null);
+  const userHasScrolledRef = useRef(false);
 
+  // 自动滚动到底部（仅在用户没有手动滚动时）
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 120;
-    if (nearBottom) {
+    
+    // 如果用户手动滚动了，不要自动滚动
+    if (userHasScrolledRef.current) {
+      return;
+    }
+    
+    // 流式输出时自动滚动到底部
+    if (isStreaming) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [allMessages]);
+  }, [allMessages, isStreaming]);
+
+  // 监听用户滚动
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const isNearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 120;
+      // 如果滚动到底部，重置标记
+      if (isNearBottom) {
+        userHasScrolledRef.current = false;
+      } else {
+        // 否则标记用户已手动滚动
+        userHasScrolledRef.current = true;
+      }
+    };
+
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   return (
     <div className="chat-scroll" ref={scrollRef}>
@@ -320,35 +365,41 @@ function MessageList({ allMessages, isStreaming }) {
 
         {allMessages.map((item, idx) => {
           // ToolCall 消息
-          if (item.role === "tool_call") {
-            return (
-              <ToolCallList 
-                key={item.id} 
-                toolCalls={[item.toolCall]} 
-              />
-            );
-          }
-          
-          // 用户消息
-          if (item.role === "user") {
-            return (
-              <article key={item.id} className="message user">
-                <div className="user-bubble">{item.content}</div>
-              </article>
-            );
-          }
-          
-          // Thinking 消息
-          if (item.role === "thinking") {
-            return <ThinkingMessage key={item.id} id={item.id} content={item.content} />;
+          if (item.type === "tool_call") {
+            return <ToolCallCard key={item.data.id} toolCall={item.data} />;
           }
 
-          // Assistant 消息
-          if (item.role === "assistant") {
-            const isLast = idx === allMessages.length - 1;
-            return <AssistantMessage key={item.id} content={item.content} streaming={isStreaming && isLast} />;
+          // 普通消息
+          if (item.type === "message") {
+            const msg = item.data;
+
+            // 用户消息
+            if (msg.role === "user") {
+              return (
+                <article key={msg.id} className="message user">
+                  <div className="user-bubble">{msg.content}</div>
+                </article>
+              );
+            }
+
+            // Thinking 消息
+            if (msg.role === "thinking") {
+              return <ThinkingMessage key={msg.id} id={msg.id} content={msg.content} />;
+            }
+
+            // Assistant 消息
+            if (msg.role === "assistant") {
+              const isLast = idx === allMessages.length - 1;
+              return (
+                <AssistantMessage
+                  key={msg.id}
+                  content={msg.content}
+                  streaming={isStreaming && isLast}
+                />
+              );
+            }
           }
-          
+
           return null;
         })}
       </div>
@@ -356,6 +407,9 @@ function MessageList({ allMessages, isStreaming }) {
   );
 }
 
+/**
+ * 底部输入框组件
+ */
 function InputArea({ onSend }) {
   const [value, setValue] = useState("");
   const textareaRef = useRef(null);
@@ -392,8 +446,12 @@ function InputArea({ onSend }) {
 
         <div className="input-actions">
           <div className="left-tools">
-            <button className="tool-btn" type="button" aria-label="提及"><AtSign size={18} /></button>
-            <button className="tool-btn" type="button" aria-label="上传附件"><Paperclip size={18} /></button>
+            <button className="tool-btn" type="button" aria-label="提及">
+              <AtSign size={18} />
+            </button>
+            <button className="tool-btn" type="button" aria-label="上传附件">
+              <Paperclip size={18} />
+            </button>
           </div>
           <div className="right-tools">
             <button className="model-btn" type="button" aria-label="模型选择">
@@ -422,25 +480,29 @@ function InputArea({ onSend }) {
   );
 }
 
+/**
+ * 主应用组件
+ */
 export default function App() {
   const [activeNav, setActiveNav] = useState("chat");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
-  // 使用 getAllMessages 获取排序后的消息列表
+  // 使用 VSCode 的方式获取排序后的消息
   const getAllMessages = useChatStore((state) => state.getAllMessages);
   const allMessages = getAllMessages();
-  
+
   const isStreaming = useChatStore((state) => state.isStreaming);
   const addUserMessage = useChatStore((state) => state.addUserMessage);
   const appendError = useChatStore((state) => state.appendError);
-  const endStream = useChatStore((state) => state.endStream);
+  const endStreaming = useChatStore((state) => state.endStreaming);
 
   const { sendMessage } = useSSEChat();
 
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
 
+  // 初始化侧边栏状态
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_KEY) === "1";
     if (window.innerWidth < DESKTOP_BREAKPOINT) {
@@ -450,6 +512,7 @@ export default function App() {
     }
   }, []);
 
+  // 响应式处理
   useEffect(() => {
     const onResize = () => {
       setViewportWidth(window.innerWidth);
@@ -467,6 +530,7 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // 键盘快捷键
   useEffect(() => {
     const onKeyDown = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -515,7 +579,7 @@ export default function App() {
                   await sendMessage(text);
                 } catch (error) {
                   appendError(error instanceof Error ? error.message : String(error));
-                  endStream();
+                  endStreaming();
                 }
               }}
             />
