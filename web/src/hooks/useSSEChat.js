@@ -50,14 +50,22 @@ export function useSSEChat() {
           startStream();
           return;
         case "agent_message_chunk":
-          appendAssistantChunk(payload?.content || payload?.delta || "");
+          // 传递后端返回的 timestamp，用于在 toolcall 后创建新的 assistant 消息段
+          appendAssistantChunk(
+            payload?.content || payload?.delta || "",
+            payload?.timestamp ? { timestamp: payload.timestamp } : undefined
+          );
           return;
         case "agent_thought_chunk":
           appendThinkingChunk(payload?.content || payload?.thinkingDelta || "");
           return;
         case "tool_call":
         case "tool_call_update":
-          addOrUpdateToolCall(payload || {});
+          // 传递后端返回的 timestamp，用于排序
+          addOrUpdateToolCall({
+            ...payload,
+            timestamp: payload.timestamp ?? Date.now(),
+          });
           return;
         case "error":
           appendError(payload?.error || "未知错误");

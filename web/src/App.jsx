@@ -293,7 +293,7 @@ function ToolCallList({ toolCalls }) {
   );
 }
 
-function MessageList({ messages, toolCalls, isStreaming }) {
+function MessageList({ allMessages, isStreaming }) {
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -303,12 +303,12 @@ function MessageList({ messages, toolCalls, isStreaming }) {
     if (nearBottom || isStreaming) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages, toolCalls, isStreaming]);
+  }, [allMessages, isStreaming]);
 
   return (
     <div className="chat-scroll" ref={scrollRef}>
       <div className="chat-thread">
-        {!messages.length ? (
+        {!allMessages.length ? (
           <div className="empty-state" role="status" aria-live="polite">
             <div className="empty-icon">💬</div>
             <p>开始新的对话吧</p>
@@ -316,23 +316,39 @@ function MessageList({ messages, toolCalls, isStreaming }) {
           </div>
         ) : null}
 
-        {messages.map((message, idx) => {
-          if (message.role === "user") {
+        {allMessages.map((item, idx) => {
+          // ToolCall 消息
+          if (item.role === "tool_call") {
             return (
-              <article key={message.id} className="message user">
-                <div className="user-bubble">{message.content}</div>
+              <ToolCallList 
+                key={item.id} 
+                toolCalls={[item.toolCall]} 
+              />
+            );
+          }
+          
+          // 用户消息
+          if (item.role === "user") {
+            return (
+              <article key={item.id} className="message user">
+                <div className="user-bubble">{item.content}</div>
               </article>
             );
           }
-          if (message.role === "thinking") {
-            return <ThinkingMessage key={message.id} id={message.id} content={message.content} />;
+          
+          // Thinking 消息
+          if (item.role === "thinking") {
+            return <ThinkingMessage key={item.id} id={item.id} content={item.content} />;
           }
 
-          const isLast = idx === messages.length - 1;
-          return <AssistantMessage key={message.id} content={message.content} streaming={isStreaming && isLast} />;
+          // Assistant 消息
+          if (item.role === "assistant") {
+            const isLast = idx === allMessages.length - 1;
+            return <AssistantMessage key={item.id} content={item.content} streaming={isStreaming && isLast} />;
+          }
+          
+          return null;
         })}
-
-        <ToolCallList toolCalls={toolCalls} />
       </div>
     </div>
   );
@@ -410,8 +426,10 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
-  const messages = useChatStore((state) => state.messages);
-  const toolCalls = useChatStore((state) => state.toolCalls);
+  // 使用 getAllMessages 获取排序后的消息列表
+  const getAllMessages = useChatStore((state) => state.getAllMessages);
+  const allMessages = getAllMessages();
+  
   const isStreaming = useChatStore((state) => state.isStreaming);
   const addUserMessage = useChatStore((state) => state.addUserMessage);
   const appendError = useChatStore((state) => state.appendError);
@@ -487,7 +505,7 @@ export default function App() {
         <div className="main-shell">
           <Header isMobile={isMobile} onOpenMobile={() => setMobileOpen(true)} />
           <main className="chat-main">
-            <MessageList messages={messages} toolCalls={toolCalls} isStreaming={isStreaming} />
+            <MessageList allMessages={allMessages} isStreaming={isStreaming} />
             <InputArea
               onSend={async (text) => {
                 addUserMessage(text);
