@@ -231,9 +231,8 @@ function ThinkingMessage({ id, content }) {
   const [expanded, setExpanded] = useState(false);
 
   // 处理连续的多个换行符，将3个及以上的换行符替换为2个换行符（即保留一个空行）
-  const displayContent = typeof content === 'string' 
-    ? content.replace(/\n{3,}/g, '\n\n') 
-    : content;
+  const displayContent =
+    typeof content === "string" ? content.replace(/\n{3,}/g, "\n") : content;
 
   return (
     <section className="thinking-item" key={id}>
@@ -248,10 +247,7 @@ function ThinkingMessage({ id, content }) {
         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
       {expanded ? (
-        <div
-          id={`thinking-${id}`}
-          className="thinking-content"
-        >
+        <div id={`thinking-${id}`} className="thinking-content">
           {displayContent}
         </div>
       ) : null}
@@ -305,7 +301,13 @@ function UserMessage({ content }) {
 /**
  * 消息列表组件 - VSCode 方式：按时间戳排序渲染
  */
-function MessageList({ allMessages, isStreaming, scrollRef, onScrollChange, forceScrollToBottom }) {
+function MessageList({
+  allMessages,
+  isStreaming,
+  scrollRef,
+  onScrollChange,
+  forceScrollToBottom,
+}) {
   const userHasScrolledRef = useRef(false);
 
   // 强制置底（用户发送消息时）

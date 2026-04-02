@@ -395,7 +395,7 @@ textarea {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0px;
   min-height: 0;
 }
 
@@ -467,7 +467,7 @@ textarea {
 }
 
 .llm-content p {
-  margin-bottom: 8px;
+  margin-bottom: 1px;
 }
 
 .llm-content h1 {
@@ -557,9 +557,8 @@ textarea {
 
 /* Copy button */
 .copy-wrap {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  display: flex;
+  margin-top: 4px;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -569,11 +568,11 @@ textarea {
 }
 
 .copy-btn {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
-  border: 1px solid var(--border-light);
-  background: var(--bg-card);
+  border: none;
+  background: transparent;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -584,11 +583,10 @@ textarea {
 
 .copy-btn:hover {
   background: var(--bg-hover);
-  border-color: var(--primary-green);
+  color: var(--text-primary);
 }
 
 .copy-btn.copied {
-  border-color: var(--primary-green);
   color: var(--primary-green);
 }
 
@@ -629,7 +627,7 @@ textarea {
   cursor: pointer;
   color: var(--text-thinking);
   font-size: 14px;
-  font-style: italic;
+  /* font-style: normal; */
   padding: 0;
   transition: color 0.15s ease;
 }
@@ -642,9 +640,14 @@ textarea {
   color: var(--text-thinking);
   font-size: 14px;
   line-height: 1.6;
-  font-style: italic;
+  font-style: normal;
   white-space: pre-wrap;
   margin-top: 8px;
+}
+
+.thinking-content p:last-child,
+.thinking-content:last-child {
+  margin-bottom: 0;
 }
 
 /* ===========================
