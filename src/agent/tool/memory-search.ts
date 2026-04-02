@@ -26,7 +26,8 @@ export function createMemorySearchTool(): ToolDefinition<
   return {
     name: "memorySearch",
     label: "Memory Search",
-    description: "Search relevant memory chunks from indexed workspace/session.",
+    description:
+      "Search relevant memory chunks from indexed workspace/session.",
     parameters: memorySearchParameters,
     execute: async (
       _toolCallId,
@@ -59,7 +60,10 @@ export function createMemorySearchTool(): ToolDefinition<
           hits.length === 0
             ? "Found 0 memory hits."
             : hits
-                .map((hit, i) => `[${i + 1}] score=${hit.score}\n${hit.content}`)
+                .map(
+                  (hit, i) =>
+                    `[${i + 1}] score=${hit.score}\nfile_path=${hit.path} L${hit.lineStart}-${hit.lineEnd}\n${hit.content}`,
+                )
                 .join("\n\n---\n\n");
 
         return okResult(summary, {
