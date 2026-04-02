@@ -179,10 +179,15 @@ export async function resolveQwenPortalOAuth(): Promise<void> {
   const verificationUrl =
     device.verification_uri_complete ?? device.verification_uri;
 
-  logger.debug("Qwen OAuth — open this URL and enter the code if prompted:");
-  logger.debug(verificationUrl);
-  logger.debug("Code:", device.user_code);
-  logger.debug("");
+  // Must use console (not subsystem logger): allowModule / consoleLevel can
+  // suppress auth logs, and this CLI must always show the URL and user code.
+  console.error("");
+  console.error(
+    "Qwen OAuth — open this URL in your browser (or use the tab we tried to open):",
+  );
+  console.error(verificationUrl);
+  console.error("User code:", device.user_code);
+  console.error("");
 
   try {
     await openUrl(verificationUrl);
@@ -194,8 +199,10 @@ export async function resolveQwenPortalOAuth(): Promise<void> {
   let intervalMs = (device.interval ?? 2) * 1000;
   const timeoutMs = device.expires_in * 1000;
 
+  console.error("Waiting for you to complete authorization in the browser…");
+  console.error("");
+
   while (Date.now() - start < timeoutMs) {
-    logger.debug("Waiting for approval…");
     const result = await pollDeviceToken(device.device_code, verifier);
 
     if (result.status === "success") {
