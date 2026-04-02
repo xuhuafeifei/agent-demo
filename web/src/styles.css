@@ -53,9 +53,16 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
   color: var(--text-primary);
-  background: radial-gradient(circle at 20% 0%, #ffffff 0%, #fafafa 45%, #f4f4f4 100%);
+  background: radial-gradient(
+    circle at 20% 0%,
+    #ffffff 0%,
+    #fafafa 45%,
+    #f4f4f4 100%
+  );
   overflow: hidden;
 }
 
@@ -766,6 +773,7 @@ textarea {
    =========================== */
 .input-wrap {
   padding: 20px 16px 24px;
+  position: relative;
 }
 
 .input-card {
@@ -777,6 +785,7 @@ textarea {
   padding: 14px 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   transition: all 0.2s ease;
+  position: relative;
 }
 
 .input-card:focus-within {
@@ -891,6 +900,38 @@ textarea {
   margin-top: 8px;
 }
 
+/* 滚轮置底按钮 */
+.scroll-to-bottom-btn {
+  position: absolute;
+  left: 50%;
+  top: -52px;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+
+.scroll-to-bottom-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: translateX(-50%) scale(1.1);
+}
+
+.scroll-to-bottom-btn:active {
+  transform: translateX(-50%) scale(0.95);
+}
+
 /* ===========================
    Responsive
    =========================== */
@@ -930,10 +971,12 @@ textarea {
    Animations
    =========================== */
 @keyframes blink {
-  0%, 50% {
+  0%,
+  50% {
     opacity: 1;
   }
-  51%, 100% {
+  51%,
+  100% {
     opacity: 0;
   }
 }

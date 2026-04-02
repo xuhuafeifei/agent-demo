@@ -15,6 +15,7 @@ import {
   AtSign,
   Paperclip,
   ArrowUp,
+  ArrowDown,
   Copy,
   Check,
   ChevronDown,
@@ -42,7 +43,15 @@ const navItems = [
 /**
  * 侧边栏组件
  */
-function Sidebar({ collapsed, onToggle, activeNav, onSelectNav, isMobile, mobileOpen, onCloseMobile }) {
+function Sidebar({
+  collapsed,
+  onToggle,
+  activeNav,
+  onSelectNav,
+  isMobile,
+  mobileOpen,
+  onCloseMobile,
+}) {
   const [tooltip, setTooltip] = useState({ show: false, text: "", x: 0, y: 0 });
   const tooltipTimerRef = useRef(null);
 
@@ -52,7 +61,9 @@ function Sidebar({ collapsed, onToggle, activeNav, onSelectNav, isMobile, mobile
 
   return (
     <>
-      {isMobile && mobileOpen ? <div className="mobile-mask" onClick={onCloseMobile} /> : null}
+      {isMobile && mobileOpen ? (
+        <div className="mobile-mask" onClick={onCloseMobile} />
+      ) : null}
       <aside className={wrapperClass} aria-label="主导航">
         <div className="sidebar-head">
           <div className="brand-wrap">
@@ -60,8 +71,17 @@ function Sidebar({ collapsed, onToggle, activeNav, onSelectNav, isMobile, mobile
             {!collapsed ? <div className="brand-title">Agent Demo</div> : null}
           </div>
           {!isMobile ? (
-            <button className="icon-btn" onClick={onToggle} aria-label="切换侧边栏" type="button">
-              {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            <button
+              className="icon-btn"
+              onClick={onToggle}
+              aria-label="切换侧边栏"
+              type="button"
+            >
+              {collapsed ? (
+                <PanelLeftOpen size={16} />
+              ) : (
+                <PanelLeftClose size={16} />
+              )}
             </button>
           ) : null}
         </div>
@@ -98,7 +118,9 @@ function Sidebar({ collapsed, onToggle, activeNav, onSelectNav, isMobile, mobile
                 }}
               >
                 <Icon size={18} />
-                {!collapsed ? <span className="nav-label">{item.label}</span> : null}
+                {!collapsed ? (
+                  <span className="nav-label">{item.label}</span>
+                ) : null}
               </button>
             );
           })}
@@ -110,7 +132,10 @@ function Sidebar({ collapsed, onToggle, activeNav, onSelectNav, isMobile, mobile
         </div>
 
         {!isMobile && collapsed && tooltip.show ? (
-          <div className="nav-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+          <div
+            className="nav-tooltip"
+            style={{ left: tooltip.x, top: tooltip.y }}
+          >
             <span>{tooltip.text}</span>
             <i />
           </div>
@@ -128,7 +153,12 @@ function Header({ isMobile, onOpenMobile }) {
     <header className="header-bar">
       <div className="header-left">
         {isMobile ? (
-          <button className="icon-btn" type="button" aria-label="打开菜单" onClick={onOpenMobile}>
+          <button
+            className="icon-btn"
+            type="button"
+            aria-label="打开菜单"
+            onClick={onOpenMobile}
+          >
             <Menu size={16} />
           </button>
         ) : null}
@@ -230,7 +260,9 @@ function ToolCallCard({ toolCall }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <section className={`tool-card status-${toolCall.status || "running"} ${expanded ? "expanded" : "collapsed"}`}>
+    <section
+      className={`tool-card status-${toolCall.status || "running"} ${expanded ? "expanded" : "collapsed"}`}
+    >
       <button
         className="tool-toggle"
         type="button"
@@ -267,8 +299,7 @@ function UserMessage({ content }) {
 /**
  * 消息列表组件 - VSCode 方式：按时间戳排序渲染
  */
-function MessageList({ allMessages, isStreaming }) {
-  const scrollRef = useRef(null);
+function MessageList({ allMessages, isStreaming, scrollRef, onScrollChange }) {
   const userHasScrolledRef = useRef(false);
 
   // 自动滚动到底部（仅在用户没有手动滚动时）
@@ -281,7 +312,7 @@ function MessageList({ allMessages, isStreaming }) {
     if (isStreaming) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [allMessages, isStreaming]);
+  }, [allMessages, isStreaming, scrollRef]);
 
   // 监听用户滚动
   useEffect(() => {
@@ -289,13 +320,18 @@ function MessageList({ allMessages, isStreaming }) {
     if (!el) return;
 
     const handleScroll = () => {
-      const isNearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 120;
+      const isNearBottom =
+        el.scrollHeight - (el.scrollTop + el.clientHeight) < 120;
       userHasScrolledRef.current = !isNearBottom;
+      // 通知父组件滚动状态变化
+      if (onScrollChange) {
+        onScrollChange(!isNearBottom);
+      }
     };
 
     el.addEventListener("scroll", handleScroll);
     return () => el.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [scrollRef, onScrollChange]);
 
   return (
     <div className="chat-scroll" ref={scrollRef}>
@@ -321,12 +357,24 @@ function MessageList({ allMessages, isStreaming }) {
             }
 
             if (msg.role === "thinking") {
-              return <ThinkingMessage key={msg.id} id={msg.id} content={msg.content} />;
+              return (
+                <ThinkingMessage
+                  key={msg.id}
+                  id={msg.id}
+                  content={msg.content}
+                />
+              );
             }
 
             if (msg.role === "assistant") {
               const isLast = idx === allMessages.length - 1;
-              return <AssistantMessage key={msg.id} content={msg.content} streaming={isStreaming && isLast} />;
+              return (
+                <AssistantMessage
+                  key={msg.id}
+                  content={msg.content}
+                  streaming={isStreaming && isLast}
+                />
+              );
             }
           }
 
@@ -340,12 +388,19 @@ function MessageList({ allMessages, isStreaming }) {
 /**
  * 底部输入框组件
  */
-function InputArea({ onSend }) {
+function InputArea({ onSend, scrollRef, showScrollButton }) {
   const [value, setValue] = useState("");
   const textareaRef = useRef(null);
   const isStreaming = useChatStore((state) => state.isStreaming);
 
   const canSend = value.trim().length > 0 && !isStreaming;
+
+  const scrollToBottom = () => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  };
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -357,6 +412,17 @@ function InputArea({ onSend }) {
   return (
     <section className="input-wrap">
       <div className="input-card">
+        {/* 滚轮置底按钮 - 只在用户不在底部时显示 */}
+        {showScrollButton && (
+          <button
+            className="scroll-to-bottom-btn"
+            type="button"
+            aria-label="滚动到底部"
+            onClick={scrollToBottom}
+          >
+            <ArrowDown size={16} />
+          </button>
+        )}
         <textarea
           ref={textareaRef}
           className="input-textarea"
@@ -418,6 +484,8 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const scrollRef = useRef(null);
 
   // VSCode 方式：获取排序后的所有消息
   const getAllMessages = useChatStore((state) => state.getAllMessages);
@@ -495,9 +563,17 @@ export default function App() {
         />
 
         <div className="main-shell">
-          <Header isMobile={isMobile} onOpenMobile={() => setMobileOpen(true)} />
+          <Header
+            isMobile={isMobile}
+            onOpenMobile={() => setMobileOpen(true)}
+          />
           <main className="chat-main">
-            <MessageList allMessages={allMessages} isStreaming={isStreaming} />
+            <MessageList
+              allMessages={allMessages}
+              isStreaming={isStreaming}
+              scrollRef={scrollRef}
+              onScrollChange={setShowScrollButton}
+            />
             <InputArea
               onSend={async (text) => {
                 addUserMessage(text);
@@ -508,6 +584,8 @@ export default function App() {
                   endStreaming();
                 }
               }}
+              scrollRef={scrollRef}
+              showScrollButton={showScrollButton}
             />
           </main>
         </div>
