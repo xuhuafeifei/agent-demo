@@ -230,6 +230,11 @@ function AssistantMessage({ content, streaming }) {
 function ThinkingMessage({ id, content }) {
   const [expanded, setExpanded] = useState(false);
 
+  // 处理连续的多个换行符，将3个及以上的换行符替换为2个换行符（即保留一个空行）
+  const displayContent = typeof content === 'string' 
+    ? content.replace(/\n{3,}/g, '\n\n') 
+    : content;
+
   return (
     <section className="thinking-item" key={id}>
       <button
@@ -246,8 +251,9 @@ function ThinkingMessage({ id, content }) {
         <div
           id={`thinking-${id}`}
           className="thinking-content"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-        />
+        >
+          {displayContent}
+        </div>
       ) : null}
     </section>
   );
