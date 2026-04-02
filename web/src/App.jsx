@@ -21,12 +21,10 @@ import {
   ChevronUp,
   Menu,
 } from "lucide-react";
-import markdownit from "markdown-it";
-import DOMPurify from "dompurify";
-import hljs from "highlight.js";
-import "highlight.js/styles/github.css";
 import { useChatStore } from "./store/chatStore";
 import { useSSEChat } from "./hooks/useSSEChat";
+import { renderMarkdown, copyText } from "./utils/markdown";
+import "./styles.css";
 
 const SIDEBAR_KEY = "agent_demo_sidebar_collapsed";
 const DESKTOP_BREAKPOINT = 1024;
@@ -40,75 +38,6 @@ const navItems = [
   { key: "session", label: "会话", icon: MessageCircleMore },
   { key: "setting", label: "设置", icon: Settings },
 ];
-
-const md = markdownit({
-  html: false,
-  linkify: true,
-  breaks: true,
-  highlight(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      const highlighted = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
-      return `<pre><code class="hljs language-${lang}">${highlighted}</code></pre>`;
-    }
-    const highlighted = hljs.highlightAuto(code).value;
-    return `<pre><code class="hljs">${highlighted}</code></pre>`;
-  },
-});
-
-function renderMarkdown(text) {
-  const raw = md.render(text || "");
-  return DOMPurify.sanitize(raw, {
-    ALLOWED_TAGS: [
-      "p",
-      "br",
-      "strong",
-      "em",
-      "u",
-      "s",
-      "a",
-      "code",
-      "pre",
-      "ul",
-      "ol",
-      "li",
-      "blockquote",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "h5",
-      "h6",
-      "hr",
-      "table",
-      "thead",
-      "tbody",
-      "tr",
-      "th",
-      "td",
-      "span",
-      "div",
-    ],
-    ALLOWED_ATTR: ["href", "target", "rel", "class"],
-  });
-}
-
-async function copyText(text) {
-  if (!text) return false;
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-    textarea.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return ok;
-  }
-}
 
 /**
  * 侧边栏组件
@@ -310,7 +239,18 @@ function ToolCallCard({ toolCall }) {
 }
 
 /**
- * 消息列表组件（完全按照 VSCode 的方式渲染）
+ * 用户消息组件
+ */
+function UserMessage({ content }) {
+  return (
+    <article className="message user">
+      <div className="user-bubble">{content}</div>
+    </article>
+  );
+}
+
+/**
+ * 消息列表组件 - VSCode 方式：按时间戳排序渲染
  */
 function MessageList({ allMessages, isStreaming }) {
   const scrollRef = useRef(null);
@@ -320,13 +260,9 @@ function MessageList({ allMessages, isStreaming }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    
-    // 如果用户手动滚动了，不要自动滚动
-    if (userHasScrolledRef.current) {
-      return;
-    }
-    
-    // 流式输出时自动滚动到底部
+
+    if (userHasScrolledRef.current) return;
+
     if (isStreaming) {
       el.scrollTop = el.scrollHeight;
     }
@@ -339,17 +275,11 @@ function MessageList({ allMessages, isStreaming }) {
 
     const handleScroll = () => {
       const isNearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 120;
-      // 如果滚动到底部，重置标记
-      if (isNearBottom) {
-        userHasScrolledRef.current = false;
-      } else {
-        // 否则标记用户已手动滚动
-        userHasScrolledRef.current = true;
-      }
+      userHasScrolledRef.current = !isNearBottom;
     };
 
-    el.addEventListener('scroll', handleScroll);
-    return () => el.removeEventListener('scroll', handleScroll);
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
   }, []);
 
   return (
@@ -364,39 +294,24 @@ function MessageList({ allMessages, isStreaming }) {
         ) : null}
 
         {allMessages.map((item, idx) => {
-          // ToolCall 消息
           if (item.type === "tool_call") {
             return <ToolCallCard key={item.data.id} toolCall={item.data} />;
           }
 
-          // 普通消息
           if (item.type === "message") {
             const msg = item.data;
 
-            // 用户消息
             if (msg.role === "user") {
-              return (
-                <article key={msg.id} className="message user">
-                  <div className="user-bubble">{msg.content}</div>
-                </article>
-              );
+              return <UserMessage key={msg.id} content={msg.content} />;
             }
 
-            // Thinking 消息
             if (msg.role === "thinking") {
               return <ThinkingMessage key={msg.id} id={msg.id} content={msg.content} />;
             }
 
-            // Assistant 消息
             if (msg.role === "assistant") {
               const isLast = idx === allMessages.length - 1;
-              return (
-                <AssistantMessage
-                  key={msg.id}
-                  content={msg.content}
-                  streaming={isStreaming && isLast}
-                />
-              );
+              return <AssistantMessage key={msg.id} content={msg.content} streaming={isStreaming && isLast} />;
             }
           }
 
@@ -433,10 +348,10 @@ function InputArea({ onSend }) {
           rows={1}
           value={value}
           placeholder="继续提问，或输入 @ 来引用内容"
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && canSend) {
-              event.preventDefault();
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && canSend) {
+              e.preventDefault();
               const text = value.trim();
               setValue("");
               onSend(text);
@@ -489,20 +404,18 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
-  // 使用 VSCode 的方式获取排序后的消息
+  // VSCode 方式：获取排序后的所有消息
   const getAllMessages = useChatStore((state) => state.getAllMessages);
   const allMessages = getAllMessages();
 
   const isStreaming = useChatStore((state) => state.isStreaming);
   const addUserMessage = useChatStore((state) => state.addUserMessage);
-  const appendError = useChatStore((state) => state.appendError);
   const endStreaming = useChatStore((state) => state.endStreaming);
 
   const { sendMessage } = useSSEChat();
 
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
 
-  // 初始化侧边栏状态
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_KEY) === "1";
     if (window.innerWidth < DESKTOP_BREAKPOINT) {
@@ -512,7 +425,6 @@ export default function App() {
     }
   }, []);
 
-  // 响应式处理
   useEffect(() => {
     const onResize = () => {
       setViewportWidth(window.innerWidth);
@@ -530,14 +442,13 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // 键盘快捷键
   useEffect(() => {
-    const onKeyDown = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
         document.querySelector(".input-textarea")?.focus();
       }
-      if (event.key === "Escape") {
+      if (e.key === "Escape") {
         setMobileOpen(false);
       }
     };
@@ -578,7 +489,7 @@ export default function App() {
                 try {
                   await sendMessage(text);
                 } catch (error) {
-                  appendError(error instanceof Error ? error.message : String(error));
+                  console.error(error);
                   endStreaming();
                 }
               }}

@@ -23,30 +23,7 @@ const uid = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
  */
 
 /**
- * @typedef {Object} ChatState
- * @property {TextMessage[]} messages
- * @property {ToolCallData[]} toolCalls
- * @property {boolean} isStreaming
- * @property {boolean} isWaitingForResponse
- * @property {string} loadingMessage
- * @property {(text: string) => void} addUserMessage
- * @property {(timestamp?: number) => void} startStreaming
- * @property {(chunk: string, timestamp?: number) => void} appendStreamChunk
- * @property {(chunk: string) => void} appendThinkingChunk
- * @property {() => void} endStreaming
- * @property {() => void} breakAssistantSegment
- * @property {() => void} breakThinkingSegment
- * @property {(toolCall: Omit<ToolCallData, 'id'>) => void} addToolCall
- * @property {(toolCallId: string, update: Partial<ToolCallData>) => void} updateToolCall
- * @property {(message: string) => void} setWaitingForResponse
- * @property {() => void} clearWaitingForResponse
- * @property {() => Array<{type: 'message' | 'tool_call', data: TextMessage | ToolCallData, timestamp: number}>} getAllMessages
- * @property {() => void} clearMessages
- */
-
-/**
- * 创建 Store
- * @type {import('zustand').Create<ChatState>}
+ * 创建 Store - VSCode 方式：使用闭包变量追踪索引
  */
 export const useChatStore = create((set, get) => {
   // 追踪当前流式消息的索引（类似 VSCode 的 useRef）
@@ -58,12 +35,9 @@ export const useChatStore = create((set, get) => {
     messages: [],
     toolCalls: [],
     isStreaming: false,
-    isWaitingForResponse: false,
-    loadingMessage: '',
 
     /**
      * 添加用户消息
-     * @param {string} text
      */
     addUserMessage: (text) => {
       set((state) => ({
@@ -71,7 +45,7 @@ export const useChatStore = create((set, get) => {
           ...state.messages,
           {
             id: uid(),
-            role: 'user',
+            role: "user",
             content: text,
             timestamp: Date.now(),
           },
@@ -80,26 +54,23 @@ export const useChatStore = create((set, get) => {
     },
 
     /**
-     * 开始流式响应
-     * 类似 VSCode 的 startStreaming
-     * @param {number} [timestamp]
+     * 开始流式响应 - VSCode 方式
      */
     startStreaming: (timestamp) => {
       const ts = timestamp ?? Date.now();
-      
+
       set((state) => {
-        // 创建 assistant 占位消息
         const assistantIndex = state.messages.length;
         streamingMessageIndex = assistantIndex;
-        
+
         return {
           isStreaming: true,
           messages: [
             ...state.messages,
             {
               id: uid(),
-              role: 'assistant',
-              content: '',
+              role: "assistant",
+              content: "",
               timestamp: ts,
             },
           ],
@@ -108,18 +79,12 @@ export const useChatStore = create((set, get) => {
     },
 
     /**
-     * 追加流式内容到 assistant 消息
-     * 类似 VSCode 的 appendStreamChunk
-     * @param {string} chunk
-     * @param {number} [timestamp]
+     * 追加流式内容到 assistant 消息 - VSCode 方式
      */
     appendStreamChunk: (chunk, timestamp) => {
       const { isStreaming } = get();
-      
-      // 如果不在流式状态，忽略
-      if (!isStreaming) {
-        return;
-      }
+
+      if (!isStreaming) return;
 
       set((state) => {
         let idx = streamingMessageIndex;
@@ -131,8 +96,8 @@ export const useChatStore = create((set, get) => {
           streamingMessageIndex = idx;
           next.push({
             id: uid(),
-            role: 'assistant',
-            content: '',
+            role: "assistant",
+            content: "",
             timestamp: timestamp ?? Date.now(),
           });
         }
@@ -141,7 +106,7 @@ export const useChatStore = create((set, get) => {
         const target = next[idx];
         next[idx] = {
           ...target,
-          content: (target.content || '') + chunk,
+          content: (target.content || "") + chunk,
         };
 
         return { messages: next };
@@ -149,17 +114,12 @@ export const useChatStore = create((set, get) => {
     },
 
     /**
-     * 追加思考内容
-     * 类似 VSCode 的 appendThinkingChunk
-     * @param {string} chunk
+     * 追加思考内容 - VSCode 方式（独立索引追踪）
      */
     appendThinkingChunk: (chunk) => {
       const { isStreaming, messages } = get();
-      
-      // 如果不在流式状态，忽略
-      if (!isStreaming) {
-        return;
-      }
+
+      if (!isStreaming) return;
 
       set((state) => {
         let idx = thinkingMessageIndex;
@@ -169,7 +129,7 @@ export const useChatStore = create((set, get) => {
         if (idx === null || idx < 0 || idx >= next.length) {
           idx = next.length;
           thinkingMessageIndex = idx;
-          
+
           // 获取 assistant 消息的时间戳
           const assistantIdx = streamingMessageIndex;
           const assistantTs =
@@ -178,12 +138,12 @@ export const useChatStore = create((set, get) => {
             assistantIdx < next.length
               ? next[assistantIdx].timestamp
               : Date.now();
-          
+
           // Thinking 时间戳比 assistant 早 1ms，确保排序在前面
           next.push({
             id: uid(),
-            role: 'thinking',
-            content: '',
+            role: "thinking",
+            content: "",
             timestamp: assistantTs - 1,
           });
         }
@@ -192,7 +152,7 @@ export const useChatStore = create((set, get) => {
         const target = next[idx];
         next[idx] = {
           ...target,
-          content: (target.content || '') + chunk,
+          content: (target.content || "") + chunk,
         };
 
         return { messages: next };
@@ -201,22 +161,15 @@ export const useChatStore = create((set, get) => {
 
     /**
      * 结束流式
-     * 类似 VSCode 的 endStreaming
      */
     endStreaming: () => {
-      set({
-        isStreaming: false,
-        isWaitingForResponse: false,
-        loadingMessage: '',
-      });
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
+      set({ isStreaming: false });
     },
 
     /**
-     * 断开 assistant 流
-     * 下一个 chunk 会创建新的 assistant 消息
-     * 类似 VSCode 的 breakAssistantSegment
+     * 断开 assistant 流 - VSCode 显式断开机制
      */
     breakAssistantSegment: () => {
       streamingMessageIndex = null;
@@ -224,16 +177,13 @@ export const useChatStore = create((set, get) => {
 
     /**
      * 断开 thinking 流
-     * 下一个 chunk 会创建新的 thinking 消息
-     * 类似 VSCode 的 breakThinkingSegment
      */
     breakThinkingSegment: () => {
       thinkingMessageIndex = null;
     },
 
     /**
-     * 添加 ToolCall
-     * @param {Omit<ToolCallData, 'id'>} toolCall
+     * 添加 ToolCall - 自动断开 assistant 流
      */
     addToolCall: (toolCall) => {
       set((state) => ({
@@ -245,72 +195,45 @@ export const useChatStore = create((set, get) => {
           },
         ],
       }));
-      
-      // ToolCall 添加后，断开 assistant 流，确保下一个 chunk 创建新消息
+
+      // ToolCall 添加后，断开 assistant 流
       get().breakAssistantSegment();
     },
 
     /**
      * 更新 ToolCall
-     * @param {string} toolCallId
-     * @param {Partial<ToolCallData>} update
      */
     updateToolCall: (toolCallId, update) => {
       set((state) => ({
         toolCalls: state.toolCalls.map((tool) =>
-          tool.toolCallId === toolCallId
-            ? { ...tool, ...update }
-            : tool
+          tool.toolCallId === toolCallId ? { ...tool, ...update } : tool
         ),
       }));
     },
 
     /**
-     * 设置等待响应
-     * @param {string} message
-     */
-    setWaitingForResponse: (message) => {
-      set({
-        isWaitingForResponse: true,
-        loadingMessage: message,
-      });
-    },
-
-    /**
-     * 清除等待响应
-     */
-    clearWaitingForResponse: () => {
-      set({
-        isWaitingForResponse: false,
-        loadingMessage: '',
-      });
-    },
-
-    /**
-     * 获取所有消息（包括 ToolCall）并按时间戳排序
-     * 类似 VSCode 的 allMessages useMemo
-     * @returns {Array<{type: 'message' | 'tool_call', data: TextMessage | ToolCallData, timestamp: number}>}
+     * 获取所有消息（包括 ToolCall）并按时间戳排序 - VSCode 方式
      */
     getAllMessages: () => {
       const { messages, toolCalls } = get();
-      
+
       // 普通消息
       const regularMessages = messages.map((msg) => ({
-        type: 'message',
+        type: "message",
         data: msg,
         timestamp: msg.timestamp,
       }));
 
       // ToolCall 消息
       const toolCallMessages = toolCalls.map((tool) => ({
-        type: 'tool_call',
+        type: "tool_call",
         data: tool,
         timestamp: tool.timestamp,
       }));
 
       // 合并并按时间戳排序
       return [...regularMessages, ...toolCallMessages].sort(
-        (a, b) => (a.timestamp || 0) - (b.timestamp || 0),
+        (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
       );
     },
 
@@ -318,10 +241,7 @@ export const useChatStore = create((set, get) => {
      * 清空消息
      */
     clearMessages: () => {
-      set({
-        messages: [],
-        toolCalls: [],
-      });
+      set({ messages: [], toolCalls: [] });
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
     },
