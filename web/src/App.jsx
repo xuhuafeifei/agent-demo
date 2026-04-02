@@ -269,7 +269,9 @@ function ThinkingMessage({ id, content }) {
         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
       {expanded ? (
-        <div id={`thinking-${id}`} className="thinking-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
+        <div id={`thinking-${id}`} className="thinking-content">
+          {content}
+        </div>
       ) : null}
     </section>
   );
@@ -300,10 +302,10 @@ function MessageList({ allMessages, isStreaming }) {
     const el = scrollRef.current;
     if (!el) return;
     const nearBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < 120;
-    if (nearBottom || isStreaming) {
+    if (nearBottom) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [allMessages, isStreaming]);
+  }, [allMessages]);
 
   return (
     <div className="chat-scroll" ref={scrollRef}>
