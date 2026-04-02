@@ -364,7 +364,7 @@ textarea {
 .context-panel {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 0;
   width: 400px;
   max-height: 400px;
   overflow: auto;
@@ -525,24 +525,21 @@ textarea {
   min-height: 0;
 }
 
-/* 上下文快照：悬浮在聊天区上方，避免盖住输入框与主对话列 */
+/* 上下文快照：悬浮在聊天区左侧，展开时也在左侧 */
 .context-snapshot-dock {
   position: absolute;
   z-index: 45;
-  right: 20px;
+  left: 20px;
   bottom: 108px;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px;
   pointer-events: none;
-  transition:
-    right 0.25s ease,
-    left 0.25s ease;
+  transition: left 0.25s ease;
 }
 
 .context-snapshot-dock--open {
-  right: auto;
   left: 20px;
   align-items: flex-start;
 }
@@ -798,6 +795,8 @@ textarea {
   color: var(--text-primary);
   font-size: 15px;
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Assistant message */
