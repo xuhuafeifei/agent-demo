@@ -520,6 +520,8 @@ export default function App() {
       console.error(error);
       endStreaming();
     }
+    // 发送完成后重置强制置底标志
+    setForceScrollToBottom(false);
   };
 
   useEffect(() => {
@@ -596,17 +598,10 @@ export default function App() {
               isStreaming={isStreaming}
               scrollRef={scrollRef}
               onScrollChange={setShowScrollButton}
+              forceScrollToBottom={forceScrollToBottom}
             />
             <InputArea
-              onSend={async (text) => {
-                addUserMessage(text);
-                try {
-                  await sendMessage(text);
-                } catch (error) {
-                  console.error(error);
-                  endStreaming();
-                }
-              }}
+              onSend={handleSendMessage}
               scrollRef={scrollRef}
               showScrollButton={showScrollButton}
             />
