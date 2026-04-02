@@ -7,7 +7,7 @@ export default defineConfig({
   root: path.resolve(process.cwd(), "web"),
   publicDir: path.resolve(process.cwd(), "web/public"),
   build: {
-    outDir: path.resolve(process.cwd(), "src/public"),
+    outDir: path.resolve(process.cwd(), "dist/public"),
     emptyOutDir: true,
   },
 });
