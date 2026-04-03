@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { readFgbgUserConfig } from "../../../config/index.js";
+import { readFgbgUserConfig, getDefaultModelProvider } from "../../../config/index.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { buildImplicitProviderTemplates } from "../../../agent/pi-embedded-runner/model-config.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -13,7 +14,6 @@ export function createProvidersRouter() {
   // GET /config/providers - Get all built-in provider templates
   router.get("/", (_req, res) => {
     try {
-      const { buildImplicitProviderTemplates } = require("../../../agent/pi-embedded-runner/model-config.js");
       const templates = buildImplicitProviderTemplates();
       const providers = Object.keys(templates).map((id) => {
         const template = templates[id];
@@ -38,7 +38,6 @@ export function createProvidersRouter() {
   router.get("/:id", (req, res) => {
     try {
       const providerId = req.params.id;
-      const { buildImplicitProviderTemplates } = require("../../../agent/pi-embedded-runner/model-config.js");
       const templates = buildImplicitProviderTemplates();
       const template = templates[providerId];
       if (!template) {
@@ -99,7 +98,6 @@ export function createProvidersRouter() {
   // GET /config/default-provider - Get default model provider
   router.get("/default-provider", (_req, res) => {
     try {
-      const { getDefaultModelProvider } = require("../../../config/index.js");
       const defaultProvider = getDefaultModelProvider();
       res.json({ success: true, defaultProvider });
     } catch (error: unknown) {
