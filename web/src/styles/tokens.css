@@ -1,0 +1,35 @@
+/* CSS Custom Properties (Design Tokens) */
+:root {
+  color-scheme: light;
+
+  /* 主题色 - 绿色系 */
+  --primary-green: #78c384;
+  --primary-green-hover: #4eb05e;
+  --primary-green-light: #dbe8dd;
+  --primary-green-dark: #35b248;
+
+  /* 背景色 */
+  --bg-page: #f6fbf7;
+  --bg-primary: #fdfffd;
+  --bg-card: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-selected: rgba(120, 195, 132, 0.15);
+  --bg-code: rgba(255, 255, 255, 0.6);
+
+  /* 文字色 */
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --text-placeholder: #999999;
+  --text-hint: #cccccc;
+  --text-thinking: #999999;
+
+  /* 边框/分割线 */
+  --border-light: rgba(0, 0, 0, 0.06);
+  --border-focus: #78c384;
+
+  /* 状态色 */
+  --status-green: #35b248;
+  --bubble-green: #35b248;
+  --status-red: #ef4444;
+  --status-gray: #9ca3af;
+}

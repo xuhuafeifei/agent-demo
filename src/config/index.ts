@@ -9,7 +9,11 @@ import {
   resolveGlobalConfigPath,
   resolveWorkspaceDir,
 } from "../utils/app-path.js";
-import fs from "node:fs";
+import fs, { read } from "node:fs";
+import {
+  buildImplicitProviderTemplates,
+  parseModelRef,
+} from "../agent/pi-embedded-runner/model-config.js";
 
 function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
   const modelsMode = raw.models?.mode ?? "merge";
@@ -296,3 +300,24 @@ export function writeFgbgUserConfig(cfg: FgbgUserConfig): void {
 export function getDefaultFgbgUserConfig(): FgbgUserConfig {
   return resolveFgbgUserConfig({} as FgbgUserRawConfig);
 }
+
+/*----------------------------------------------------------------------------*/
+// 暴露给前端修改配置的 web 接口
+/*----------------------------------------------------------------------------*/
+
+// 获取所有后台系统支持的模型供应商
+export function getSupportedProviders() {
+  const providers = buildImplicitProviderTemplates();
+  return providers;
+}
+
+// 获取agent 使用的默认供应商(默认 qwen-portal, 这是后端系统的共识)
+export function getDefaultProvider() {
+  const modelRef = parseModelRef(
+    readFgbgUserConfig().agents.defaults.model.primary,
+  );
+  return modelRef?.provider ?? "qwen-portal";
+}
+
+// 获取模型信息的接口
+export function getModelInfo() {}

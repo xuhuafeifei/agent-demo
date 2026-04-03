@@ -7,7 +7,9 @@ import {
 import { SETTINGS_SECTIONS } from "../config/fgbgSchema";
 
 function deepGet(obj, path) {
-  return path.split(".").reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+  return path
+    .split(".")
+    .reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
 }
 
 function deepSet(target, path, value) {
@@ -18,7 +20,11 @@ function deepSet(target, path, value) {
       cursor[key] = value;
       return;
     }
-    if (typeof cursor[key] !== "object" || cursor[key] === null || Array.isArray(cursor[key])) {
+    if (
+      typeof cursor[key] !== "object" ||
+      cursor[key] === null ||
+      Array.isArray(cursor[key])
+    ) {
       cursor[key] = {};
     }
     cursor = cursor[key];
@@ -92,10 +98,18 @@ function validateField(field, parsedValue, fullDraft) {
       return `${field.label} 不是合法 URL`;
     }
   }
-  if (field.path === "agents.memorySearch.endpoint" && deepGet(fullDraft, "agents.memorySearch.mode") === "remote" && !parsedValue) {
+  if (
+    field.path === "agents.memorySearch.endpoint" &&
+    deepGet(fullDraft, "agents.memorySearch.mode") === "remote" &&
+    !parsedValue
+  ) {
     return "memorySearch.mode=remote 时 endpoint 必填";
   }
-  if (field.path === "agents.memorySearch.apiKey" && deepGet(fullDraft, "agents.memorySearch.mode") === "remote" && !parsedValue) {
+  if (
+    field.path === "agents.memorySearch.apiKey" &&
+    deepGet(fullDraft, "agents.memorySearch.mode") === "remote" &&
+    !parsedValue
+  ) {
     return "memorySearch.mode=remote 时 apiKey 必填";
   }
   return "";
@@ -128,7 +142,8 @@ export default function SettingsPage() {
         SETTINGS_SECTIONS.forEach((section) => {
           section.fields.forEach((field) => {
             const value = deepGet(payload.config, field.path);
-            nextValues[field.path] = field.type === "json" ? safeStringify(value) : (value ?? "");
+            nextValues[field.path] =
+              field.type === "json" ? safeStringify(value) : (value ?? "");
           });
         });
         setFormValues(nextValues);
@@ -146,12 +161,12 @@ export default function SettingsPage() {
 
   const protectedPathSet = useMemo(
     () => new Set(metadata?.protectedPaths || []),
-    [metadata]
+    [metadata],
   );
 
   const defaultPathSet = useMemo(
     () => new Set(metadata?.defaultPaths || []),
-    [metadata]
+    [metadata],
   );
 
   const handleChange = (field, nextRawValue) => {
@@ -166,7 +181,10 @@ export default function SettingsPage() {
   };
 
   const buildDraftAndErrors = () => {
-    const draft = typeof structuredClone === "function" ? structuredClone(rawConfig) : JSON.parse(JSON.stringify(rawConfig || {}));
+    const draft =
+      typeof structuredClone === "function"
+        ? structuredClone(rawConfig)
+        : JSON.parse(JSON.stringify(rawConfig || {}));
     const nextErrors = {};
     SETTINGS_SECTIONS.forEach((section) => {
       section.fields.forEach((field) => {
@@ -228,7 +246,8 @@ export default function SettingsPage() {
       SETTINGS_SECTIONS.forEach((section) => {
         section.fields.forEach((field) => {
           const value = deepGet(payload.config, field.path);
-          nextValues[field.path] = field.type === "json" ? safeStringify(value) : (value ?? "");
+          nextValues[field.path] =
+            field.type === "json" ? safeStringify(value) : (value ?? "");
         });
       });
       setFormValues(nextValues);
@@ -257,10 +276,20 @@ export default function SettingsPage() {
           <p>按模块编辑 `fgbg.json`，保存时仅提交增量 patch。</p>
         </div>
         <div className="settings-actions">
-          <button type="button" className="tool-btn" onClick={handleReset} disabled={resetting || saving}>
+          <button
+            type="button"
+            className="tool-btn"
+            onClick={handleReset}
+            disabled={resetting || saving}
+          >
             {resetting ? "恢复中..." : "恢复默认"}
           </button>
-          <button type="button" className="send-btn active" onClick={handleSave} disabled={saving || resetting}>
+          <button
+            type="button"
+            className="send-btn active"
+            onClick={handleSave}
+            disabled={saving || resetting}
+          >
             {saving ? "保存中..." : "保存修改"}
           </button>
         </div>
@@ -278,7 +307,11 @@ export default function SettingsPage() {
                 const fieldValue = formValues[field.path] ?? "";
                 const isSensitive = field.type === "sensitive";
                 const sensitiveVisible = !!visibleSensitive[field.path];
-                const inputType = isSensitive ? (sensitiveVisible ? "text" : "password") : "text";
+                const inputType = isSensitive
+                  ? sensitiveVisible
+                    ? "text"
+                    : "password"
+                  : "text";
                 const readOnly = field.readOnly || protectedField;
                 return (
                   <label className="settings-field" key={field.path}>
@@ -304,7 +337,9 @@ export default function SettingsPage() {
                         onChange={(e) => handleChange(field, e.target.value)}
                       >
                         {(field.options || []).map((option) => (
-                          <option key={option} value={option}>{option}</option>
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
                         ))}
                       </select>
                     ) : null}
@@ -344,7 +379,9 @@ export default function SettingsPage() {
                     ) : null}
 
                     {errors[field.path] ? (
-                      <span className="settings-error">{errors[field.path]}</span>
+                      <span className="settings-error">
+                        {errors[field.path]}
+                      </span>
                     ) : null}
                   </label>
                 );

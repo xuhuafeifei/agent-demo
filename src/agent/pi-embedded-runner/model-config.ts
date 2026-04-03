@@ -159,19 +159,22 @@ async function resolveApiKeyForProviderAsync(params: {
   return undefined;
 }
 
-function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
+export function buildImplicitProviderTemplates(): Record<
+  string,
+  ProviderConfig
+> {
   return {
-    minimax: {
-      baseUrl: "https://api.minimaxi.com/anthropic",
-      api: "anthropic-messages",
+    "qwen-portal": {
+      baseUrl: "https://portal.qwen.ai/v1",
+      api: "openai-completions",
       models: [
         {
-          id: "MiniMax-M2.1",
-          name: "MiniMax M2.1",
+          id: "coder-model",
+          name: "Qwen Coder",
           reasoning: false,
           input: ["text"],
-          cost: { input: 15, output: 60, cacheRead: 2, cacheWrite: 10 },
-          contextWindow: 200000,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
           maxTokens: 64 * 1024,
           tokenRatio: 0.75,
         },
@@ -188,6 +191,22 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 65536,
+          maxTokens: 64 * 1024,
+          tokenRatio: 0.75,
+        },
+      ],
+    },
+    minimax: {
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      api: "anthropic-messages",
+      models: [
+        {
+          id: "MiniMax-M2.1",
+          name: "MiniMax M2.1",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 15, output: 60, cacheRead: 2, cacheWrite: 10 },
+          contextWindow: 200000,
           maxTokens: 64 * 1024,
           tokenRatio: 0.75,
         },
@@ -223,22 +242,6 @@ function buildImplicitProviderTemplates(): Record<string, ProviderConfig> {
           maxTokens: 64 * 1024,
           headers: { "User-Agent": "KimiCLI/0.77" },
           compat: { supportsDeveloperRole: false },
-          tokenRatio: 0.75,
-        },
-      ],
-    },
-    "qwen-portal": {
-      baseUrl: "https://portal.qwen.ai/v1",
-      api: "openai-completions",
-      models: [
-        {
-          id: "coder-model",
-          name: "Qwen Coder",
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens: 64 * 1024,
           tokenRatio: 0.75,
         },
       ],
