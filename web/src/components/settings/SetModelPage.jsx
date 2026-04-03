@@ -1,11 +1,4 @@
-import {
-  Plus,
-  Sparkles,
-  Trash2,
-  ExternalLink,
-  Check,
-  X,
-} from "lucide-react";
+import { Plus, Sparkles, Trash2, ExternalLink, Check, X } from "lucide-react";
 import {
   CollapsibleSection,
   ModelCombobox,
@@ -41,6 +34,7 @@ export default function SetModelPage({ modelTab }) {
     handleSave,
     saving,
     resetting,
+    formErrors = {},
   } = modelTab;
 
   return (
@@ -79,8 +73,7 @@ export default function SetModelPage({ modelTab }) {
             <div className="settings-detail-title">
               <span className="settings-detail-icon">
                 {typeof selectedProvider.icon === "function" ||
-                (selectedProvider.icon &&
-                  selectedProvider.icon.$$typeof) ? (
+                (selectedProvider.icon && selectedProvider.icon.$$typeof) ? (
                   <selectedProvider.icon size={24} />
                 ) : (
                   selectedProvider.icon
@@ -102,7 +95,9 @@ export default function SetModelPage({ modelTab }) {
                 type="text"
                 className="settings-form-input"
                 value={detailForm.modelName}
-                onChange={(e) => handleDetailChange("modelName", e.target.value)}
+                onChange={(e) =>
+                  handleDetailChange("modelName", e.target.value)
+                }
                 placeholder="例如: deepseek-reasoner"
               />
             </div>
@@ -180,11 +175,8 @@ export default function SetModelPage({ modelTab }) {
                   {qwenCredentialMode === "oauth" ? (
                     <>
                       <p className="settings-form-hint">
-                        点击「Qwen 授权」将打开 Qwen 官方认证页，登录后即可使用免费额度；凭证会保存到本机（逻辑与{" "}
-                        <code className="settings-inline-code">
-                          qwen-oauth-login
-                        </code>{" "}
-                        CLI 一致）。
+                        点击「Qwen 授权」将打开 Qwen
+                        官方认证页，登录后即可使用免费额度；凭证会保存到本机{" "}
                       </p>
                       {qwenAuthHint ? (
                         <p
@@ -285,13 +277,18 @@ export default function SetModelPage({ modelTab }) {
 
             {/* Base URL */}
             <div className="settings-form-group">
-              <label className="settings-form-label">Base URL (可选)</label>
+              <label className="settings-form-label">
+                Base URL <span className="settings-required">*</span>
+              </label>
               <input
                 type="text"
-                className="settings-form-input"
+                className={`settings-form-input ${
+                  formErrors.baseUrl ? "error" : ""
+                }`}
                 value={detailForm.baseUrl}
                 onChange={(e) => handleDetailChange("baseUrl", e.target.value)}
                 placeholder="https://api.example.com/v1"
+                required
               />
             </div>
 
@@ -358,4 +355,3 @@ export default function SetModelPage({ modelTab }) {
     </div>
   );
 }
-

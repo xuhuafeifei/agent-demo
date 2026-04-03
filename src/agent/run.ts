@@ -60,7 +60,7 @@ export function logRuntimePaths(): void {
   agentLogger.info(`会话文件路径: ${entry?.sessionFile ?? "未创建"}`);
 }
 
-export function getHistory(): SessionMessage[] {
+export function getHistory(limit?: number): SessionMessage[] {
   const entry = loadSessionIndexEntry("agent:main:main");
   if (!entry?.sessionFile) return [];
   if (!fs.existsSync(entry.sessionFile)) return [];
@@ -69,12 +69,18 @@ export function getHistory(): SessionMessage[] {
     resolveSessionDir(),
   );
   const entries = sessionManager.getEntries();
-  return entries
+  const messages = entries
     .filter(
       (entryItem): entryItem is SessionMessageEntry =>
         entryItem.type === "message",
     )
     .map((entryItem) => entryItem.message);
+
+  // 如果指定了 limit，只返回最近的 limit 条消息
+  if (limit && limit > 0) {
+    return messages.slice(-limit);
+  }
+  return messages;
 }
 
 export function clearHistory(): void {

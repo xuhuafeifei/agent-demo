@@ -102,46 +102,61 @@ challenge: string,
 async function pollDeviceToken(
   deviceCode: string,
   verifier: string,
+  timeoutMs: number = 60000,
 ): Promise<QwenPortalPollResult> {
-  const res = await fetch(QWEN_OAUTH_TOKEN_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: toFormUrlEncoded({
-      grant_type: QWEN_OAUTH_GRANT_TYPE,
-      client_id: QWEN_OAUTH_CLIENT_ID,
-      device_code: deviceCode,
-      code_verifier: verifier,
-    }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as {
-      error?: string;
-      error_description?: string;
-    };
-    if (body.error === "authorization_pending") return { status: "pending" };
-    if (body.error === "slow_down")
-      return { status: "pending", slowDown: true };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(QWEN_OAUTH_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: toFormUrlEncoded({
+        grant_type: QWEN_OAUTH_GRANT_TYPE,
+        client_id: QWEN_OAUTH_CLIENT_ID,
+        device_code: deviceCode,
+        code_verifier: verifier,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        error_description?: string;
+      };
+      if (body.error === "authorization_pending") return { status: "pending" };
+      if (body.error === "slow_down")
+        return { status: "pending", slowDown: true };
+      return {
+        status: "error",
+        message: body.error_description ?? body.error ?? res.statusText,
+      };
+    }
+    const t = (await res.json()) as TokenResponse;
+    if (!t.access_token || !t.refresh_token || t.expires_in == null) {
+      return { status: "error", message: "Incomplete token response" };
+    }
     return {
-      status: "error",
-      message: body.error_description ?? body.error ?? res.statusText,
+      status: "success",
+      token: {
+        access: t.access_token,
+        refresh: t.refresh_token,
+        expires: Date.now() + t.expires_in * 1000,
+        resourceUrl: t.resource_url,
+      },
     };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      return { status: "error", message: "Poll request timeout" };
+    }
+    return { status: "error", message: error instanceof Error ? error.message : String(error) };
   }
-  const t = (await res.json()) as TokenResponse;
-  if (!t.access_token || !t.refresh_token || t.expires_in == null) {
-    return { status: "error", message: "Incomplete token response" };
-  }
-  return {
-    status: "success",
-    token: {
-      access: t.access_token,
-      refresh: t.refresh_token,
-      expires: Date.now() + t.expires_in * 1000,
-      resourceUrl: t.resource_url,
-    },
-  };
 }
 
 /**
@@ -174,8 +189,9 @@ export async function createQwenPortalDeviceSession(): Promise<{
 export async function pollQwenPortalDeviceToken(
   deviceCode: string,
   verifier: string,
+  timeoutMs: number = 10000,
 ): Promise<QwenPortalPollResult> {
-  return pollDeviceToken(deviceCode, verifier);
+  return pollDeviceToken(deviceCode, verifier, timeoutMs);
 }
 
 function openUrl(url: string): Promise<void> {

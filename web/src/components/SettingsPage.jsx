@@ -56,6 +56,16 @@ export default function SettingsPage() {
   // 日志配置过长：默认收起，仅保留简短配置头；用户可展开查看更多配置项
   const [loggingConfigExpanded, setLoggingConfigExpanded] = useState(false);
 
+  // Channels config state
+  const [channelsForm, setChannelsForm] = useState({
+    qqbotEnabled: false,
+    qqbotAppId: "",
+    qqbotClientSecret: "",
+    qqbotTargetOpenid: "",
+    qqbotAccounts: "",
+  });
+  const [showQqbotSecret, setShowQqbotSecret] = useState(false);
+
   /** 记忆检索 + 心跳（单页） */
   const [memoryHeartbeatForm, setMemoryHeartbeatForm] = useState({
     mode: "local",
@@ -96,6 +106,7 @@ export default function SettingsPage() {
   const [qwenAuthHint, setQwenAuthHint] = useState("");
   /** qwen-portal：oauth = 浏览器授权；manual = 与其它提供商相同的手填 API Key */
   const [qwenCredentialMode, setQwenCredentialMode] = useState("oauth");
+  const [formErrors, setFormErrors] = useState({});
   const mountedRef = useRef(true);
 
   // Model list from backend
@@ -132,6 +143,19 @@ export default function SettingsPage() {
           allowModule: Array.isArray(logging.allowModule)
             ? logging.allowModule
             : [],
+        });
+
+        // Sync channels form from config
+        const channels = payload.config?.channels || {};
+        const qqbot = channels.qqbot || {};
+        setChannelsForm({
+          qqbotEnabled: qqbot.enabled ?? false,
+          qqbotAppId: qqbot.appId ?? "",
+          qqbotClientSecret: qqbot.clientSecret ?? "",
+          qqbotTargetOpenid: qqbot.targetOpenid ?? "",
+          qqbotAccounts: Array.isArray(qqbot.accounts)
+            ? JSON.stringify(qqbot.accounts, null, 2)
+            : "",
         });
       } catch (error) {
         if (mounted) setMessage(`加载配置失败: ${error.message}`);
@@ -318,6 +342,7 @@ export default function SettingsPage() {
   const handleDetailChange = (field, value) => {
     setDetailForm((prev) => ({ ...prev, [field]: value }));
     setConnectionResult(null);
+    setFormErrors((prev) => ({ ...prev, [field]: false }));
   };
 
   const handleTestConnection = async () => {
@@ -378,6 +403,18 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     if (!rawConfig || !baseConfig || !selectedProviderId) return;
+
+    // Validation
+    const errors = {};
+    if (!detailForm.baseUrl.trim()) {
+      errors.baseUrl = true;
+    }
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      setMessage("请填写所有必填字段。");
+      return;
+    }
+
     setMessage("");
     setSaving(true);
     try {
@@ -492,6 +529,61 @@ export default function SettingsPage() {
       setMessage("日志配置缓存已清除，系统将重新读取配置。");
     } catch (error) {
       setMessage(`清除缓存失败: ${error.message}`);
+    }
+  };
+
+  const handleSaveChannels = async () => {
+    if (!rawConfig || !baseConfig) return;
+    // Validation
+    if (channelsForm.qqbotEnabled) {
+      if (!channelsForm.qqbotAppId.trim()) {
+        setMessage("开启 QQBot 通道时，AppId 不能为空。");
+        return;
+      }
+      if (!channelsForm.qqbotClientSecret.trim()) {
+        setMessage("开启 QQBot 通道时，Client Secret 不能为空。");
+        return;
+      }
+    }
+    setMessage("");
+    setSaving(true);
+    try {
+      const draft =
+        typeof structuredClone === "function"
+          ? structuredClone(rawConfig)
+          : JSON.parse(JSON.stringify(rawConfig || {}));
+
+      let accountsArr = null;
+      if (channelsForm.qqbotAccounts.trim()) {
+        try {
+          accountsArr = JSON.parse(channelsForm.qqbotAccounts);
+          if (!Array.isArray(accountsArr)) accountsArr = null;
+        } catch {
+          accountsArr = null;
+        }
+      }
+
+      if (!draft.channels) draft.channels = {};
+      draft.channels.qqbot = {
+        enabled: channelsForm.qqbotEnabled,
+        appId: channelsForm.qqbotAppId.trim(),
+        clientSecret: channelsForm.qqbotClientSecret,
+        targetOpenid: channelsForm.qqbotTargetOpenid.trim() || undefined,
+        accounts: accountsArr,
+      };
+
+      const patch = deepDiff(draft, baseConfig);
+      if (patch && Object.keys(patch).length > 0) {
+        const payload = await patchFgbgConfig(patch);
+        setRawConfig(payload.config);
+        setBaseConfig(payload.config);
+        setMetadata(payload.metadata || {});
+      }
+      setMessage("保存成功。");
+    } catch (error) {
+      setMessage(`保存失败: ${error.message}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -797,6 +889,7 @@ export default function SettingsPage() {
             handleSave,
             saving,
             resetting,
+            formErrors,
           }}
         />
       ) : activeTab === "memoryHeartbeat" ? (
@@ -840,7 +933,18 @@ export default function SettingsPage() {
           }}
         />
       ) : (
-        <SetChannelsPage activeTab={activeTab} />
+        <SetChannelsPage
+          channelsTab={{
+            channelsForm,
+            setChannelsForm,
+            showQqbotSecret,
+            setShowQqbotSecret,
+            saving,
+            resetting,
+            handleResetClick,
+            handleSaveChannels,
+          }}
+        />
       )}
 
       {message ? <div className="settings-message">{message}</div> : null}

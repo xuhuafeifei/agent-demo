@@ -86,7 +86,7 @@ export default function App() {
     let mounted = true;
     async function loadHistory() {
       try {
-        const response = await getHistory(10); // 只加载最近10条历史消息
+        const response = await getHistory();
         if (!mounted || !response.success) return;
 
         const history = response.history || [];
