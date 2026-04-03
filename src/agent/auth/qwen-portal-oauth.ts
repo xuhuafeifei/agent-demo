@@ -49,10 +49,12 @@ export interface QwenOAuthToken {
   resourceUrl?: string;
 }
 
-type PollResult =
+export type QwenPortalPollResult =
   | { status: "success"; token: QwenOAuthToken }
   | { status: "pending"; slowDown?: boolean }
   | { status: "error"; message: string };
+
+type PollResult = QwenPortalPollResult;
 
 function toFormUrlEncoded(data: Record<string, string>): string {
   return Object.entries(data)
@@ -100,7 +102,7 @@ challenge: string,
 async function pollDeviceToken(
   deviceCode: string,
   verifier: string,
-): Promise<PollResult> {
+): Promise<QwenPortalPollResult> {
   const res = await fetch(QWEN_OAUTH_TOKEN_ENDPOINT, {
     method: "POST",
     headers: {
@@ -142,6 +144,40 @@ async function pollDeviceToken(
   };
 }
 
+/**
+ * 设备授权第一步：申请 device code（与 CLI `qwen-oauth-login` 同源逻辑）。
+ * 浏览器需在用户完成网页授权后，用同一组 deviceCode + verifier 轮询 {@link pollQwenPortalDeviceToken}。
+ */
+export async function createQwenPortalDeviceSession(): Promise<{
+  verificationUrl: string;
+  userCode: string;
+  deviceCode: string;
+  verifier: string;
+  expiresIn: number;
+  intervalSec: number;
+}> {
+  const { verifier, challenge } = generatePkce();
+  const device = await requestDeviceCode(challenge);
+  const verificationUrl =
+    device.verification_uri_complete ?? device.verification_uri;
+  return {
+    verificationUrl,
+    userCode: device.user_code,
+    deviceCode: device.device_code,
+    verifier,
+    expiresIn: device.expires_in,
+    intervalSec: device.interval ?? 2,
+  };
+}
+
+/** 单次轮询 token（pending 表示用户尚未在浏览器里完成授权） */
+export async function pollQwenPortalDeviceToken(
+  deviceCode: string,
+  verifier: string,
+): Promise<QwenPortalPollResult> {
+  return pollDeviceToken(deviceCode, verifier);
+}
+
 function openUrl(url: string): Promise<void> {
   return new Promise((resolve) => {
     const p = platform();
@@ -174,10 +210,9 @@ function openUrl(url: string): Promise<void> {
  * 或将交互逻辑与核心授权逻辑分离，方便集成到 GUI 或其他交互界面。
  */
 export async function resolveQwenPortalOAuth(): Promise<void> {
-  const { verifier, challenge } = generatePkce();
-  const device = await requestDeviceCode(challenge);
-  const verificationUrl =
-    device.verification_uri_complete ?? device.verification_uri;
+  const session = await createQwenPortalDeviceSession();
+  const { verifier, deviceCode, verificationUrl, userCode, expiresIn, intervalSec } =
+    session;
 
   // Must use console (not subsystem logger): allowModule / consoleLevel can
   // suppress auth logs, and this CLI must always show the URL and user code.
@@ -186,7 +221,7 @@ export async function resolveQwenPortalOAuth(): Promise<void> {
     "Qwen OAuth — open this URL in your browser (or use the tab we tried to open):",
   );
   console.error(verificationUrl);
-  console.error("User code:", device.user_code);
+  console.error("User code:", userCode);
   console.error("");
 
   try {
@@ -196,14 +231,14 @@ export async function resolveQwenPortalOAuth(): Promise<void> {
   }
 
   const start = Date.now();
-  let intervalMs = (device.interval ?? 2) * 1000;
-  const timeoutMs = device.expires_in * 1000;
+  let intervalMs = intervalSec * 1000;
+  const timeoutMs = expiresIn * 1000;
 
   console.error("Waiting for you to complete authorization in the browser…");
   console.error("");
 
   while (Date.now() - start < timeoutMs) {
-    const result = await pollDeviceToken(device.device_code, verifier);
+    const result = await pollDeviceToken(deviceCode, verifier);
 
     if (result.status === "success") {
       logger.info("Qwen portal OAuth success");

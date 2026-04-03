@@ -1,222 +1,927 @@
 /* Settings page component styles */
 .settings-page {
-  padding: 24px;
+  padding: 0;
   overflow: auto;
   background: #f6fbf7;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-.settings-toolbar {
+.settings-loading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-light);
-}
-
-.settings-title-wrap h2 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.settings-title-wrap p {
-  margin: 6px 0 0;
+  justify-content: center;
+  height: 100%;
   color: var(--text-secondary);
   font-size: 14px;
 }
 
-.settings-actions {
+/* ─── Top Tabs ─────────────────────────────────────────────────── */
+.settings-tabs {
   display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 10px;
+  gap: 0;
+  padding: 16px 24px 0;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary);
   flex-shrink: 0;
 }
 
-.settings-actions .tool-btn,
-.settings-actions .send-btn {
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1px solid var(--border-light);
-  background: var(--bg-card);
+.settings-tab {
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
   color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.settings-tab:hover {
+  color: var(--text-primary);
+}
+
+.settings-tab.active {
+  color: var(--primary-green-dark);
+  border-bottom-color: var(--primary-green);
+  font-weight: 600;
+}
+
+/* ─── Models Layout (List + Detail) ────────────────────────────── */
+.settings-models-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ─── Provider List (Left) ─────────────────────────────────────── */
+.settings-provider-list {
+  width: 280px;
+  min-width: 280px;
+  border-right: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-provider-list-header {
+  padding: 20px 16px 12px;
+}
+
+.settings-provider-list-header h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-provider-list-header p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.settings-add-provider-btn {
+  margin: 0 12px 12px;
+  padding: 12px;
+  border: 2px dashed var(--border-light);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
   transition: all 0.15s ease;
 }
 
-.settings-actions .tool-btn:hover {
+.settings-add-provider-btn:hover {
   border-color: var(--primary-green);
   color: var(--primary-green);
   background: var(--primary-green-light);
 }
 
-.settings-actions .send-btn {
+.settings-provider-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ─── Provider List Item ───────────────────────────────────────── */
+.settings-provider-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-align: left;
+  position: relative;
+}
+
+.settings-provider-item:hover {
+  border-color: var(--primary-green);
+  box-shadow: 0 2px 8px rgba(120, 195, 132, 0.1);
+}
+
+.settings-provider-item.selected {
+  border-color: var(--primary-green);
+  border-width: 1.5px;
+  background: var(--primary-green-light);
+}
+
+.settings-provider-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.settings-provider-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.settings-provider-name {
+  flex: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-provider-badge {
+  background: #3b82f6;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ─── Toggle Switch ────────────────────────────────────────────── */
+.settings-toggle {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+}
+
+.settings-toggle.on {
+  background: var(--primary-green);
+}
+
+.settings-toggle.off {
+  background: #d1d5db;
+}
+
+.settings-toggle.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease;
+}
+
+.settings-toggle.on .settings-toggle-thumb {
+  transform: translateX(18px);
+}
+
+/* ─── Detail Panel (Right) ─────────────────────────────────────── */
+.settings-detail-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-page);
+}
+
+.settings-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.settings-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-detail-icon {
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-detail-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.settings-detail-help {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #3b82f6;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.settings-detail-help:hover {
+  text-decoration: underline;
+}
+
+/* ─── Detail Form ──────────────────────────────────────────────── */
+.settings-detail-form {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.settings-form-group {
+  margin-bottom: 20px;
+}
+
+.settings-form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.settings-form-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.settings-form-input:focus {
+  border-color: var(--primary-green);
+  box-shadow: 0 0 0 3px rgba(120, 195, 132, 0.15);
+}
+
+.settings-form-input::placeholder {
+  color: var(--text-placeholder);
+}
+
+.settings-form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.settings-form-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-form-input-row .settings-form-input {
+  flex: 1;
+}
+
+.settings-test-btn {
+  padding: 10px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.settings-test-btn:hover {
+  border-color: var(--primary-green);
+  color: var(--primary-green);
+}
+
+.settings-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-connection-status {
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.settings-connection-status.success {
+  color: var(--status-green);
+}
+
+.settings-connection-status.error {
+  color: var(--status-red);
+}
+
+.settings-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.settings-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary-green);
+  cursor: pointer;
+}
+
+.settings-model-sparkle {
+  color: var(--text-placeholder);
+}
+
+/* ─── Collapsible Sections ─────────────────────────────────────── */
+.settings-collapsible {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.settings-collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.settings-collapsible-header:hover {
+  color: var(--text-primary);
+}
+
+.settings-collapsible-body {
+  padding: 0 16px 16px;
+}
+
+.settings-collapsible-placeholder {
+  color: var(--text-placeholder);
+  font-size: 13px;
+}
+
+/* ─── Detail Footer ────────────────────────────────────────────── */
+.settings-detail-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.settings-delete-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-delete-btn:hover {
+  background: #fee2e2;
+}
+
+.settings-detail-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.settings-reset-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-reset-btn:hover {
+  border-color: var(--primary-green);
+  color: var(--primary-green);
+}
+
+.settings-save-btn {
+  padding: 8px 24px;
+  border: none;
+  border-radius: 8px;
   background: var(--primary-green);
   color: white;
-  border-color: var(--primary-green);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.settings-actions .send-btn:hover {
+.settings-save-btn:hover {
   background: var(--primary-green-hover);
-  border-color: var(--primary-green-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 4px 12px rgba(120, 195, 132, 0.3);
 }
 
-.settings-actions .tool-btn:disabled,
-.settings-actions .send-btn:disabled {
+.settings-reset-btn:disabled,
+.settings-save-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
 }
 
+/* ─── Empty States ─────────────────────────────────────────────── */
+.settings-detail-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-placeholder);
+  font-size: 14px;
+}
+
+.settings-tab-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* ─── Message ──────────────────────────────────────────────────── */
 .settings-message {
-  margin-bottom: 20px;
-  padding: 12px 16px;
+  margin: 0 24px 16px;
+  padding: 10px 16px;
   border-radius: 10px;
   border: 1px solid var(--border-light);
   background: var(--primary-green-light);
   color: var(--primary-green-dark);
-  font-size: 14px;
+  font-size: 13px;
+  flex-shrink: 0;
 }
 
-.settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+/* ─── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .settings-models-layout {
+    flex-direction: column;
+  }
+
+  .settings-provider-list {
+    width: 100%;
+    min-width: unset;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  .settings-tabs {
+    padding: 12px 16px 0;
+    overflow-x: auto;
+  }
+
+  .settings-detail-form {
+    padding: 16px;
+  }
+
+  .settings-detail-footer {
+    padding: 12px 16px;
+  }
 }
 
-.settings-card {
-  border: 1px solid var(--border-light);
+/* ─── Confirmation Modal ─────────────────────────────────────────── */
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: modal-fade-in 0.2s ease;
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.settings-modal {
   background: var(--bg-card);
-  border-radius: 14px;
-  padding: 18px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
+  border-radius: 16px;
+  width: min(420px, calc(100vw - 48px));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  animation: modal-slide-in 0.25s ease;
 }
 
-.settings-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  border-color: var(--primary-green);
+@keyframes modal-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-.settings-card h3 {
-  margin: 0 0 16px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  padding-bottom: 12px;
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
   border-bottom: 1px solid var(--border-light);
 }
 
-.settings-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.settings-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-.settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-label {
+.settings-modal-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 6px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.settings-label em,
-.settings-label i {
-  font-style: normal;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  border: 1px solid var(--border-light);
-  background: var(--bg-primary);
-  color: var(--text-placeholder);
-}
-
-.settings-field input[type="text"],
-.settings-field input[type="number"],
-.settings-field input[type="password"],
-.settings-field select,
-.settings-field textarea {
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  padding: 10px 12px;
-  font-size: 13px;
+  justify-content: center;
+  cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.settings-field input:focus,
-.settings-field select:focus,
-.settings-field textarea:focus {
-  outline: none;
-  border-color: var(--primary-green);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+.settings-modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
-.settings-field textarea {
-  resize: vertical;
-  min-height: 100px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+.settings-modal-body {
+  padding: 20px 24px;
+}
+
+.settings-modal-body p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
-.settings-input-line {
+.settings-modal-body p:last-child {
+  margin-bottom: 0;
+}
+
+.settings-modal-warning {
+  color: #dc2626 !important;
+  font-weight: 500;
+}
+
+.settings-modal-footer {
   display: flex;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--border-light);
+}
+
+.settings-modal-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-modal-btn-cancel {
+  border: 1px solid var(--border-light);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+.settings-modal-btn-cancel:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.settings-modal-btn-confirm {
+  border: none;
+  background: #dc2626;
+  color: white;
+}
+
+.settings-modal-btn-confirm:hover {
+  background: #b91c1c;
+}
+
+.settings-modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Combobox (dropdown + text input) ───────────────────────────── */
+.settings-combobox {
+  position: relative;
+}
+
+.settings-combobox-input-row {
+  display: flex;
+  gap: 0;
   align-items: center;
 }
 
-.settings-input-line input {
-  flex: 1;
+.settings-combobox-input-row .settings-form-input {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
 }
 
-.settings-input-line .icon-btn {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  font-size: 12px;
+.settings-combobox-arrow {
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--border-light);
-  background: var(--bg-primary);
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  background: var(--bg-card);
   color: var(--text-secondary);
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
-.settings-input-line .icon-btn:hover {
-  border-color: var(--primary-green);
-  color: var(--primary-green);
+.settings-combobox-arrow:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-combobox-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+}
+
+.settings-combobox-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.settings-combobox-option:hover {
+  background: var(--bg-hover);
+}
+
+.settings-combobox-option.selected {
   background: var(--primary-green-light);
 }
 
-.settings-error {
+.settings-combobox-option-id {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.settings-combobox-option-name {
   font-size: 12px;
-  color: #ef4444;
-  margin-top: -4px;
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 
-.settings-field input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+.settings-combobox-empty {
+  padding: 16px 14px;
+  text-align: center;
+  color: var(--text-placeholder);
+  font-size: 13px;
+}
+
+.settings-form-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.settings-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-selected, rgba(0, 0, 0, 0.05));
+  color: var(--text-primary);
+}
+
+.settings-qwen-auth-row {
+  margin-bottom: 12px;
+}
+
+.settings-qwen-auth-row--split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-qwen-auth-row--split .settings-qwen-auth-btn {
+  flex: 1 1 auto;
+  min-width: min(140px, 100%);
+}
+
+.settings-qwen-apikey-btn {
+  flex: 1 1 auto;
+  min-width: min(140px, 100%);
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--border-light, #e5e5e5);
+  border-radius: 10px;
+  background: var(--bg-card, #fff);
+  color: var(--text-secondary, #666);
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  accent-color: var(--primary-green);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
-@media (max-width: 1023px) {
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
+.settings-qwen-apikey-btn:hover {
+  border-color: var(--primary-green, #78c384);
+  color: var(--primary-green, #78c384);
+}
+
+.settings-qwen-apikey-btn.active {
+  border-color: var(--primary-green, #78c384);
+  background: var(--primary-green-light, #dbe8dd);
+  color: var(--primary-green-dark, #35b248);
+}
+
+.settings-qwen-auth-btn.active {
+  box-shadow:
+    0 2px 8px rgba(78, 176, 94, 0.35),
+    0 0 0 2px rgba(120, 195, 132, 0.45);
+}
+
+.settings-qwen-auth-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--primary-green, #78c384);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+  box-shadow: 0 2px 8px rgba(78, 176, 94, 0.35);
+}
+
+.settings-qwen-auth-btn:hover:not(:disabled) {
+  background: var(--primary-green-hover, #4eb05e);
+  transform: translateY(-1px);
+}
+
+.settings-qwen-auth-btn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.settings-qwen-auth-message {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.settings-qwen-auth-message.success {
+  color: var(--status-green, #35b248);
+}
+
+.settings-qwen-switch-hint {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+.settings-qwen-switch-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--primary-green, #78c384);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.settings-qwen-switch-link:hover {
+  color: var(--primary-green-hover, #4eb05e);
 }

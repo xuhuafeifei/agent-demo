@@ -306,13 +306,16 @@ export function getDefaultFgbgUserConfig(): FgbgUserConfig {
 /*----------------------------------------------------------------------------*/
 
 // 获取所有后台系统支持的模型供应商
-export function getSupportedProviders() {
-  const providers = buildImplicitProviderTemplates();
-  return providers;
+export function getSupportedModelProviders(): string[] {
+  const providers = buildImplicitProviderTemplates() as Record<
+    string,
+    ProviderConfig
+  >;
+  return Object.keys(providers);
 }
 
 // 获取agent 使用的默认供应商(默认 qwen-portal, 这是后端系统的共识)
-export function getDefaultProvider() {
+export function getDefaultModelProvider(): string {
   const modelRef = parseModelRef(
     readFgbgUserConfig().agents.defaults.model.primary,
   );
@@ -320,4 +323,6 @@ export function getDefaultProvider() {
 }
 
 // 获取模型信息的接口
-export function getModelInfo() {}
+export function getModelProviderInfo(): Record<string, ProviderConfig> {
+  return readFgbgUserConfig().models.providers;
+}

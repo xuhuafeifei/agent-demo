@@ -23,9 +23,11 @@
   "license": "ISC",
   "description": "一个使用 @mariozechner/pi-agent-core 的简单 Node.js 对话应用",
   "dependencies": {
+    "@lobehub/icons": "^5.2.0",
     "@mariozechner/pi-agent-core": "^0.51.5",
     "@mariozechner/pi-ai": "^0.51.5",
     "@mariozechner/pi-coding-agent": "^0.51.5",
+    "@sinclair/typebox": "0.34.49",
     "chokidar": "^5.0.0",
     "cors": "^2.8.6",
     "cron-parser": "^5.5.0",

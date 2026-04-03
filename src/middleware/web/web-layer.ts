@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { type Response, Router } from "express";
+import { saveQwenPortalCredentials } from "../../agent/auth/oauth-path.js";
 import {
   clearHistory,
   getHistory,
@@ -162,7 +164,17 @@ type RecursivePartial<T> = {
       : T[P];
 };
 
-const PROTECTED_PATHS = new Set(["models.providers.qwen-portal.apiKey"]);
+/** 预留：当前无受保护字段；qwen-portal 支持 OAuth 与手动 API Key 二选一写入配置 */
+const PROTECTED_PATHS = new Set<string>();
+
+type PendingQwenOAuthSession = {
+  verifier: string;
+  deviceCode: string;
+  expiresAt: number;
+  intervalMs: number;
+};
+
+const qwenOAuthSessions = new Map<string, PendingQwenOAuthSession>();
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -485,6 +497,119 @@ export function createWebLayer() {
     }
   });
 
+  router.post("/config/qwen-portal/oauth/start", async (_req, res) => {
+    try {
+      const { createQwenPortalDeviceSession } =
+        await import("../../agent/auth/qwen-portal-oauth.js");
+      const session = await createQwenPortalDeviceSession();
+      const oauthSessionId = randomUUID();
+      const expiresAt = Date.now() + session.expiresIn * 1000;
+      const intervalMs = Math.max(
+        1000,
+        Math.round((session.intervalSec ?? 2) * 1000),
+      );
+      qwenOAuthSessions.set(oauthSessionId, {
+        verifier: session.verifier,
+        deviceCode: session.deviceCode,
+        expiresAt,
+        intervalMs,
+      });
+      setTimeout(
+        () => {
+          qwenOAuthSessions.delete(oauthSessionId);
+        },
+        session.expiresIn * 1000 + 60_000,
+      );
+
+      res.json({
+        success: true,
+        oauthSessionId,
+        verificationUrl: session.verificationUrl,
+        userCode: session.userCode,
+        expiresIn: session.expiresIn,
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error(
+        "[qwen-oauth/start] %s",
+        runtimeError.message,
+        runtimeError,
+      );
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
+  router.post("/config/qwen-portal/oauth/poll", async (req, res) => {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const oauthSessionId =
+      typeof (body as { oauthSessionId?: unknown }).oauthSessionId === "string"
+        ? (body as { oauthSessionId: string }).oauthSessionId.trim()
+        : "";
+    if (!oauthSessionId) {
+      return res.status(400).json({
+        success: false,
+        error: "缺少 oauthSessionId",
+      });
+    }
+
+    const pending = qwenOAuthSessions.get(oauthSessionId);
+    if (!pending || Date.now() > pending.expiresAt) {
+      qwenOAuthSessions.delete(oauthSessionId);
+      return res.status(400).json({
+        success: false,
+        error: "授权会话已过期或无效，请重新点击「Qwen 授权」。",
+      });
+    }
+
+    try {
+      const { pollQwenPortalDeviceToken } =
+        await import("../../agent/auth/qwen-portal-oauth.js");
+      const result = await pollQwenPortalDeviceToken(
+        pending.deviceCode,
+        pending.verifier,
+      );
+
+      if (result.status === "success") {
+        saveQwenPortalCredentials(result.token);
+        qwenOAuthSessions.delete(oauthSessionId);
+        evicateFgbgUserConfigCache();
+        return res.json({
+          success: true,
+          status: "success" as const,
+        });
+      }
+      if (result.status === "pending") {
+        return res.json({
+          success: true,
+          status: "pending" as const,
+          slowDown: Boolean(result.slowDown),
+        });
+      }
+      qwenOAuthSessions.delete(oauthSessionId);
+      return res.json({
+        success: false,
+        status: "error" as const,
+        error: result.message,
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error(
+        "[qwen-oauth/poll] %s",
+        runtimeError.message,
+        runtimeError,
+      );
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
   router.post("/config/fgbg/reset", (_req, res) => {
     try {
       const defaults = getDefaultFgbgUserConfig();
@@ -500,6 +625,37 @@ export function createWebLayer() {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error("[config/reset] %s", runtimeError.message, runtimeError);
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
+  // API 路由：根据 providerId 获取模型列表
+  router.get("/config/models/:providerId", (req, res) => {
+    try {
+      const providerId = req.params.providerId;
+      const config = readFgbgUserConfig();
+      const provider = config.models.providers[providerId];
+      if (!provider) {
+        return res.status(404).json({
+          success: false,
+          error: `Provider "${providerId}" not found`,
+        });
+      }
+      const models = (provider.models || []).map((m) => ({
+        id: m.id,
+        name: m.name,
+      }));
+      res.json({
+        success: true,
+        models,
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/models] %s", runtimeError.message, runtimeError);
       res.status(500).json({
         success: false,
         error: runtimeError.message,
