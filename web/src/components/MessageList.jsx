@@ -125,6 +125,7 @@ function MessageList({
   scrollRef,
   onScrollChange,
   forceScrollToBottom,
+  isLoadingHistory,
 }) {
   const userHasScrolledRef = useRef(false);
   const lastThinkingId = useMemo(() => {
@@ -178,7 +179,8 @@ function MessageList({
   return (
     <div className="chat-scroll" ref={scrollRef}>
       <div className="chat-thread">
-        {!allMessages.length ? (
+        {/* 只在非加载状态下且无消息时显示空状态 */}
+        {!allMessages.length && !isLoadingHistory ? (
           <div className="empty-state" role="status" aria-live="polite">
             <div className="empty-icon">💬</div>
             <p>开始新的对话吧</p>
@@ -199,15 +201,21 @@ function MessageList({
             const msg = item.data;
 
             if (msg.role === "user") {
-              return <UserMessage key={msg.id} content={msg.content} />;
+              const content = typeof msg.content === "string" 
+                ? msg.content 
+                : JSON.stringify(msg.content || "");
+              return <UserMessage key={msg.id} content={content} />;
             }
 
             if (msg.role === "thinking") {
+              const content = typeof msg.content === "string"
+                ? msg.content
+                : JSON.stringify(msg.content || "");
               return (
                 <ThinkingMessage
                   key={msg.id}
                   id={msg.id}
-                  content={msg.content}
+                  content={content}
                   isStreaming={
                     isStreaming && isThinking && msg.id === lastThinkingId
                   }
@@ -217,10 +225,13 @@ function MessageList({
 
             if (msg.role === "assistant") {
               const isLast = idx === allMessages.length - 1;
+              const content = typeof msg.content === "string"
+                ? msg.content
+                : JSON.stringify(msg.content || "");
               return (
                 <AssistantMessage
                   key={msg.id}
-                  content={msg.content}
+                  content={content}
                   streaming={isStreaming && isLast}
                 />
               );

@@ -98,9 +98,8 @@ export async function pollQwenPortalOAuth(oauthSessionId) {
   return payload;
 }
 
-export async function getHistory(limit) {
-  const url = limit ? `/api/history?limit=${limit}` : "/api/history";
-  return requestJson(url);
+export async function getHistory() {
+  return requestJson("/api/history");
 }
 
 export async function clearHistory() {

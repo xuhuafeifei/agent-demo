@@ -40,6 +40,7 @@ export default function App() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [forceScrollToBottom, setForceScrollToBottom] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const scrollRef = useRef(null);
 
   const getAllMessages = useChatStore((state) => state.getAllMessages);
@@ -85,45 +86,60 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
     async function loadHistory() {
+      setIsLoadingHistory(true);
       try {
-        const response = await getHistory(10); // 只加载最近10条历史消息
+        const response = await getHistory();
         if (!mounted || !response.success) return;
 
         const history = response.history || [];
         // 清空当前消息
         clearMessages();
 
-        // 将历史消息添加到 chatStore
-        history.forEach((item) => {
+        // 将历史消息按顺序添加到 chatStore
+        history.forEach((item, index) => {
+          const ts =
+            typeof item.timestamp === "number"
+              ? item.timestamp
+              : Date.now() - (history.length - index) * 1000;
+
           if (item.role === "user") {
-            addUserMessage(item.content);
+            const content =
+              typeof item.content === "string"
+                ? item.content
+                : JSON.stringify(item.content || "");
+            addUserMessage(content, ts);
           } else if (item.role === "assistant") {
-            // 添加 assistant 消息
-            const { addContextSnapshot, addContextUsed } = useChatStore();
-            if (item.contextSnapshot) {
-              addContextSnapshot(item.contextSnapshot);
-            }
-            if (item.contextUsed) {
-              addContextUsed(item.contextUsed);
-            }
-            // 添加 assistant 内容
-            const { startStreaming, appendStreamChunk, endStreaming } = useChatStore();
-            startStreaming(item.timestamp);
-            appendStreamChunk(item.content, item.timestamp);
+            const content =
+              typeof item.content === "string"
+                ? item.content
+                : JSON.stringify(item.content || "");
+            startStreaming(ts);
+            appendStreamChunk(content, ts);
             endStreaming();
           }
         });
 
         setHistoryLoaded(true);
+        // 历史加载完成后滚动到底部
+        if (mounted && history.length > 0) {
+          setTimeout(() => {
+            setForceScrollToBottom(true);
+            setTimeout(() => setForceScrollToBottom(false), 100);
+          }, 50);
+        }
       } catch (error) {
         console.error("Failed to load history:", error);
+      } finally {
+        if (mounted) {
+          setIsLoadingHistory(false);
+        }
       }
     }
     loadHistory();
     return () => {
       mounted = false;
     };
-  }, [historyLoaded]);
+  }, []); // 只加载一次，移除 historyLoaded 依赖
 
   useEffect(() => {
     const onResize = () => {
@@ -200,6 +216,7 @@ export default function App() {
                   scrollRef={scrollRef}
                   onScrollChange={setShowScrollButton}
                   forceScrollToBottom={forceScrollToBottom}
+                  isLoadingHistory={isLoadingHistory}
                 />
                 <InputArea
                   onSend={handleSendMessage}

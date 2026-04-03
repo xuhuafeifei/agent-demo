@@ -7,13 +7,10 @@ import { clearHistory, getHistory } from "../../../agent/run.js";
 export function createHistoryRouter() {
   const router = Router();
 
-  // GET /history - Get conversation history
-  router.get("/", async (req, res) => {
+  // GET /history - Get conversation history (backend-defined limit)
+  router.get("/", async (_req, res) => {
     try {
-      const limitParam = req.query.limit;
-      const limit =
-        typeof limitParam === "string" ? parseInt(limitParam, 10) : undefined;
-      const history = getHistory(limit);
+      const history = getHistory();
       res.json({ success: true, history });
     } catch (error: unknown) {
       const runtimeError =

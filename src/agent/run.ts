@@ -34,6 +34,7 @@ import { ToolRegister } from "./tool/tool-register.js";
 import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
 import { refreshFgbgUserConfigCache } from "../config/index.js";
 import { areTextsOverTokenThreshold } from "./utils/token-counter.js";
+import { AgentMessage } from "@mariozechner/pi-agent-core";
 
 export const DEFAULT_SESSION_KEY = "agent:main:main";
 
@@ -60,27 +61,78 @@ export function logRuntimePaths(): void {
   agentLogger.info(`会话文件路径: ${entry?.sessionFile ?? "未创建"}`);
 }
 
-export function getHistory(limit?: number): SessionMessage[] {
+/** Default history entry count returned by backend */
+const DEFAULT_HISTORY_LIMIT = 20;
+
+/**
+ * Get raw session messages (internal use for building chat history context).
+ * Returns SessionMessage[] for internal processing.
+ */
+function getSessionMessageEntrys(): SessionMessageEntry[] {
   const entry = loadSessionIndexEntry("agent:main:main");
   if (!entry?.sessionFile) return [];
   if (!fs.existsSync(entry.sessionFile)) return [];
+
   const sessionManager = SessionManager.open(
     entry.sessionFile,
     resolveSessionDir(),
   );
   const entries = sessionManager.getEntries();
-  const messages = entries
-    .filter(
-      (entryItem): entryItem is SessionMessageEntry =>
-        entryItem.type === "message",
-    )
-    .map((entryItem) => entryItem.message);
 
-  // 如果指定了 limit，只返回最近的 limit 条消息
-  if (limit && limit > 0) {
-    return messages.slice(-limit);
-  }
-  return messages;
+  return entries.filter(
+    (entryItem): entryItem is SessionMessageEntry =>
+      entryItem.type === "message",
+  );
+}
+
+/**
+ * Get conversation history in chronological order for frontend API.
+ * Returns a simplified format for frontend consumption.
+ */
+export function getHistory(): Array<{ role: string; content: string; timestamp?: number }> {
+  const messageEntrys = getSessionMessageEntrys();
+
+  // Filter to only keep user and assistant messages
+  const filtered = messageEntrys.filter(
+    (msg) => msg.message.role === "user" || msg.message.role === "assistant",
+  );
+
+  // Get the most recent messages (maintain chronological order)
+  const recent = filtered.slice(-DEFAULT_HISTORY_LIMIT);
+
+  // Transform to frontend-friendly format
+  const history: Array<{ role: string; content: string; timestamp?: number }> = [];
+  const baseTimestamp = Date.now() - (recent.length * 1000); // Base timestamp for ordering
+  
+  recent.forEach((msg, idx) => {
+    const raw = msg.message as {
+      role?: string;
+      content?: unknown[];
+      toolName?: string;
+    };
+    
+    // Extract text content from the message
+    const textParts: string[] = [];
+    if (Array.isArray(raw.content)) {
+      for (const block of raw.content) {
+        const b = block as { type?: string; text?: string };
+        if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) {
+          textParts.push(b.text.trim());
+        }
+      }
+    }
+    
+    // Only add if there's text content
+    if (textParts.length > 0) {
+      history.push({
+        role: raw.role || "unknown",
+        content: textParts.join("\n"),
+        timestamp: baseTimestamp + (idx * 1000), // Sequential timestamps for ordering
+      });
+    }
+  });
+
+  return history;
 }
 
 export function clearHistory(): void {
@@ -97,11 +149,11 @@ export function clearHistory(): void {
  * 从 session 消息列表剪枝：只保留每条 message 的 role 与文本内容，
  * 返回 "user: ...\n\nassistant: ..." 格式字符串。
  */
-function pruneSessionChat(messages: SessionMessage[]): string {
+function pruneSessionChat(messages: SessionMessageEntry[]): string {
   const selected: string[] = [];
   for (let i = 0; i < messages.length; i += 1) {
     const msg = messages[i];
-    const raw = msg as {
+    const raw = msg.message as {
       role?: string;
       content?: unknown[];
       toolName?: string;
@@ -207,7 +259,7 @@ export async function getReplyFromAgent(params: {
   });
 
   // session 获取当前聊天信息，剪枝为仅保留 user/assistant 的文本内容
-  const chatHistoryText = pruneSessionChat(getHistory());
+  const chatHistoryText = pruneSessionChat(getSessionMessageEntrys());
 
   // 提示词函数是纯组合器：数据由调用方准备后传入。
   const prompt = buildSystemPrompt({

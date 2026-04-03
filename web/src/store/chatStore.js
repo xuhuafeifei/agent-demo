@@ -22,8 +22,11 @@ export const useChatStore = create((set, get) => {
 
     /**
      * 添加用户消息
+     * @param {string} text
+     * @param {number} [timestamp] 可选；历史回填时需与后端/同轮 assistant 时间戳一致，否则排序会乱
      */
-    addUserMessage: (text) => {
+    addUserMessage: (text, timestamp) => {
+      const ts = timestamp ?? Date.now();
       set((state) => ({
         messages: [
           ...state.messages,
@@ -31,13 +34,13 @@ export const useChatStore = create((set, get) => {
             id: uid(),
             role: "user",
             content: text,
-            timestamp: Date.now(),
+            timestamp: ts,
           },
         ],
       }));
-      
+
       // 用户消息也更新 event 类型
-      lastEventType = 'user_message';
+      lastEventType = "user_message";
     },
 
     /**
@@ -84,12 +87,17 @@ export const useChatStore = create((set, get) => {
         const next = [...state.messages];
 
         // 关键逻辑：根据上一个 event 类型判断
-        if (lastEventType === 'agent_message_chunk' && idx !== null && idx >= 0 && idx < next.length) {
+        if (
+          lastEventType === "agent_message_chunk" &&
+          idx !== null &&
+          idx >= 0 &&
+          idx < next.length
+        ) {
           // 上一次也是 assistant，追加到当前消息
           const target = next[idx];
           next[idx] = {
             ...target,
-            content: (target.content || '') + chunk,
+            content: (target.content || "") + chunk,
           };
         } else {
           // 上一次不是 assistant（可能是 tool_call 或 thinking），创建新的 assistant 消息
@@ -104,7 +112,7 @@ export const useChatStore = create((set, get) => {
         }
 
         // 更新上一个 event 类型
-        lastEventType = 'agent_message_chunk';
+        lastEventType = "agent_message_chunk";
 
         return { messages: next, isThinking: false };
       });
@@ -131,12 +139,15 @@ export const useChatStore = create((set, get) => {
             : (baseTimestamp ?? Date.now());
 
         // 关键逻辑：根据上一个 event 类型判断
-        if (lastEventType === 'agent_thought_chunk' && thinkingMessageIndex !== null) {
+        if (
+          lastEventType === "agent_thought_chunk" &&
+          thinkingMessageIndex !== null
+        ) {
           // 上一次也是 thinking，追加到当前消息
           const target = next[thinkingMessageIndex];
           next[thinkingMessageIndex] = {
             ...target,
-            content: (target.content || '') + chunk,
+            content: (target.content || "") + chunk,
           };
         } else {
           // 上一次不是 thinking（可能是 tool_call 或其他），创建新的 thinking 消息
@@ -150,7 +161,7 @@ export const useChatStore = create((set, get) => {
         }
 
         // 更新上一个 event 类型
-        lastEventType = 'agent_thought_chunk';
+        lastEventType = "agent_thought_chunk";
 
         return { messages: next, isThinking: true };
       });
@@ -162,7 +173,7 @@ export const useChatStore = create((set, get) => {
     endStreaming: () => {
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
-      lastEventType = null;  // 重置 event 类型
+      lastEventType = null; // 重置 event 类型
       set({ isStreaming: false, isThinking: false });
     },
 
@@ -197,9 +208,9 @@ export const useChatStore = create((set, get) => {
 
       // ToolCall 添加后，断开 assistant 流
       get().breakAssistantSegment();
-      
+
       // 更新上一个 event 类型
-      lastEventType = 'tool_call';
+      lastEventType = "tool_call";
     },
 
     /**
@@ -208,13 +219,13 @@ export const useChatStore = create((set, get) => {
     updateToolCall: (toolCallId, update) => {
       set((state) => ({
         toolCalls: state.toolCalls.map((tool) =>
-          tool.toolCallId === toolCallId ? { ...tool, ...update } : tool
+          tool.toolCallId === toolCallId ? { ...tool, ...update } : tool,
         ),
         isThinking: false,
       }));
-      
+
       // 更新上一个 event 类型
-      lastEventType = 'tool_call_update';
+      lastEventType = "tool_call_update";
     },
 
     addContextSnapshot: (payload) => {
@@ -269,7 +280,7 @@ export const useChatStore = create((set, get) => {
 
       // 合并并按时间戳排序
       return [...regularMessages, ...toolCallMessages].sort(
-        (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
+        (a, b) => (a.timestamp || 0) - (b.timestamp || 0),
       );
     },
 
@@ -277,7 +288,12 @@ export const useChatStore = create((set, get) => {
      * 清空消息
      */
     clearMessages: () => {
-      set({ messages: [], toolCalls: [], contextEvents: [], isThinking: false });
+      set({
+        messages: [],
+        toolCalls: [],
+        contextEvents: [],
+        isThinking: false,
+      });
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
       lastEventType = null;

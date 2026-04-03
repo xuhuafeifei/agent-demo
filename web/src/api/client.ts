@@ -61,6 +61,15 @@ export interface OAuthPollResponse {
   error?: string;
 }
 
+export interface HistoryEntry {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  contextSnapshot?: unknown;
+  contextUsed?: unknown;
+}
+
 export interface MemorySearchTestResult {
   mode: string;
   dimensions?: number;
@@ -241,13 +250,11 @@ export class ApiClient {
    */
   readonly history = {
     /**
-     * Get conversation history
+     * Get conversation history (backend returns default limit)
      */
-    get: (limit?: number) =>
-      request<{ history: any[] }>(
-        limit
-          ? `${this.baseURL}/history?limit=${limit}`
-          : `${this.baseURL}/history`
+    get: () =>
+      request<{ history: HistoryEntry[] }>(
+        `${this.baseURL}/history`
       ),
 
     /**
