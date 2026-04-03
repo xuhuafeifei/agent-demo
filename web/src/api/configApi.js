@@ -97,3 +97,13 @@ export async function pollQwenPortalOAuth(oauthSessionId) {
   }
   return payload;
 }
+
+export async function getHistory() {
+  return requestJson("/api/history");
+}
+
+export async function clearHistory() {
+  return requestJson("/api/clear", {
+    method: "POST",
+  });
+}

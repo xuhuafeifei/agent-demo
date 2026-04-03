@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useChatStore } from "./store/chatStore";
 import { useSSEChat } from "./hooks/useSSEChat";
+import { getHistory, clearHistory } from "./api/configApi";
 import Sidebar, { SIDEBAR_KEY, navItems } from "./components/Sidebar";
 import Header from "./components/Header";
 import ContextSnapshotDock from "./components/ContextSnapshotDock";
@@ -38,6 +39,7 @@ export default function App() {
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [forceScrollToBottom, setForceScrollToBottom] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const scrollRef = useRef(null);
 
   const getAllMessages = useChatStore((state) => state.getAllMessages);
@@ -48,6 +50,11 @@ export default function App() {
   const contextEvents = useChatStore((state) => state.contextEvents);
   const addUserMessage = useChatStore((state) => state.addUserMessage);
   const endStreaming = useChatStore((state) => state.endStreaming);
+  const clearMessages = useChatStore((state) => state.clearMessages);
+  const addContextSnapshot = useChatStore((state) => state.addContextSnapshot);
+  const addContextUsed = useChatStore((state) => state.addContextUsed);
+  const startStreaming = useChatStore((state) => state.startStreaming);
+  const appendStreamChunk = useChatStore((state) => state.appendStreamChunk);
 
   const { sendMessage } = useSSEChat();
 
@@ -73,6 +80,50 @@ export default function App() {
       setCollapsed(saved);
     }
   }, []);
+
+  // 加载历史消息
+  useEffect(() => {
+    let mounted = true;
+    async function loadHistory() {
+      try {
+        const response = await getHistory();
+        if (!mounted || !response.success) return;
+
+        const history = response.history || [];
+        // 清空当前消息
+        clearMessages();
+
+        // 将历史消息添加到 chatStore
+        history.forEach((item) => {
+          if (item.role === "user") {
+            addUserMessage(item.content);
+          } else if (item.role === "assistant") {
+            // 添加 assistant 消息
+            const { addContextSnapshot, addContextUsed } = useChatStore();
+            if (item.contextSnapshot) {
+              addContextSnapshot(item.contextSnapshot);
+            }
+            if (item.contextUsed) {
+              addContextUsed(item.contextUsed);
+            }
+            // 添加 assistant 内容
+            const { startStreaming, appendStreamChunk, endStreaming } = useChatStore();
+            startStreaming(item.timestamp);
+            appendStreamChunk(item.content, item.timestamp);
+            endStreaming();
+          }
+        });
+
+        setHistoryLoaded(true);
+      } catch (error) {
+        console.error("Failed to load history:", error);
+      }
+    }
+    loadHistory();
+    return () => {
+      mounted = false;
+    };
+  }, [historyLoaded]);
 
   useEffect(() => {
     const onResize = () => {
