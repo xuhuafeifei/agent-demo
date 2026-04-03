@@ -70,7 +70,7 @@ async function runSingleTask(
   const config = getHeartbeatConfig();
   const startedAt = nowChinaIso();
   // 状态切到 running，累计 attempts
-  await markTaskRunning(task.id, startedAt);
+  // await markTaskRunning(task.id, startedAt);
 
   let result: HandlerResult;
   try {

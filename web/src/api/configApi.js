@@ -30,8 +30,32 @@ export async function resetFgbgConfig() {
   });
 }
 
+/** 记忆嵌入连通性测试（与 embedding-provider 同源，不依赖先保存配置） */
+export async function testMemorySearchConfig(memorySearch) {
+  return requestJson("/api/config/memory-search/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ memorySearch }),
+  });
+}
+
+/** 本地模式：按当前表单配置尝试下载/修复 GGUF（与 createLocalPrepareStrategy.repair 一致） */
+export async function repairLocalMemorySearch(memorySearch) {
+  return requestJson("/api/config/memory-search/repair-local", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ memorySearch }),
+  });
+}
+
 export async function getProviderModels(providerId) {
   return requestJson(`/api/config/models/${encodeURIComponent(providerId)}`);
+}
+
+export async function evictLoggingCache() {
+  return requestJson("/api/config/logging/evict-cache", {
+    method: "POST",
+  });
 }
 
 export async function getSupportedModelProviders() {

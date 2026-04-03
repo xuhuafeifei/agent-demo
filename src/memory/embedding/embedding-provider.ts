@@ -251,6 +251,31 @@ export type PrepareStrategy = {
  * - connect(): 检查模型文件是否存在
  * - repair(): 下载模型文件（如果配置允许）
  */
+/**
+ * 尝试按当前 memorySearch（本地）配置下载/修复 GGUF（与配置页「下载模型」一致）。
+ */
+export async function repairLocalMemorySearchModel(
+  memorySearch: MemorySearchConfig,
+): Promise<{ ok: boolean; error?: string }> {
+  if (memorySearch.mode !== "local") {
+    return { ok: false, error: "仅本地模式可下载或修复嵌入模型" };
+  }
+  try {
+    const strategy = createLocalPrepareStrategy(memorySearch);
+    const ok = await strategy.repair();
+    return ok
+      ? { ok: true }
+      : {
+          ok: false,
+          error:
+            "自动下载未成功。请确认已开启「允许自动下载」、下载地址可访问，或将 .gguf 放入 embedding 目录。",
+        };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: message };
+  }
+}
+
 export function createLocalPrepareStrategy(
   config: MemorySearchConfig,
 ): PrepareStrategy {
@@ -537,23 +562,166 @@ function createLocalStrategy(
 }
 
 // ---------------------------------------------------------------------------
-// Remote 策略：占位，后续接 HTTP API
+// Remote 策略：OpenAI 兼容 POST /v1/embeddings
 // ---------------------------------------------------------------------------
 
-/** Remote 策略占位：后续可接 endpoint + apiKey 的 HTTP 调用。 */
+type OpenAiEmbeddingResponse = {
+  data?: Array<{ index?: number; embedding?: number[] }>;
+  error?: { message?: string };
+};
+
+/**
+ * 调用远程 OpenAI 兼容 embeddings API（单请求可含多条 input）。
+ */
+async function fetchRemoteEmbeddings(
+  memorySearch: MemorySearchConfig,
+  texts: string[],
+): Promise<number[][]> {
+  const endpoint = memorySearch.endpoint.trim();
+  const apiKey = memorySearch.apiKey.trim();
+  const model = memorySearch.model.trim();
+  if (!endpoint) {
+    throw new Error("remote 模式需要配置 endpoint");
+  }
+  if (!apiKey) {
+    throw new Error("remote 模式需要配置 apiKey");
+  }
+  if (!model) {
+    throw new Error("remote 模式需要配置 model（嵌入模型名）");
+  }
+
+  const truncated = texts.map((t) => truncateForEmbedding(t));
+  const input = truncated.length === 1 ? truncated[0] : truncated;
+
+  const timeoutMs = Math.min(
+    Math.max(memorySearch.download?.timeout ?? 60_000, 5_000),
+    120_000,
+  );
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, input }),
+      signal: controller.signal,
+    });
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      throw new Error(
+        `远程嵌入请求失败 HTTP ${response.status}: ${rawText.slice(0, 480)}`,
+      );
+    }
+
+    let json: OpenAiEmbeddingResponse;
+    try {
+      json = JSON.parse(rawText) as OpenAiEmbeddingResponse;
+    } catch {
+      throw new Error("远程嵌入响应不是合法 JSON");
+    }
+
+    if (json.error?.message) {
+      throw new Error(json.error.message);
+    }
+
+    const rows = json.data;
+    if (!rows?.length) {
+      throw new Error("远程嵌入响应中无 data");
+    }
+
+    const hasIndex = rows.some((r) => typeof r.index === "number");
+    const ordered = hasIndex
+      ? [...rows].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+      : rows;
+    const out = ordered.map((row) => row.embedding);
+    if (out.some((e) => !e?.length)) {
+      throw new Error("远程嵌入响应中某条缺少 embedding 向量");
+    }
+    return out as number[][];
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function createRemoteStrategy(
-  _memorySearch: MemorySearchConfig,
+  memorySearch: MemorySearchConfig,
 ): EmbeddingStrategy {
-  const message =
-    "remote embedding mode is not implemented yet. Use mode: 'local' or implement remote strategy.";
   return {
-    async embedText(): Promise<number[]> {
-      throw new Error(message);
+    async embedText(text: string): Promise<number[]> {
+      const batch = await fetchRemoteEmbeddings(memorySearch, [text]);
+      return batch[0];
     },
-    async embedTextBatch(): Promise<number[][]> {
-      throw new Error(message);
+    async embedTextBatch(texts: string[]): Promise<number[][]> {
+      return fetchRemoteEmbeddings(memorySearch, texts);
     },
   };
+}
+
+/** 连通性测试结果（不经过全局策略缓存，用于配置页「测试」） */
+export type MemorySearchTestResult =
+  | {
+      ok: true;
+      mode: "local" | "remote";
+      dimensions: number;
+      durationMs: number;
+      warning?: string;
+    }
+  | { ok: false; error: string };
+
+const MEMORY_SEARCH_TEST_PROMPT = "memory search connectivity test";
+
+/**
+ * 对当前 memorySearch 配置做一次真实嵌入调用（local：GGUF；remote：HTTP）。
+ * 不读写全局 cachedStrategy，避免测试污染线上缓存路径。
+ */
+export async function testMemorySearchEmbedding(
+  memorySearch: MemorySearchConfig,
+): Promise<MemorySearchTestResult> {
+  const started = Date.now();
+  try {
+    if (memorySearch.mode === "remote") {
+      if (!memorySearch.endpoint?.trim()) {
+        return { ok: false, error: "remote 模式需要 endpoint" };
+      }
+      if (!memorySearch.apiKey?.trim()) {
+        return { ok: false, error: "remote 模式需要 apiKey" };
+      }
+      if (!memorySearch.model?.trim()) {
+        return { ok: false, error: "remote 模式需要 model（嵌入模型名）" };
+      }
+    }
+
+    const strategy =
+      memorySearch.mode === "remote"
+        ? createRemoteStrategy(memorySearch)
+        : createLocalStrategy(memorySearch);
+
+    const vec = await strategy.embedText(MEMORY_SEARCH_TEST_PROMPT);
+    const durationMs = Date.now() - started;
+    const dimensions = vec.length;
+
+    const expected = memorySearch.embeddingDimensions;
+    let warning: string | undefined;
+    if (expected > 0 && dimensions !== expected) {
+      warning = `向量维度为 ${dimensions}，与配置的 embeddingDimensions（${expected}）不一致`;
+    }
+
+    return {
+      ok: true,
+      mode: memorySearch.mode,
+      dimensions,
+      durationMs,
+      ...(warning ? { warning } : {}),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: message };
+  }
 }
 
 // ---------------------------------------------------------------------------

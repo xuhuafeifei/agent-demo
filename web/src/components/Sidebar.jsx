@@ -1,8 +1,5 @@
 import { useState, useRef } from "react";
-import {
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 const SIDEBAR_KEY = "agent_demo_sidebar_collapsed";
 
@@ -78,9 +75,11 @@ export default function Sidebar({
                 }}
                 onMouseEnter={(event) => {
                   if (isMobile || !collapsed) return;
+                  const target = event.currentTarget;
                   window.clearTimeout(tooltipTimerRef.current);
                   tooltipTimerRef.current = window.setTimeout(() => {
-                    const rect = event.currentTarget.getBoundingClientRect();
+                    if (!target) return;
+                    const rect = target.getBoundingClientRect();
                     setTooltip({
                       show: true,
                       text: item.label,

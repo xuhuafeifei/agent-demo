@@ -72,6 +72,13 @@ function getCachedOrLoadConfig(): LoggingConfig {
   return cfg;
 }
 
+/**
+ * 清除日志配置缓存，强制下次读取时重新加载配置
+ */
+export function evictLoggingConfigCache(): void {
+  loggingCache = null;
+}
+
 function toDateText(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");

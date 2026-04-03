@@ -17,6 +17,10 @@ import {
   writeFgbgUserConfig,
 } from "../../config/index.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import {
+  repairLocalMemorySearchModel,
+  testMemorySearchEmbedding,
+} from "../../memory/embedding/embedding-provider.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -163,6 +167,35 @@ type RecursivePartial<T> = {
       ? RecursivePartial<T[P]>
       : T[P];
 };
+
+function mergeMemorySearchForTest(
+  base: FgbgUserConfig,
+  partial?: RecursivePartial<FgbgUserConfig["agents"]["memorySearch"]>,
+): FgbgUserConfig["agents"]["memorySearch"] {
+  const ms = base.agents.memorySearch;
+  if (!partial) {
+    return ms;
+  }
+  const partialModel =
+    typeof partial.model === "string" && partial.model.trim() !== ""
+      ? partial.model.trim()
+      : undefined;
+  return {
+    mode: (partial.mode as FgbgUserConfig["agents"]["memorySearch"]["mode"]) ??
+      ms.mode,
+    model: partialModel ?? ms.model,
+    endpoint: partial.endpoint ?? ms.endpoint,
+    apiKey: partial.apiKey ?? ms.apiKey,
+    chunkMaxChars: partial.chunkMaxChars ?? ms.chunkMaxChars,
+    embeddingDimensions:
+      partial.embeddingDimensions ?? ms.embeddingDimensions,
+    download: {
+      url: partial.download?.url ?? ms.download.url,
+      timeout: partial.download?.timeout ?? ms.download.timeout,
+      enabled: partial.download?.enabled ?? ms.download.enabled,
+    },
+  };
+}
 
 /** 预留：当前无受保护字段；qwen-portal 支持 OAuth 与手动 API Key 二选一写入配置 */
 const PROTECTED_PATHS = new Set<string>();
@@ -497,6 +530,75 @@ export function createWebLayer() {
     }
   });
 
+  router.post("/config/memory-search/test", async (req, res) => {
+    try {
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const partial = (
+        body as {
+          memorySearch?: RecursivePartial<
+            FgbgUserConfig["agents"]["memorySearch"]
+          >;
+        }
+      ).memorySearch;
+      const base = readFgbgUserConfig();
+      const merged = mergeMemorySearchForTest(base, partial);
+      const result = await testMemorySearchEmbedding(merged);
+      if (result.ok) {
+        res.json({
+          success: true,
+          mode: result.mode,
+          dimensions: result.dimensions,
+          durationMs: result.durationMs,
+          ...(result.warning ? { warning: result.warning } : {}),
+        });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error(
+        "[memory-search/test] %s",
+        runtimeError.message,
+        runtimeError,
+      );
+      res.status(500).json({ success: false, error: runtimeError.message });
+    }
+  });
+
+  router.post("/config/memory-search/repair-local", async (req, res) => {
+    try {
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const partial = (
+        body as {
+          memorySearch?: RecursivePartial<
+            FgbgUserConfig["agents"]["memorySearch"]
+          >;
+        }
+      ).memorySearch;
+      const base = readFgbgUserConfig();
+      const merged = mergeMemorySearchForTest(base, partial);
+      const result = await repairLocalMemorySearchModel(merged);
+      if (result.ok) {
+        res.json({
+          success: true,
+          message: "已尝试下载或修复本地嵌入模型",
+        });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error(
+        "[memory-search/repair-local] %s",
+        runtimeError.message,
+        runtimeError,
+      );
+      res.status(500).json({ success: false, error: runtimeError.message });
+    }
+  });
+
   router.post("/config/qwen-portal/oauth/start", async (_req, res) => {
     try {
       const { createQwenPortalDeviceSession } =
@@ -656,6 +758,100 @@ export function createWebLayer() {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error("[config/models] %s", runtimeError.message, runtimeError);
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
+  // API 路由：获取所有支持的供应商列表
+  router.get("/config/providers", (_req, res) => {
+    try {
+      const { buildImplicitProviderTemplates } = require("../../agent/pi-embedded-runner/model-config.js");
+      const templates = buildImplicitProviderTemplates();
+      const providers = Object.keys(templates).map((id) => {
+        const template = templates[id];
+        return {
+          id,
+          name: template?.models?.[0]?.name || id,
+          baseUrl: template?.baseUrl || "",
+          api: template?.api || "",
+          isBuiltin: true,
+        };
+      });
+      res.json({ success: true, providers });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/providers] %s", runtimeError.message, runtimeError);
+      res.status(500).json({ success: false, error: runtimeError.message });
+    }
+  });
+
+  // API 路由：获取指定供应商的详细配置
+  router.get("/config/providers/:id", (req, res) => {
+    try {
+      const providerId = req.params.id;
+      const { buildImplicitProviderTemplates } = require("../../agent/pi-embedded-runner/model-config.js");
+      const templates = buildImplicitProviderTemplates();
+      const template = templates[providerId];
+      if (!template) {
+        return res.status(404).json({
+          success: false,
+          error: `Provider "${providerId}" not found in built-in providers`,
+        });
+      }
+      res.json({
+        success: true,
+        provider: {
+          id: providerId,
+          baseUrl: template.baseUrl,
+          api: template.api,
+          models: template.models,
+          isBuiltin: true,
+        },
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/providers/:id] %s", runtimeError.message, runtimeError);
+      res.status(500).json({ success: false, error: runtimeError.message });
+    }
+  });
+
+  // API 路由：获取默认供应商
+  router.get("/config/default-provider", (_req, res) => {
+    try {
+      const { getDefaultModelProvider } = require("../../config/index.js");
+      const defaultProvider = getDefaultModelProvider();
+      res.json({ success: true, defaultProvider });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/default-provider] %s", runtimeError.message, runtimeError);
+      res.status(500).json({ success: false, error: runtimeError.message });
+    }
+  });
+
+  // API 路由：刷新日志配置缓存
+  router.post("/config/logging/evict-cache", async (_req, res) => {
+    try {
+      const { evictLoggingConfigCache } =
+        await import("../../logger/logger.js");
+      evictLoggingConfigCache();
+      res.json({
+        success: true,
+        message: "日志配置缓存已清除",
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error(
+        "[config/logging/evict] %s",
+        runtimeError.message,
+        runtimeError,
+      );
       res.status(500).json({
         success: false,
         error: runtimeError.message,

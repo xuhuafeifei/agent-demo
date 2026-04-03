@@ -1,7 +1,8 @@
 import type sqlite from "node:sqlite";
 import { resolveTaskDbPath } from "./paths.js";
-import { getSubsystemLogger } from "../logger/logger.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { nowChinaIso } from "./time.js";
+import { createSerialExecutor } from "./serial-sql.js";
 
 export type TaskStatus = "pending" | "running" | "done" | "failed" | "timeout";
 export type TaskDetailStatus = "success" | "failed" | "timeout";
@@ -49,11 +50,13 @@ export type NewTaskInput = {
   next_run_time?: string;
 };
 
+const serialExecutor = createSerialExecutor();
+
 type SqliteModule = typeof import("node:sqlite");
 
 let sqliteModule: SqliteModule | null = null;
 let db: sqlite.DatabaseSync | null = null;
-const storeLogger = getSubsystemLogger("watch-dog-store");
+const storeLogger = getSubsystemConsoleLogger("watch-dog-store");
 
 /**
  * 动态加载 node:sqlite 模块
@@ -193,20 +196,32 @@ export async function listDueTasks(
   nowIso: string,
 ): Promise<TaskScheduleRow[]> {
   const database = await getDb();
-  const stmt = database.prepare(
-    `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
-            schedule_kind, schedule_expr, timezone,
-            create_time, update_time, next_run_time, started_at, finished_at
-     FROM task_schedule
-     WHERE status = 'pending' AND next_run_time <= ?
-     ORDER BY next_run_time ASC
-     LIMIT ?`,
-  );
-  return stmt.all(nowIso, limit) as TaskScheduleRow[];
+  // 交给串行执行器执行
+  return serialExecutor.execute(async () => {
+    // 使用 UPDATE ... RETURNING 语法实现原子查询并更新
+    const stmt = database.prepare(
+      `UPDATE task_schedule
+     SET status = 'running',
+         update_time = CURRENT_TIMESTAMP,
+         started_at = CURRENT_TIMESTAMP,
+         attempts = COALESCE(attempts, 0) + 1
+     WHERE id IN (
+        SELECT id FROM task_schedule
+        WHERE status = 'pending' AND next_run_time <= ?
+        ORDER BY next_run_time ASC
+        LIMIT ?
+     )
+     RETURNING id, task_name, task_type, payload_text, status, attempts, last_error,
+               schedule_kind, schedule_expr, timezone,
+               create_time, update_time, next_run_time, started_at, finished_at`,
+    );
+    return stmt.all(nowIso, limit) as TaskScheduleRow[];
+  });
 }
 
 /**
  * 查询所有任务（按 next_run_time 升序）
+ * 暴露给 function tool
  */
 export async function listAllTasks(): Promise<TaskScheduleRow[]> {
   const database = await getDb();
@@ -266,29 +281,33 @@ export async function getTaskByName(
  */
 export async function deleteTaskByName(taskName: string): Promise<boolean> {
   const database = await getDb();
-  const selectStmt = database.prepare(
-    `SELECT id FROM task_schedule WHERE task_name = ?`,
-  );
-  const row = selectStmt.get(taskName) as { id: number } | undefined;
-  if (!row) return false;
+  // 交由串行执行器执行
+  return serialExecutor.execute(async () => {
+    const selectStmt = database.prepare(
+      `SELECT id FROM task_schedule WHERE task_name = ?`,
+    );
+    const row = selectStmt.get(taskName) as { id: number } | undefined;
+    if (!row) return false;
 
-  const deleteDetailsStmt = database.prepare(
-    `DELETE FROM task_schedule_detail WHERE task_id = ?`,
-  );
-  deleteDetailsStmt.run(row.id);
+    const deleteDetailsStmt = database.prepare(
+      `DELETE FROM task_schedule_detail WHERE task_id = ?`,
+    );
+    deleteDetailsStmt.run(row.id);
 
-  const deleteTaskStmt = database.prepare(
-    `DELETE FROM task_schedule WHERE id = ?`,
-  );
-  const result = deleteTaskStmt.run(row.id);
-  const deleted = typeof result.changes === "number" && result.changes > 0;
-  if (deleted) {
-    storeLogger.info("[watch-dog-store] delete task_schedule name=%s id=%s", taskName, row.id);
-  }
-  return deleted;
+    const deleteTaskStmt = database.prepare(
+      `DELETE FROM task_schedule WHERE id = ?`,
+    );
+    const result = deleteTaskStmt.run(row.id);
+    const deleted = typeof result.changes === "number" && result.changes > 0;
+    if (deleted) {
+      storeLogger.info("delete task_schedule name=%s id=%s", taskName, row.id);
+    }
+    return deleted;
+  });
 }
 
 /**
+ * @deprecated 使用listDueTasks取代, 该方法是原子操作.
  * 标记任务为运行中状态
  * 更新状态为 running，设置开始时间，增加尝试次数
  * @param taskId - 任务 ID
@@ -299,15 +318,24 @@ export async function markTaskRunning(
   startedAtIso: string,
 ): Promise<void> {
   const database = await getDb();
-  const stmt = database.prepare(
-    `UPDATE task_schedule
+  // 交由串行执行器执行
+  serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `UPDATE task_schedule
      SET status='running',
          started_at=?,
          update_time=?,
          attempts=attempts+1
      WHERE id=?`,
-  );
-  stmt.run(startedAtIso, startedAtIso, taskId);
+    );
+    stmt.run(startedAtIso, startedAtIso, taskId);
+    // log
+    storeLogger.info(
+      "mark task_schedule id=%s status=running started_at=%s",
+      taskId,
+      startedAtIso,
+    );
+  });
 }
 
 /**
@@ -323,19 +351,31 @@ export async function finalizeTask(params: {
   lastError?: string | null;
 }): Promise<void> {
   const database = await getDb();
-  const stmt = database.prepare(
-    `UPDATE task_schedule
+  // 交给串行执行器执行
+  serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `UPDATE task_schedule
      SET status = ?, finished_at = ?, update_time = ?, next_run_time = COALESCE(?, next_run_time), last_error = ?
      WHERE id = ?`,
-  );
-  stmt.run(
-    params.status,
-    params.finishedAtIso,
-    params.finishedAtIso,
-    params.nextRunTimeIso ?? null,
-    params.lastError ?? null,
-    params.taskId,
-  );
+    );
+    stmt.run(
+      params.status,
+      params.finishedAtIso,
+      params.finishedAtIso,
+      params.nextRunTimeIso ?? null,
+      params.lastError ?? null,
+      params.taskId,
+    );
+    // log
+    storeLogger.info(
+      "finalize task_schedule id=%s status=%s finished_at=%s next_run_time=%s last_error=%s",
+      params.taskId,
+      params.status,
+      params.finishedAtIso,
+      params.nextRunTimeIso ?? null,
+      params.lastError ?? null,
+    );
+  });
 }
 
 /**
@@ -353,29 +393,32 @@ export async function insertTaskDetail(params: {
 }): Promise<void> {
   const database = await getDb();
   const now = nowChinaIso();
-  const stmt = database.prepare(
-    `INSERT INTO task_schedule_detail
+  // 交由串行执行器执行
+  serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `INSERT INTO task_schedule_detail
       (task_id, start_time, end_time, create_time, update_time, status, error_message, executor)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  stmt.run(
-    params.taskId,
-    params.startTimeIso,
-    params.endTimeIso,
-    now,
-    now,
-    params.status,
-    params.errorMessage ?? null,
-    params.executor ?? null,
-  );
-  storeLogger.info(
-    "insert task_schedule_detail tas_id=%s status=%s executor=%s start=%s end=%s",
-    params.taskId,
-    params.status,
-    params.executor ?? "unknown",
-    params.startTimeIso,
-    params.endTimeIso,
-  );
+    );
+    stmt.run(
+      params.taskId,
+      params.startTimeIso,
+      params.endTimeIso,
+      now,
+      now,
+      params.status,
+      params.errorMessage ?? null,
+      params.executor ?? null,
+    );
+    storeLogger.info(
+      "insert task_schedule_detail tas_id=%s status=%s executor=%s start=%s end=%s",
+      params.taskId,
+      params.status,
+      params.executor ?? "unknown",
+      params.startTimeIso,
+      params.endTimeIso,
+    );
+  });
 }
 
 /**
@@ -386,9 +429,23 @@ export async function insertTaskDetail(params: {
  */
 export async function cleanupOldDetails(cutoffIso: string): Promise<number> {
   const database = await getDb();
-  const stmt = database.prepare(
-    `DELETE FROM task_schedule_detail WHERE create_time < ?`,
-  );
-  const result = stmt.run(cutoffIso);
-  return typeof result.changes === "number" ? result.changes : 0;
+  // 交由串行执行器执行
+  return serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `DELETE FROM task_schedule_detail WHERE create_time < ?`,
+    );
+    const result = stmt.run(cutoffIso);
+    const deleted =
+      typeof result.changes === "number" && result.changes > 0
+        ? result.changes
+        : 0;
+    if (deleted > 0) {
+      storeLogger.info(
+        "cleanup task_schedule_detail cutoff=%s deleted=%s",
+        cutoffIso,
+        deleted,
+      );
+    }
+    return deleted;
+  });
 }
