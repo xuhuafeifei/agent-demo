@@ -1,0 +1,96 @@
+/* ─── Message Component ───────────────────────────────────────── */
+.message-container {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+  max-width: 600px;
+  width: calc(100% - 40px);
+}
+
+.message-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-radius: 10px;
+  border-left: 4px solid;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0;
+  transform: translateY(-20px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: auto;
+  cursor: default;
+}
+
+.message-item.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.message-item.closing {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+.message-icon {
+  flex-shrink: 0;
+}
+
+.message-content {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.message-close-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.6;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease;
+}
+
+.message-close-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Message types */
+.message-success {
+  background: #f0fdf4;
+  border-left-color: #10b981;
+  color: #059669;
+}
+
+.message-error {
+  background: #fef2f2;
+  border-left-color: #ef4444;
+  color: #dc2626;
+}
+
+.message-warning {
+  background: #fffbeb;
+  border-left-color: #f59e0b;
+  color: #d97706;
+}
+
+.message-info {
+  background: #eff6ff;
+  border-left-color: #3b82f6;
+  color: #2563eb;
+}

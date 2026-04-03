@@ -1,3 +1,4 @@
+import React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -167,8 +168,8 @@ export function ProviderListItem({
       onClick={() => onSelect(provider.id)}
     >
       <span className="settings-provider-icon">
-        {isComponent ? <IconEl size={20} /> : IconEl}
-      </span>
+      {isComponent ? React.createElement(IconEl, { size: 20 }) : String(IconEl)}
+    </span>
       <span className="settings-provider-name">{provider.name}</span>
       {provider.featureCount ? (
         <span className="settings-provider-badge">{provider.featureCount}</span>

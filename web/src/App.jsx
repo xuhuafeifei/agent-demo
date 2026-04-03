@@ -16,7 +16,9 @@ import ContextSnapshotDock from "./components/ContextSnapshotDock";
 import MessageList from "./components/MessageList";
 import InputArea from "./components/InputArea";
 import SettingsPage from "./components/SettingsPage";
+import { MessageContainer } from "./components/Message";
 import "./styles.css";
+import "./styles/message.css";
 
 // Attach icons to navItems
 navItems[0].icon = MessageSquare;
@@ -180,6 +182,9 @@ export default function App() {
 
   return (
     <div className="app-bg">
+      {/* Global Message Container */}
+      <MessageContainer />
+      
       <div className={shellClassName}>
         <Sidebar
           collapsed={collapsed}

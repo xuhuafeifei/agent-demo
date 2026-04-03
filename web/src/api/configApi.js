@@ -70,6 +70,14 @@ export async function getDefaultModelProvider() {
   return requestJson("/api/config/default");
 }
 
+export async function testModelConnection(params) {
+  return requestJson("/api/config/test-connection", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+}
+
 export async function getModelProviderInfo() {
   return requestJson("/api/config/providers");
 }

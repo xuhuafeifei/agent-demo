@@ -12,7 +12,9 @@ import {
   testMemorySearchConfig,
   repairLocalMemorySearch,
   getDefaultModelProvider,
+  testModelConnection,
 } from "../api/configApi";
+import MessageManager from "./Message";
 import { X } from "lucide-react";
 import {
   TABS,
@@ -384,11 +386,35 @@ export default function SettingsPage() {
   };
 
   const handleTestConnection = async () => {
+    if (!detailForm.baseUrl || !detailForm.apiKey || !detailForm.modelName) {
+      setConnectionResult("error");
+      MessageManager.error("请填写 Base URL、API Key 和模型名称后再测试连接。");
+      return;
+    }
+
     setTestingConnection(true);
     setConnectionResult(null);
-    await new Promise((r) => setTimeout(r, 1500));
-    setTestingConnection(false);
-    setConnectionResult(detailForm.apiKey ? "success" : "error");
+
+    try {
+      const result = await testModelConnection({
+        baseUrl: detailForm.baseUrl,
+        apiKey: detailForm.apiKey,
+        model: detailForm.modelName,
+      });
+
+      if (result.success) {
+        setConnectionResult("success");
+        MessageManager.success("连接测试成功！");
+      } else {
+        setConnectionResult("error");
+        MessageManager.error(`连接失败: ${result.error}`);
+      }
+    } catch (error) {
+      setConnectionResult("error");
+      MessageManager.error(`连接测试异常: ${error.message}`);
+    } finally {
+      setTestingConnection(false);
+    }
   };
 
   /**

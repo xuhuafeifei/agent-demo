@@ -1,4 +1,5 @@
 import { useState } from "react";
+import React from "react";
 import { X, Plus, Globe } from "lucide-react";
 import { getProviderIcon, getProviderName } from "./settingsUtils";
 
@@ -49,6 +50,8 @@ function ProviderSelectorModal({ builtinTemplates, currentProviderIds, onSelect,
           {filtered.map((template) => {
             const icon = getProviderIcon(template.id);
             const name = getProviderName(template.id, template);
+            const isIconComponent = typeof icon === "function" || (icon && typeof icon === "object" && icon.$$typeof);
+            
             return (
               <button
                 key={template.id}
@@ -56,11 +59,15 @@ function ProviderSelectorModal({ builtinTemplates, currentProviderIds, onSelect,
                 onClick={() => onSelect({ type: "builtin", id: template.id })}
               >
                 <span className="provider-modal-item-icon">
-                  {typeof icon === "function" ? <icon size={20} /> : icon}
+                  {isIconComponent ? (
+                    React.createElement(icon, { size: 20 })
+                  ) : (
+                    String(icon)
+                  )}
                 </span>
                 <span className="provider-modal-item-info">
-                  <span className="provider-modal-item-name">{name}</span>
-                  <span className="provider-modal-item-id">{template.id}</span>
+                  <span className="provider-modal-item-name">{String(name)}</span>
+                  <span className="provider-modal-item-id">{String(template.id)}</span>
                 </span>
               </button>
             );

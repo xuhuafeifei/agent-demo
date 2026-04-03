@@ -152,5 +152,72 @@ export function createProvidersRouter() {
     }
   });
 
+  // POST /config/test-connection - 测试模型连接
+  router.post("/test-connection", async (req, res) => {
+    try {
+      const { baseUrl, apiKey, model, api } = req.body;
+      
+      if (!baseUrl || !apiKey || !model) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: baseUrl, apiKey, model",
+        });
+      }
+
+      const apiUrl = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+      const requestBody = {
+        model,
+        messages: [{ role: "user", content: "test" }],
+        max_tokens: 10,
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return res.status(200).json({
+          success: false,
+          error: `HTTP ${response.status}: ${errorText.slice(0, 200)}`,
+        });
+      }
+
+      const data = await response.json();
+      res.json({
+        success: true,
+        message: "连接成功",
+        responseTime: Date.now(),
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      
+      if (runtimeError.name === "AbortError") {
+        return res.json({
+          success: false,
+          error: "连接超时（10秒）",
+        });
+      }
+      
+      webLogger.error("[config/test-connection] %s", runtimeError.message, runtimeError);
+      res.json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
   return router;
 }
