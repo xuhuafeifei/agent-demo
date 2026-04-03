@@ -6,26 +6,38 @@ import { buildImplicitProviderTemplates } from "../../../agent/pi-embedded-runne
 const webLogger = getSubsystemConsoleLogger("web");
 
 /**
- * Providers config router: /config/providers, /config/models, /config/default-provider
+ * Providers config router
+ *
+ * 路由结构：
+ *   GET /config/providers        - 获取所有已配置的 provider（从 fgbg.json，有 apiKey 的）
+ *   GET /config/builtin-templates - 获取系统内置支持的 provider 模板（用于"添加供应商"弹窗）
+ *   GET /config/provider-info?id=xxx - 获取单个内置模板详情
+ *   GET /config/default          - 获取默认提供商
  */
 export function createProvidersRouter() {
   const router = Router();
 
-  // GET /config/providers - Get all built-in provider templates
-  router.get("/", (_req, res) => {
+  // GET /config/providers - 获取已配置的 provider 列表（从 fgbg.json 中读取，有 apiKey 的）
+  router.get("/providers", (_req, res) => {
     try {
-      const templates = buildImplicitProviderTemplates();
-      const providers = Object.keys(templates).map((id) => {
-        const template = templates[id];
-        return {
+      const config = readFgbgUserConfig();
+      const providersConfig = config.models?.providers || {};
+      
+      const configuredProviders = Object.entries(providersConfig)
+        .filter(([_, providerCfg]: [string, any]) => {
+          // 只返回有 apiKey 的已配置 provider
+          return providerCfg.apiKey && providerCfg.apiKey.trim().length > 0;
+        })
+        .map(([id, providerCfg]: [string, any]) => ({
           id,
-          name: template?.models?.[0]?.name || id,
-          baseUrl: template?.baseUrl || "",
-          api: template?.api || "",
-          isBuiltin: true,
-        };
-      });
-      res.json({ success: true, providers });
+          name: providerCfg.models?.[0]?.name || id,
+          baseUrl: providerCfg.baseUrl || "",
+          api: providerCfg.api || "openai-completions",
+          enabled: providerCfg.enabled !== false,
+          models: providerCfg.models || [],
+        }));
+
+      res.json({ success: true, providers: configuredProviders });
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
@@ -34,10 +46,36 @@ export function createProvidersRouter() {
     }
   });
 
-  // GET /config/providers/:id - Get detailed provider info
-  router.get("/:id", (req, res) => {
+  // GET /config/builtin-templates - 获取系统内置支持的 provider 模板（用于"添加供应商"弹窗）
+  router.get("/builtin-templates", (_req, res) => {
     try {
-      const providerId = req.params.id;
+      const templates = buildImplicitProviderTemplates();
+      const templateList = Object.entries(templates).map(([id, template]: [string, any]) => ({
+        id,
+        name: template.models?.[0]?.name || id,
+        baseUrl: template.baseUrl || "",
+        api: template.api || "openai-completions",
+        models: template.models || [],
+      }));
+      res.json({ success: true, templates: templateList });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/builtin-templates] %s", runtimeError.message, runtimeError);
+      res.status(500).json({ success: false, error: runtimeError.message });
+    }
+  });
+
+  // GET /config/provider-info?id=xxx - 获取单个内置模板详情
+  router.get("/provider-info", (req, res) => {
+    try {
+      const providerId = req.query.id as string;
+      if (!providerId) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required query parameter: id",
+        });
+      }
       const templates = buildImplicitProviderTemplates();
       const template = templates[providerId];
       if (!template) {
@@ -59,15 +97,21 @@ export function createProvidersRouter() {
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      webLogger.error("[config/providers/:id] %s", runtimeError.message, runtimeError);
+      webLogger.error("[config/provider-info] %s", runtimeError.message, runtimeError);
       res.status(500).json({ success: false, error: runtimeError.message });
     }
   });
 
-  // GET /config/models/:providerId - Get models for a provider
-  router.get("/models/:providerId", (req, res) => {
+  // GET /config/models?providerId=xxx - 获取某提供商的模型列表
+  router.get("/models", (req, res) => {
     try {
-      const providerId = req.params.providerId;
+      const providerId = req.query.providerId as string;
+      if (!providerId) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required query parameter: providerId",
+        });
+      }
       const config = readFgbgUserConfig();
       const provider = config.models.providers[providerId];
       if (!provider) {
@@ -76,7 +120,7 @@ export function createProvidersRouter() {
           error: `Provider "${providerId}" not found`,
         });
       }
-      const models = (provider.models || []).map((m) => ({
+      const models = (provider.models || []).map((m: any) => ({
         id: m.id,
         name: m.name,
       }));
@@ -95,15 +139,15 @@ export function createProvidersRouter() {
     }
   });
 
-  // GET /config/default-provider - Get default model provider
-  router.get("/default-provider", (_req, res) => {
+  // GET /config/default - 获取默认提供商
+  router.get("/default", (_req, res) => {
     try {
       const defaultProvider = getDefaultModelProvider();
       res.json({ success: true, defaultProvider });
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      webLogger.error("[config/default-provider] %s", runtimeError.message, runtimeError);
+      webLogger.error("[config/default] %s", runtimeError.message, runtimeError);
       res.status(500).json({ success: false, error: runtimeError.message });
     }
   });

@@ -5,11 +5,13 @@ import {
   resetFgbgConfig,
   getProviderModels,
   getSupportedModelProviders,
+  getConfiguredProviders,
   evictLoggingCache,
   startQwenPortalOAuth,
   pollQwenPortalOAuth,
   testMemorySearchConfig,
   repairLocalMemorySearch,
+  getDefaultModelProvider,
 } from "../api/configApi";
 import { X } from "lucide-react";
 import {
@@ -30,6 +32,7 @@ import SetModelPage from "./settings/SetModelPage";
 import SetMemoryAndHeartPage from "./settings/SetMemoryAndHeartPage";
 import SetLoggingPage from "./settings/SetLoggingPage";
 import SetChannelsPage from "./settings/SetChannelsPage";
+import ProviderSelectorModal from "./settings/ProviderSelectorModal";
 
 // ─── Main SettingsPage ──────────────────────────────────────────────
 export default function SettingsPage() {
@@ -109,6 +112,9 @@ export default function SettingsPage() {
   const [formErrors, setFormErrors] = useState({});
   const mountedRef = useRef(true);
 
+  // Provider selector modal state
+  const [showProviderModal, setShowProviderModal] = useState(false);
+
   // Model list from backend
   const [modelOptions, setModelOptions] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -116,6 +122,7 @@ export default function SettingsPage() {
   // Built-in providers from backend
   const [builtinProviders, setBuiltinProviders] = useState([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
+  const [defaultProviderId, setDefaultProviderId] = useState(null);
 
   // Load config
   useEffect(() => {
@@ -169,18 +176,20 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // 合并「后端内置提供商列表」与 fgbg 里已配置的 providers（不依赖写死的 PROVIDER_PRESETS）
+  // 合并已配置的 providers（只显示 fgbg.json 中已配置的，不显示 implicit 模板）
   useEffect(() => {
     if (!rawConfig) return;
     const modelsConfig = rawConfig.models || {};
     const providerEntries = Object.entries(modelsConfig.providers || {});
-    const allProviderIds = new Set([
-      ...builtinProviders.map((p) => p.id),
-      ...providerEntries.map(([id]) => id),
-    ]);
-    const loaded = Array.from(allProviderIds).map((id) => {
+    
+    // 只显示已配置的 provider
+    const configuredIds = new Set(providerEntries.map(([id]) => id));
+    
+    const loaded = Array.from(configuredIds).map((id) => {
       const cfg = modelsConfig.providers?.[id];
       const builtinInfo = builtinProviders.find((p) => p.id === id);
+      const hasApiKey = cfg?.apiKey && cfg.apiKey.trim().length > 0;
+      
       return {
         id,
         name: getProviderName(id, builtinInfo),
@@ -188,14 +197,23 @@ export default function SettingsPage() {
         enabled: cfg?.enabled !== false,
         featureCount: cfg?.featureCount || null,
         isBuiltin: !!builtinInfo,
+        hasApiKey,
       };
     });
+    
     setProviders(loaded.length ? loaded : []);
     setSelectedProviderId((prev) => {
       if (prev && loaded.some((p) => p.id === prev)) return prev;
+      // 优先选中后端返回的默认 provider
+      if (defaultProviderId && loaded.some((p) => p.id === defaultProviderId)) {
+        return defaultProviderId;
+      }
+      // 其次选中第一个有 apiKey 的 provider
+      const firstWithKey = loaded.find((p) => p.hasApiKey);
+      if (firstWithKey) return firstWithKey.id;
       return loaded[0]?.id ?? null;
     });
-  }, [rawConfig, builtinProviders]);
+  }, [rawConfig, builtinProviders, defaultProviderId]);
 
   // 从 fgbg 配置同步「记忆 + 心跳」表单
   useEffect(() => {
@@ -254,7 +272,7 @@ export default function SettingsPage() {
       try {
         const payload = await getSupportedModelProviders();
         if (!mounted) return;
-        setBuiltinProviders(payload.providers || []);
+        setBuiltinProviders(payload.templates || []);
       } catch (error) {
         if (mounted) {
           console.error(
@@ -267,6 +285,26 @@ export default function SettingsPage() {
       }
     }
     loadBuiltinProviders();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Load default provider from backend
+  useEffect(() => {
+    let mounted = true;
+    async function loadDefaultProvider() {
+      try {
+        const payload = await getDefaultModelProvider();
+        if (!mounted) return;
+        setDefaultProviderId(payload.defaultProvider || null);
+      } catch (error) {
+        if (mounted) {
+          console.error("Failed to load default provider:", error);
+        }
+      }
+    }
+    loadDefaultProvider();
     return () => {
       mounted = false;
     };
@@ -788,28 +826,29 @@ export default function SettingsPage() {
   };
 
   const handleAddProvider = () => {
-    // 找到未添加的内置供应商
-    const currentIds = new Set(providers.map((p) => p.id));
-    const availableBuiltin = builtinProviders.find(
-      (p) => !currentIds.has(p.id),
-    );
+    setShowProviderModal(true);
+  };
 
-    if (availableBuiltin) {
+  const handleProviderSelect = ({ type, id }) => {
+    setShowProviderModal(false);
+
+    if (type === "builtin" && id) {
       // 添加内置供应商
+      const builtinInfo = builtinProviders.find((p) => p.id === id);
       const newProvider = {
-        id: availableBuiltin.id,
-        name: getProviderName(availableBuiltin.id, availableBuiltin),
-        icon: getProviderIcon(availableBuiltin.id),
+        id,
+        name: getProviderName(id, builtinInfo),
+        icon: getProviderIcon(id),
         enabled: true,
         featureCount: null,
         isBuiltin: true,
       };
       setProviders((prev) => [...prev, newProvider]);
-      setSelectedProviderId(availableBuiltin.id);
+      setSelectedProviderId(id);
       setDetailForm({
-        modelName: availableBuiltin.models?.[0]?.id || "",
+        modelName: builtinInfo?.models?.[0]?.id || "",
         apiKey: "",
-        baseUrl: availableBuiltin.baseUrl || "",
+        baseUrl: builtinInfo?.baseUrl || "",
         model: "",
       });
     } else {
@@ -832,6 +871,10 @@ export default function SettingsPage() {
         model: "",
       });
     }
+  };
+
+  const handleProviderModalClose = () => {
+    setShowProviderModal(false);
   };
 
   if (loading) {
@@ -990,6 +1033,16 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {/* Provider selector modal */}
+      {showProviderModal ? (
+        <ProviderSelectorModal
+          builtinTemplates={builtinProviders}
+          currentProviderIds={new Set(providers.map((p) => p.id))}
+          onSelect={handleProviderSelect}
+          onClose={handleProviderModalClose}
+        />
       ) : null}
     </section>
   );

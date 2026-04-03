@@ -49,7 +49,7 @@ export async function repairLocalMemorySearch(memorySearch) {
 }
 
 export async function getProviderModels(providerId) {
-  return requestJson(`/api/config/models/${encodeURIComponent(providerId)}`);
+  return requestJson(`/api/config/models?providerId=${encodeURIComponent(providerId)}`);
 }
 
 export async function evictLoggingCache() {
@@ -59,11 +59,15 @@ export async function evictLoggingCache() {
 }
 
 export async function getSupportedModelProviders() {
+  return requestJson("/api/config/builtin-templates");
+}
+
+export async function getConfiguredProviders() {
   return requestJson("/api/config/providers");
 }
 
 export async function getDefaultModelProvider() {
-  return requestJson("/api/config/default-provider");
+  return requestJson("/api/config/default");
 }
 
 export async function getModelProviderInfo() {
