@@ -20,7 +20,7 @@ export default function SetModelPage({ modelTab }) {
     handleQwenPortalAuth,
     qwenAuthBusy,
     qwenAuthHint,
-    setQwenCredentialMode,
+    handleQwenCredentialModeChange,
     setQwenAuthHint,
     setConnectionResult,
     showApiKey,
@@ -88,23 +88,24 @@ export default function SetModelPage({ modelTab }) {
           </div>
 
           <div className="settings-detail-form">
-            {/* Model Name (模型名称) — uses models[0].id */}
+            {/* Model (dropdown + text input) */}
             <div className="settings-form-group">
-              <label className="settings-form-label">模型名称</label>
-              <input
-                type="text"
-                className="settings-form-input"
-                value={detailForm.modelName}
-                onChange={(e) =>
-                  handleDetailChange("modelName", e.target.value)
+              <label className="settings-form-label">
+                模型
+                <Sparkles size={14} className="settings-model-sparkle" />
+              </label>
+              <ModelCombobox
+                value={detailForm.model}
+                options={modelOptions}
+                onChange={(v) => handleDetailChange("model", v)}
+                placeholder={
+                  loadingModels ? "加载模型列表中..." : "选择或输入模型"
                 }
-                placeholder="例如: deepseek-reasoner"
               />
             </div>
 
             {/*
-              ─── Qwen Portal 专用：双按钮「Qwen 授权 | 填写 API Key」+ OAuth 说明 / 手填表单
-              若此处被改回单一 API Key 输入框，请从 git 恢复本段或对照文档重新接入。
+              ─── Qwen Portal：模式切换（浏览器授权 | API Key）+ 对应 UI；认证类型与保存/测试一并提交
             */}
             {/* API Key / Qwen OAuth */}
             <div className="settings-form-group settings-form-group--qwen-portal">
@@ -155,28 +156,25 @@ export default function SetModelPage({ modelTab }) {
                   <div className="settings-qwen-auth-row settings-qwen-auth-row--split">
                     <button
                       type="button"
-                      className={`settings-qwen-auth-btn ${qwenCredentialMode === "oauth" ? "active" : ""}`}
-                      onClick={handleQwenPortalAuth}
-                      disabled={qwenAuthBusy}
+                      className={`settings-qwen-apikey-btn ${qwenCredentialMode === "oauth" ? "active" : ""}`}
+                      onClick={() => handleQwenCredentialModeChange("oauth")}
                     >
-                      {qwenAuthBusy ? "等待授权中…" : "Qwen 授权"}
+                      浏览器授权
                     </button>
                     <button
                       type="button"
                       className={`settings-qwen-apikey-btn ${qwenCredentialMode === "manual" ? "active" : ""}`}
-                      onClick={() => {
-                        setQwenCredentialMode("manual");
-                        setQwenAuthHint("");
-                      }}
+                      onClick={() => handleQwenCredentialModeChange("manual")}
                     >
                       填写 API Key
                     </button>
                   </div>
                   {qwenCredentialMode === "oauth" ? (
-                    <>
+                    <div className="settings-qwen-oauth-block">
                       <p className="settings-form-hint">
-                        点击「Qwen 授权」将打开 Qwen
-                        官方认证页，登录后即可使用免费额度；凭证会保存到本机{" "}
+                        点击下方按钮打开 Qwen
+                        官方认证页，登录后凭证会保存到本机；测试连接与保存均使用 OAuth，不会上传表单中的
+                        API Key。
                       </p>
                       {qwenAuthHint ? (
                         <p
@@ -188,15 +186,25 @@ export default function SetModelPage({ modelTab }) {
                           {qwenAuthHint}
                         </p>
                       ) : null}
-                      <input
-                        type="text"
-                        className="settings-form-input"
-                        value=""
-                        readOnly
-                        disabled
-                        placeholder="无需手动填写 API Key，请使用上方 Qwen 授权"
-                      />
-                    </>
+                      <div className="settings-qwen-oauth-actions">
+                        <button
+                          type="button"
+                          className="settings-qwen-auth-btn settings-qwen-oauth-actions__primary"
+                          onClick={handleQwenPortalAuth}
+                          disabled={qwenAuthBusy}
+                        >
+                          {qwenAuthBusy ? "等待授权中…" : "Qwen 授权"}
+                        </button>
+                        <button
+                          type="button"
+                          className="settings-test-btn settings-qwen-oauth-actions__test"
+                          onClick={handleTestConnection}
+                          disabled={testingConnection}
+                        >
+                          {testingConnection ? "测试中..." : "测试连接"}
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <>
                       <div className="settings-form-input-row">
@@ -226,19 +234,6 @@ export default function SetModelPage({ modelTab }) {
                         />
                         显示 API Key
                       </label>
-                      <p className="settings-form-hint settings-qwen-switch-hint">
-                        <button
-                          type="button"
-                          className="settings-qwen-switch-link"
-                          onClick={() => {
-                            setQwenCredentialMode("oauth");
-                            setConnectionResult(null);
-                            setQwenAuthHint("");
-                          }}
-                        >
-                          改用浏览器授权（Qwen 授权）
-                        </button>
-                      </p>
                     </>
                   )}
                 </>
@@ -275,37 +270,37 @@ export default function SetModelPage({ modelTab }) {
               )}
             </div>
 
-            {/* Base URL */}
+            {/* Base URL - qwen-portal oauth 模式显示 OAuth 返回的 resourceUrl */}
             <div className="settings-form-group">
               <label className="settings-form-label">
-                Base URL <span className="settings-required">*</span>
+                {selectedProviderId === "qwen-portal" && qwenCredentialMode === "oauth"
+                  ? "API 地址 (OAuth 自动获取)"
+                  : "Base URL"}{" "}
+                <span className="settings-required">*</span>
               </label>
-              <input
-                type="text"
-                className={`settings-form-input ${
-                  formErrors.baseUrl ? "error" : ""
-                }`}
-                value={detailForm.baseUrl}
-                onChange={(e) => handleDetailChange("baseUrl", e.target.value)}
-                placeholder="https://api.example.com/v1"
-                required
-              />
-            </div>
-
-            {/* Model (dropdown + text input) */}
-            <div className="settings-form-group">
-              <label className="settings-form-label">
-                模型
-                <Sparkles size={14} className="settings-model-sparkle" />
-              </label>
-              <ModelCombobox
-                value={detailForm.model}
-                options={modelOptions}
-                onChange={(v) => handleDetailChange("model", v)}
-                placeholder={
-                  loadingModels ? "加载模型列表中..." : "选择或输入模型"
-                }
-              />
+              {selectedProviderId === "qwen-portal" && qwenCredentialMode === "oauth" ? (
+                <div className="settings-qwen-resource-url">
+                  <input
+                    type="text"
+                    className="settings-form-input"
+                    value={detailForm.baseUrl}
+                    readOnly
+                    disabled
+                    placeholder="完成 Qwen 授权后自动显示 API 地址"
+                  />
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className={`settings-form-input ${
+                    formErrors.baseUrl ? "error" : ""
+                  }`}
+                  value={detailForm.baseUrl}
+                  onChange={(e) => handleDetailChange("baseUrl", e.target.value)}
+                  placeholder="https://api.example.com/v1"
+                  required
+                />
+              )}
             </div>
 
             {/* Collapsible sections */}

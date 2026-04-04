@@ -16,6 +16,10 @@ import type {
   RuntimeModel,
 } from "../../types.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import {
+  QWEN_DASHSCOPE_COMPAT_V1_BASE,
+  normalizeQwenOAuthResourceBaseUrl,
+} from "../qwen-dashscope.js";
 
 const logger = getSubsystemConsoleLogger("model-config");
 
@@ -97,6 +101,56 @@ function readProjectModelConfig(): ModelConfigFile {
   }
 }
 
+function providerEnvApiKeyName(providerId: string): string {
+  return `${normalizeProviderId(providerId).toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`;
+}
+
+/**
+ * 当前 qwen-portal 的 apiKey 是否来自 OAuth 档案（而非 env / model.json 明文 key）。
+ * 与 providers-router test-connection 的 OAuth 判定对齐（配置中 auth === "oauth" 时忽略明文 apiKey）。
+ */
+function qwenPortalKeyFromOAuthProfile(
+  apiKey: string | undefined,
+  projectApiKey: string | undefined,
+): boolean {
+  if (!apiKey?.trim()) return false;
+  const envKey = process.env[providerEnvApiKeyName("qwen-portal")]?.trim();
+  if (envKey && apiKey === envKey) return false;
+  const proj = projectApiKey?.trim();
+  if (proj && apiKey === proj) return false;
+  const creds = getQwenPortalCredentials();
+  return Boolean(creds && apiKey === creds.access);
+}
+
+/**
+ * 让 pi-ai / openai-completions 路径与 /config/test-connection 使用相同的 DashScope 头与 OAuth baseUrl。
+ */
+function applyQwenPortalDashScopeExtras(
+  merged: Record<string, ProviderConfig>,
+  projectConfig: ModelConfigFile,
+): void {
+  const p = merged["qwen-portal"];
+  if (!p?.apiKey?.trim()) return;
+
+  const oauthToken = qwenPortalKeyFromOAuthProfile(
+    p.apiKey,
+    projectConfig.apiKey?.["qwen-portal"],
+  );
+  const creds = getQwenPortalCredentials();
+  if (oauthToken) {
+    p.baseUrl = normalizeQwenOAuthResourceBaseUrl(creds?.resourceUrl);
+  }
+
+  const ua = "QwenCode/0.13.2 (darwin; arm64)";
+  const dashHeaders: Record<string, string> = {
+    "User-Agent": ua,
+    "X-DashScope-CacheControl": "enable",
+    "X-DashScope-UserAgent": ua,
+    "X-DashScope-AuthType": oauthToken ? "qwen-oauth" : "openai",
+  };
+  p.headers = { ...dashHeaders, ...(p.headers ?? {}) };
+}
+
 function resolveApiKeyForProvider(params: {
   providerId: string;
   explicitApiKey?: string;
@@ -165,7 +219,7 @@ export function buildImplicitProviderTemplates(): Record<
 > {
   return {
     "qwen-portal": {
-      baseUrl: "https://portal.qwen.ai/v1",
+      baseUrl: QWEN_DASHSCOPE_COMPAT_V1_BASE,
       api: "openai-completions",
       models: [
         {
@@ -177,6 +231,13 @@ export function buildImplicitProviderTemplates(): Record<
           contextWindow: 128000,
           maxTokens: 64 * 1024,
           tokenRatio: 0.75,
+          // DashScope 兼容接口常拒绝 OpenAI 新版字段（store / stream_options / max_completion_tokens），会导致 400 且无 body。
+          compat: {
+            supportsStore: false,
+            supportsUsageInStreaming: false,
+            maxTokensField: "max_tokens",
+            supportsStrictMode: false,
+          },
         },
       ],
     },
@@ -375,18 +436,25 @@ export async function getMergedProviders(
       continue;
     }
 
+    const qwenOAuthInConfig =
+      providerId === "qwen-portal" && provider.auth === "oauth";
+    const explicitKeyForResolve = qwenOAuthInConfig
+      ? undefined
+      : provider.apiKey?.trim() || undefined;
+
     merged[providerId] = {
       ...prior,
       ...provider,
       models: mergeModels(prior.models, provider.models),
       apiKey: await resolveApiKeyForProviderAsync({
         providerId,
-        explicitApiKey: provider.apiKey,
+        explicitApiKey: explicitKeyForResolve,
         projectApiKey: projectConfig.apiKey?.[providerId],
       }),
     };
   }
 
+  applyQwenPortalDashScopeExtras(merged, projectConfig);
   return merged;
 }
 
@@ -401,6 +469,10 @@ export function buildRuntimeModelsFromProviders(
 
     for (const modelDef of provider.models) {
       const key = `${normalizeProviderId(providerId)}/${modelDef.id}`;
+      const mergedHeaders = {
+        ...(provider.headers ?? {}),
+        ...(modelDef.headers ?? {}),
+      };
       const model: RuntimeModel = {
         id: modelDef.id,
         name: modelDef.name,
@@ -412,7 +484,9 @@ export function buildRuntimeModelsFromProviders(
         cost: { ...modelDef.cost },
         contextWindow: modelDef.contextWindow,
         maxTokens: modelDef.maxTokens,
-        ...(provider.headers ? { headers: { ...provider.headers } } : {}),
+        ...(Object.keys(mergedHeaders).length > 0
+          ? { headers: mergedHeaders }
+          : {}),
         ...(modelDef.compat ? { compat: { ...modelDef.compat } } : {}),
         ...(typeof modelDef.tokenRatio === "number"
           ? { tokenRatio: modelDef.tokenRatio }

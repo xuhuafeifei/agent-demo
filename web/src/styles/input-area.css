@@ -90,6 +90,116 @@
   background: var(--bg-hover);
 }
 
+/* ─── Model Selector Dropdown ───────────────────────────────────── */
+.model-selector {
+  position: relative;
+}
+
+.model-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.model-btn-label {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-dropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 240px;
+  max-height: 360px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.model-dropdown-loading,
+.model-dropdown-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-placeholder);
+}
+
+/* Group header */
+.model-group {
+  margin-bottom: 4px;
+}
+
+.model-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.model-group-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+}
+
+.model-group-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.model-group-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.model-dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+.model-dropdown-item.active {
+  background: #f0fdf4;
+  color: #059669;
+}
+
+.model-dropdown-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-dropdown-item-check {
+  flex-shrink: 0;
+  color: #10b981;
+}
+
 .send-btn {
   width: 32px;
   height: 32px;

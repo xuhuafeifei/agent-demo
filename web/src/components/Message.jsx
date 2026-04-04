@@ -17,7 +17,7 @@ const MessageManager = {
     if (msg.duration !== 0) {
       setTimeout(() => {
         MessageManager.remove(id);
-      }, msg.duration || 3000);
+      }, msg.duration || 5000);
     }
     
     return id;

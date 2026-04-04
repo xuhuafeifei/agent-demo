@@ -1,67 +1,83 @@
 import { Router } from "express";
-import { readFgbgUserConfig, getDefaultModelProvider } from "../../../config/index.js";
+import {
+  readFgbgUserConfig,
+  getDefaultModelProvider,
+} from "../../../config/index.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { buildImplicitProviderTemplates } from "../../../agent/pi-embedded-runner/model-config.js";
+import {
+  buildQwenPortalProbeChatCompletionBody,
+  normalizeQwenOAuthResourceBaseUrl,
+} from "../../../agent/qwen-dashscope.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
 /**
  * Providers config router
- *
- * 路由结构：
- *   GET /config/providers        - 获取所有已配置的 provider（从 fgbg.json，有 apiKey 的）
- *   GET /config/builtin-templates - 获取系统内置支持的 provider 模板（用于"添加供应商"弹窗）
- *   GET /config/provider-info?id=xxx - 获取单个内置模板详情
- *   GET /config/default          - 获取默认提供商
  */
 export function createProvidersRouter() {
   const router = Router();
 
-  // GET /config/providers - 获取已配置的 provider 列表（从 fgbg.json 中读取，有 apiKey 的）
+  // GET /config/providers - 获取已配置的 provider 列表
   router.get("/providers", (_req, res) => {
     try {
       const config = readFgbgUserConfig();
       const providersConfig = config.models?.providers || {};
-      
       const configuredProviders = Object.entries(providersConfig)
-        .filter(([_, providerCfg]: [string, any]) => {
-          // 只返回有 apiKey 的已配置 provider
-          return providerCfg.apiKey && providerCfg.apiKey.trim().length > 0;
+        .filter(([id, cfg]: [string, any]) => {
+          if (cfg.apiKey?.trim()) return true;
+          if (id === "qwen-portal" && cfg.auth === "oauth") return true;
+          if (
+            id === "qwen-portal" &&
+            !cfg.apiKey?.trim() &&
+            cfg.auth !== "api-key"
+          )
+            return true;
+          return false;
         })
-        .map(([id, providerCfg]: [string, any]) => ({
+        .map(([id, cfg]: [string, any]) => ({
           id,
-          name: providerCfg.models?.[0]?.name || id,
-          baseUrl: providerCfg.baseUrl || "",
-          api: providerCfg.api || "openai-completions",
-          enabled: providerCfg.enabled !== false,
-          models: providerCfg.models || [],
+          name: cfg.models?.[0]?.name || id,
+          baseUrl: cfg.baseUrl || "",
+          api: cfg.api || "openai-completions",
+          enabled: cfg.enabled !== false,
+          models: cfg.models || [],
         }));
-
       res.json({ success: true, providers: configuredProviders });
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      webLogger.error("[config/providers] %s", runtimeError.message, runtimeError);
+      webLogger.error(
+        "[config/providers] %s",
+        runtimeError.message,
+        runtimeError,
+      );
       res.status(500).json({ success: false, error: runtimeError.message });
     }
   });
 
-  // GET /config/builtin-templates - 获取系统内置支持的 provider 模板（用于"添加供应商"弹窗）
+  // GET /config/builtin-templates - 获取内置模板
   router.get("/builtin-templates", (_req, res) => {
     try {
       const templates = buildImplicitProviderTemplates();
-      const templateList = Object.entries(templates).map(([id, template]: [string, any]) => ({
-        id,
-        name: template.models?.[0]?.name || id,
-        baseUrl: template.baseUrl || "",
-        api: template.api || "openai-completions",
-        models: template.models || [],
-      }));
+      const templateList = Object.entries(templates).map(
+        ([id, t]: [string, any]) => ({
+          id,
+          name: t.models?.[0]?.name || id,
+          baseUrl: t.baseUrl || "",
+          api: t.api || "openai-completions",
+          models: t.models || [],
+        }),
+      );
       res.json({ success: true, templates: templateList });
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      webLogger.error("[config/builtin-templates] %s", runtimeError.message, runtimeError);
+      webLogger.error(
+        "[config/builtin-templates] %s",
+        runtimeError.message,
+        runtimeError,
+      );
       res.status(500).json({ success: false, error: runtimeError.message });
     }
   });
@@ -81,7 +97,7 @@ export function createProvidersRouter() {
       if (!template) {
         return res.status(404).json({
           success: false,
-          error: `Provider "${providerId}" not found in built-in providers`,
+          error: `Provider "${providerId}" not found`,
         });
       }
       res.json({
@@ -97,7 +113,11 @@ export function createProvidersRouter() {
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      webLogger.error("[config/provider-info] %s", runtimeError.message, runtimeError);
+      webLogger.error(
+        "[config/provider-info] %s",
+        runtimeError.message,
+        runtimeError,
+      );
       res.status(500).json({ success: false, error: runtimeError.message });
     }
   });
@@ -124,18 +144,12 @@ export function createProvidersRouter() {
         id: m.id,
         name: m.name,
       }));
-      res.json({
-        success: true,
-        models,
-      });
+      res.json({ success: true, models });
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error("[config/models] %s", runtimeError.message, runtimeError);
-      res.status(500).json({
-        success: false,
-        error: runtimeError.message,
-      });
+      res.status(500).json({ success: false, error: runtimeError.message });
     }
   });
 
@@ -147,7 +161,11 @@ export function createProvidersRouter() {
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      webLogger.error("[config/default] %s", runtimeError.message, runtimeError);
+      webLogger.error(
+        "[config/default] %s",
+        runtimeError.message,
+        runtimeError,
+      );
       res.status(500).json({ success: false, error: runtimeError.message });
     }
   });
@@ -155,31 +173,111 @@ export function createProvidersRouter() {
   // POST /config/test-connection - 测试模型连接
   router.post("/test-connection", async (req, res) => {
     try {
-      const { baseUrl, apiKey, model, api } = req.body;
-      
-      if (!baseUrl || !apiKey || !model) {
+      let { baseUrl, apiKey, model } = req.body;
+      const providerId = req.body.providerId;
+      const qwenCredentialType = req.body.qwenCredentialType as
+        | "oauth"
+        | "api_key"
+        | undefined;
+
+      if (!model) {
         return res.status(400).json({
           success: false,
-          error: "Missing required fields: baseUrl, apiKey, model",
+          error: "Missing required field: model",
+        });
+      }
+
+      let isQwenOAuth = false;
+      // qwen-portal 需要特殊处理
+      if (providerId === "qwen-portal") {
+        if (qwenCredentialType === "oauth") {
+          isQwenOAuth = true;
+          apiKey = undefined;
+        } else if (qwenCredentialType === "api_key") {
+          isQwenOAuth = false;
+        } else {
+          isQwenOAuth = !String(apiKey ?? "").trim();
+        }
+      }
+
+      // qwen oauth 认证, 读取认证文件 api key
+      if (isQwenOAuth) {
+        try {
+          const { getValidQwenPortalCredentials } =
+            await import("../../../agent/auth/qwen-portal-oauth.js");
+          const credentials = await getValidQwenPortalCredentials();
+          if (credentials) {
+            apiKey = credentials.access;
+            baseUrl = normalizeQwenOAuthResourceBaseUrl(
+              credentials.resourceUrl,
+            );
+          }
+        } catch (err) {
+          webLogger.error(`[test-connection] OAuth error: ${err}`);
+        }
+      }
+
+      if (!String(baseUrl ?? "").trim()) {
+        return res.status(400).json({
+          success: false,
+          error: isQwenOAuth
+            ? "缺少 OAuth 凭证或 resource URL，请先完成 Qwen 授权"
+            : "Missing required field: baseUrl",
+        });
+      }
+
+      if (!String(apiKey ?? "").trim()) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing API Key or OAuth credentials",
         });
       }
 
       const apiUrl = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-      const requestBody = {
-        model,
-        messages: [{ role: "user", content: "test" }],
-        max_tokens: 10,
+
+      const isQwenProvider = providerId === "qwen-portal";
+      // qwen-portal 需要特殊处理
+      const requestBody: Record<string, unknown> = isQwenProvider
+        ? buildQwenPortalProbeChatCompletionBody({
+            model: model,
+          })
+        : {
+            model,
+            messages: [
+              {
+                role: "user",
+                content: "测试连接",
+              },
+            ],
+            max_tokens: 20,
+          };
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
       };
 
+      // 只有 qwen-portal 需要特殊的 headers
+      if (isQwenProvider) {
+        headers["User-Agent"] = "QwenCode/0.13.2 (darwin; arm64)";
+        headers["X-DashScope-CacheControl"] = "enable";
+        headers["X-DashScope-UserAgent"] = "QwenCode/0.13.2 (darwin; arm64)";
+        headers["X-DashScope-AuthType"] = isQwenOAuth ? "qwen-oauth" : "openai";
+      }
+
+      // debug调试日志, 如果出现qwen 连接失败, 可以解除注释查看
+      // webLogger.debug(
+      //   `[test-connection] URL: ${apiUrl}, isQwen: ${isQwenProvider}, AuthType: ${isQwenOAuth ? "qwen-oauth" : "openai"}`,
+      // );
+      // webLogger.debug(JSON.stringify(requestBody, null, 2));
+      // webLogger.debug(JSON.stringify(headers, null, 2));
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
+        headers,
         body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
@@ -188,34 +286,27 @@ export function createProvidersRouter() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        return res.status(200).json({
+        webLogger.error(
+          `[test-connection] HTTP ${response.status}: ${errorText}`,
+        );
+        return res.json({
           success: false,
-          error: `HTTP ${response.status}: ${errorText.slice(0, 200)}`,
+          error: `HTTP ${response.status}: ${errorText.slice(0, 500)}`,
         });
       }
-
-      const data = await response.json();
-      res.json({
-        success: true,
-        message: "连接成功",
-        responseTime: Date.now(),
-      });
+      res.json({ success: true, message: "连接成功" });
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      
       if (runtimeError.name === "AbortError") {
-        return res.json({
-          success: false,
-          error: "连接超时（10秒）",
-        });
+        return res.json({ success: false, error: "连接超时（10秒）" });
       }
-      
-      webLogger.error("[config/test-connection] %s", runtimeError.message, runtimeError);
-      res.json({
-        success: false,
-        error: runtimeError.message,
-      });
+      webLogger.error(
+        "[config/test-connection] %s",
+        runtimeError.message,
+        runtimeError,
+      );
+      res.json({ success: false, error: runtimeError.message });
     }
   });
 

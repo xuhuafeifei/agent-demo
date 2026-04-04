@@ -21,20 +21,20 @@ const attemptLogger = getSubsystemConsoleLogger("attempt");
 
 // 工具名称中文别名映射
 const TOOL_NAME_ALIASES: Record<string, string> = {
-  "bash_execute": "执行命令",
-  "file_read": "读取文件",
-  "file_write": "写入文件",
-  "file_edit": "编辑文件",
-  "web_search": "网络搜索",
-  "web_fetch": "获取网页",
-  "memory_search": "搜索记忆",
-  "memory_append": "添加记忆",
-  "code_interpreter": "代码执行",
-  "directory_list": "列出目录",
-  "directory_create": "创建目录",
-  "file_delete": "删除文件",
-  "file_move": "移动文件",
-  "file_copy": "复制文件",
+  bash_execute: "执行命令",
+  file_read: "读取文件",
+  file_write: "写入文件",
+  file_edit: "编辑文件",
+  web_search: "网络搜索",
+  web_fetch: "获取网页",
+  memory_search: "搜索记忆",
+  memory_append: "添加记忆",
+  code_interpreter: "代码执行",
+  directory_list: "列出目录",
+  directory_create: "创建目录",
+  file_delete: "删除文件",
+  file_move: "移动文件",
+  file_copy: "复制文件",
 };
 
 // 获取工具中文名称
@@ -223,7 +223,6 @@ export async function createRuntimeAgentSession(params: {
       Parameters<typeof createAgentSession>[0]
     >["customTools"],
   });
-
   return session;
 }
 
@@ -272,7 +271,10 @@ export async function runEmbeddedPiAgent(params: {
       attemptLogger.info(
         `压缩完成：原 Token 数 ${compactionResult.tokensBefore}，保留内容从 ${compactionResult.firstKeptEntryId} 开始`,
       );
-      onEvent({ type: "compaction_end", tokensBefore: compactionResult.tokensBefore });
+      onEvent({
+        type: "compaction_end",
+        tokensBefore: compactionResult.tokensBefore,
+      });
     } catch (error) {
       // 忽略 "Already compacted" 错误，这表示会话已经压缩过
       if (
@@ -285,7 +287,10 @@ export async function runEmbeddedPiAgent(params: {
         attemptLogger.error(
           `压缩会话失败：${error instanceof Error ? error.message : error}`,
         );
-        onEvent({ type: "compaction_end", error: error instanceof Error ? error.message : String(error) });
+        onEvent({
+          type: "compaction_end",
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       }
     }

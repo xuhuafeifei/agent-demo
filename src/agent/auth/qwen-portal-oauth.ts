@@ -325,6 +325,7 @@ export async function refreshQwenPortalCredentials(
       access: data.access_token,
       refresh: data.refresh_token,
       expires: Date.now() + data.expires_in * 1000,
+      resourceUrl: credentials.resourceUrl, // 保留原有的 resourceUrl
     };
 
     // 保存到文件
@@ -365,4 +366,30 @@ export async function getValidQwenPortalAccessToken(): Promise<string | null> {
 
   logger.info("Qwen-portal token refreshed successfully");
   return newCredentials.access;
+}
+
+/**
+ * 获取有效的 qwen-portal 完整凭证（包含 resourceUrl）
+ */
+export async function getValidQwenPortalCredentials(): Promise<QwenPortalCredentials | null> {
+  const credentials = getQwenPortalCredentials();
+  if (!credentials) {
+    logger.debug("No qwen-portal credentials found");
+    return null;
+  }
+
+  if (!isQwenPortalCredentialsExpired(credentials)) {
+    logger.debug("Using existing valid qwen-portal token");
+    return credentials;
+  }
+
+  logger.info("Qwen-portal token expired, refreshing...");
+  const newCredentials = await refreshQwenPortalCredentials(credentials);
+  if (!newCredentials) {
+    logger.error("Failed to refresh qwen-portal token");
+    return null;
+  }
+
+  logger.info("Qwen-portal token refreshed successfully");
+  return newCredentials;
 }

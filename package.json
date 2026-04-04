@@ -15,7 +15,9 @@
     "start": "node scripts/require-runtime.mjs && node dist/server.js",
     "dev": "npm run web:build && tsc && node scripts/require-runtime.mjs && node dist/server.js",
     "dev:all": "concurrently \"npm run web:dev\" \"npm run dev:backend\"",
+    "dev:all:watch": "concurrently \"npm run web:dev\" \"npm run dev:backend:watch\"",
     "dev:backend": "tsc && node scripts/require-runtime.mjs && node dist/server.js",
+    "dev:backend:watch": "tsc && concurrently -n compile,serve -c blue,green \"tsc -w --preserveWatchOutput\" \"node scripts/require-runtime.mjs && node --watch dist/server.js\"",
     "watch": "tsc -w"
   },
   "keywords": [],

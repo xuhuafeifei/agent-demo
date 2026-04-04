@@ -66,6 +66,24 @@ export async function getConfiguredProviders() {
   return requestJson("/api/config/providers");
 }
 
+export async function setPrimaryModel(primary) {
+  return requestJson("/api/config/fgbg", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agents: { defaults: { model: { primary } } },
+    }),
+  });
+}
+
+export async function getPrimaryModel() {
+  return requestJson("/api/config/fgbg");
+}
+
+export async function getQwenPortalCredentials() {
+  return requestJson("/api/config/qwen-portal/credentials");
+}
+
 export async function getDefaultModelProvider() {
   return requestJson("/api/config/default");
 }

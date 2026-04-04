@@ -1,19 +1,58 @@
 import { Router } from "express";
-import { saveQwenPortalCredentials } from "../../../agent/auth/oauth-path.js";
+import { saveQwenPortalCredentials, getQwenPortalCredentials } from "../../../agent/auth/oauth-path.js";
 import { evicateFgbgUserConfigCache } from "../../../config/index.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import {
   createOAuthSession,
   oauthSessionStore,
 } from "../services/oauth-session.js";
+import { QWEN_DASHSCOPE_COMPAT_V1_BASE } from "../../../agent/qwen-dashscope.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
+
+/**
+ * 处理 resourceUrl，确保格式正确
+ * 1. 添加协议前缀（如果没有）
+ * 2. 添加 /v1 后缀（如果没有）
+ */
+function normalizeResourceUrl(resourceUrl?: string): string {
+  if (!resourceUrl) return QWEN_DASHSCOPE_COMPAT_V1_BASE;
+  
+  let normalized = resourceUrl.startsWith("http") ? resourceUrl : `https://${resourceUrl}`;
+  const suffix = "/v1";
+  
+  return normalized.endsWith(suffix) ? normalized : `${normalized}${suffix}`;
+}
 
 /**
  * OAuth router: /config/qwen-portal/oauth
  */
 export function createOAuthRouter() {
   const router = Router();
+
+  // GET /config/qwen-portal/credentials - Get current OAuth credentials info (resourceUrl only)
+  router.get("/credentials", (_req, res) => {
+    try {
+      const credentials = getQwenPortalCredentials();
+      res.json({
+        success: true,
+        resourceUrl: normalizeResourceUrl(credentials?.resourceUrl),
+        hasCredentials: !!credentials,
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error(
+        "[qwen-oauth/credentials] %s",
+        runtimeError.message,
+        runtimeError,
+      );
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
 
   // POST /config/qwen-portal/oauth/start - Start OAuth device flow
   router.post("/start", async (_req, res) => {
@@ -90,6 +129,7 @@ export function createOAuthRouter() {
         return res.json({
           success: true,
           status: "success" as const,
+          resourceUrl: normalizeResourceUrl(result.token.resourceUrl),
         });
       }
       if (result.status === "pending") {

@@ -13,6 +13,7 @@ import {
   repairLocalMemorySearch,
   getDefaultModelProvider,
   testModelConnection,
+  getQwenPortalCredentials,
 } from "../api/configApi";
 import MessageManager from "./Message";
 import { X } from "lucide-react";
@@ -20,6 +21,8 @@ import {
   TABS,
   LOCAL_MEMORY_MODEL,
   LOCAL_EMBEDDING_DIMENSIONS,
+  getDefaultModelForProvider,
+  getProviderModelOptions,
 } from "./settings/constants";
 import {
   buildMemorySearchPayloadForTest,
@@ -98,8 +101,8 @@ export default function SettingsPage() {
   // Model config state
   const [providers, setProviders] = useState([]);
   const [selectedProviderId, setSelectedProviderId] = useState(null);
+  /** model：与 ModelCombobox 绑定，保存/测试均只用此字段 → fgbg.json providers[].models[].id */
   const [detailForm, setDetailForm] = useState({
-    modelName: "",
     apiKey: "",
     baseUrl: "",
     model: "",
@@ -113,6 +116,7 @@ export default function SettingsPage() {
   const [qwenCredentialMode, setQwenCredentialMode] = useState("oauth");
   const [formErrors, setFormErrors] = useState({});
   const mountedRef = useRef(true);
+  const modelAutoFilledRef = useRef(false);
 
   // Provider selector modal state
   const [showProviderModal, setShowProviderModal] = useState(false);
@@ -131,7 +135,6 @@ export default function SettingsPage() {
     let mounted = true;
     async function load() {
       setLoading(true);
-      setMessage("");
       try {
         const payload = await getFgbgConfig();
         if (!mounted) return;
@@ -167,7 +170,7 @@ export default function SettingsPage() {
             : "",
         });
       } catch (error) {
-        if (mounted) setMessage(`加载配置失败: ${error.message}`);
+        if (mounted) MessageManager.info(`加载配置失败: ${error.message}`);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -312,30 +315,52 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // Load model options when provider changes
+  // Load model options when provider changes (use frontend maintained list)
   useEffect(() => {
     if (!selectedProviderId) {
       setModelOptions([]);
+      modelAutoFilledRef.current = false;
       return;
     }
-    let cancelled = false;
-    async function loadModels() {
-      setLoadingModels(true);
-      try {
-        const res = await getProviderModels(selectedProviderId);
-        if (!cancelled && res.models) {
-          setModelOptions(res.models);
-        }
-      } catch {
-        if (!cancelled) setModelOptions([]);
-      } finally {
-        if (!cancelled) setLoadingModels(false);
+    
+    // Use frontend maintained model list
+    const frontendModels = getProviderModelOptions(selectedProviderId);
+    
+    if (frontendModels.length > 0) {
+      setModelOptions(frontendModels);
+      // 自动选中第一个模型
+      if (!modelAutoFilledRef.current) {
+        const firstModelId = frontendModels[0].id;
+        setDetailForm((prev) => ({ ...prev, model: firstModelId }));
+        modelAutoFilledRef.current = true;
       }
+    } else {
+      // Fallback to backend if not maintained in frontend
+      let cancelled = false;
+      async function loadModels() {
+        setLoadingModels(true);
+        try {
+          const res = await getProviderModels(selectedProviderId);
+          if (!cancelled && res.models) {
+            setModelOptions(res.models);
+            // 自动填充第一个模型的 id（与 ModelCombobox 同源）
+            if (res.models.length > 0 && !modelAutoFilledRef.current) {
+              const firstModelId = res.models[0].id;
+              setDetailForm((prev) => ({ ...prev, model: firstModelId }));
+              modelAutoFilledRef.current = true;
+            }
+          }
+        } catch {
+          if (!cancelled) setModelOptions([]);
+        } finally {
+          if (!cancelled) setLoadingModels(false);
+        }
+      }
+      loadModels();
+      return () => {
+        cancelled = true;
+      };
     }
-    loadModels();
-    return () => {
-      cancelled = true;
-    };
   }, [selectedProviderId]);
 
   useEffect(() => {
@@ -350,22 +375,54 @@ export default function SettingsPage() {
     if (!selectedProviderId || !rawConfig) return;
     const providerCfg =
       rawConfig?.models?.providers?.[selectedProviderId] || {};
-    // modelName = first model's id from models array
     const firstModelId = providerCfg.models?.[0]?.id || "";
-    setDetailForm({
-      modelName: firstModelId,
-      apiKey: providerCfg.apiKey || "",
-      baseUrl: providerCfg.baseUrl || "",
-      model: providerCfg.model || "",
-    });
-    setShowApiKey(false);
-    setConnectionResult(null);
-    setQwenAuthHint("");
-    if (selectedProviderId === "qwen-portal") {
-      setQwenCredentialMode(
-        String(providerCfg.apiKey || "").trim() ? "manual" : "oauth",
-      );
+    const modelToUse =
+      firstModelId || getDefaultModelForProvider(selectedProviderId);
+    
+    // qwen-portal oauth 模式：从 auth-profile.json 读取凭证
+    const isQwenOAuth = selectedProviderId === "qwen-portal" && !providerCfg.apiKey;
+    
+    async function loadDetailForm() {
+      // qwen-portal OAuth 模式从认证文件读取
+      let baseUrl = providerCfg.baseUrl || "";
+      
+      if (isQwenOAuth) {
+        try {
+          const res = await getQwenPortalCredentials();
+          if (res.success && res.resourceUrl) {
+            baseUrl = res.resourceUrl;
+          }
+        } catch (err) {
+          console.error("Failed to load OAuth credentials:", err);
+        }
+      }
+      
+      setDetailForm({
+        apiKey: providerCfg.apiKey || "",
+        baseUrl,
+        model: modelToUse,
+      });
+      
+      setShowApiKey(false);
+      setConnectionResult(null);
+      setQwenAuthHint("");
+      modelAutoFilledRef.current = false;
+      
+      if (selectedProviderId === "qwen-portal") {
+        const auth = providerCfg.auth;
+        if (auth === "oauth") {
+          setQwenCredentialMode("oauth");
+        } else if (auth === "api-key") {
+          setQwenCredentialMode("manual");
+        } else {
+          setQwenCredentialMode(
+            String(providerCfg.apiKey || "").trim() ? "manual" : "oauth",
+          );
+        }
+      }
     }
+
+    loadDetailForm();
   }, [selectedProviderId, rawConfig]);
 
   const selectedProvider = useMemo(
@@ -385,10 +442,36 @@ export default function SettingsPage() {
     setFormErrors((prev) => ({ ...prev, [field]: false }));
   };
 
+  /** qwen-portal：切换认证方式时清空 OAuth 模式下不应提交的 API Key */
+  const handleQwenCredentialModeChange = (mode) => {
+    setQwenCredentialMode(mode);
+    setQwenAuthHint("");
+    setConnectionResult(null);
+    if (mode === "oauth") {
+      setDetailForm((prev) => ({ ...prev, apiKey: "" }));
+    }
+  };
+
   const handleTestConnection = async () => {
-    if (!detailForm.baseUrl || !detailForm.apiKey || !detailForm.modelName) {
+    const modelForRequest = String(detailForm.model ?? "").trim();
+    if (!modelForRequest) {
       setConnectionResult("error");
-      MessageManager.error("请填写 Base URL、API Key 和模型名称后再测试连接。");
+      MessageManager.error("请填写或选择模型后再测试连接。");
+      return;
+    }
+
+    const isQwenOAuth =
+      selectedProviderId === "qwen-portal" && qwenCredentialMode === "oauth";
+    const needBaseUrl = !isQwenOAuth;
+    if (needBaseUrl && !detailForm.baseUrl) {
+      setConnectionResult("error");
+      MessageManager.error("请填写 Base URL 后再测试连接。");
+      return;
+    }
+
+    if (!isQwenOAuth && !detailForm.apiKey) {
+      setConnectionResult("error");
+      MessageManager.error("请填写 API Key 后再测试连接。");
       return;
     }
 
@@ -396,11 +479,20 @@ export default function SettingsPage() {
     setConnectionResult(null);
 
     try {
-      const result = await testModelConnection({
-        baseUrl: detailForm.baseUrl,
-        apiKey: detailForm.apiKey,
-        model: detailForm.modelName,
-      });
+      const payload = {
+        model: modelForRequest,
+        providerId: selectedProviderId,
+        baseUrl: needBaseUrl ? detailForm.baseUrl : detailForm.baseUrl || "",
+      };
+      if (selectedProviderId === "qwen-portal") {
+        payload.qwenCredentialType =
+          qwenCredentialMode === "oauth" ? "oauth" : "api_key";
+      }
+      if (!isQwenOAuth) {
+        payload.apiKey = detailForm.apiKey;
+      }
+
+      const result = await testModelConnection(payload);
 
       if (result.success) {
         setConnectionResult("success");
@@ -441,6 +533,12 @@ export default function SettingsPage() {
           setQwenAuthHint("授权成功，访问令牌已保存到本机");
           setConnectionResult("success");
           setQwenCredentialMode("oauth");
+
+          setDetailForm((prev) => ({
+            ...prev,
+            apiKey: "",
+            baseUrl: poll.resourceUrl || prev.baseUrl,
+          }));
           return;
         }
         if (!poll.success || poll.status === "error") {
@@ -468,18 +566,50 @@ export default function SettingsPage() {
   const handleSave = async () => {
     if (!rawConfig || !baseConfig || !selectedProviderId) return;
 
-    // Validation
+    const builtinInfo = builtinProviders.find(
+      (p) => p.id === selectedProviderId,
+    );
+    const isQwenOAuthSave =
+      selectedProviderId === "qwen-portal" && qwenCredentialMode === "oauth";
+
+    let baseUrlForSave =
+      detailForm.baseUrl.trim() ||
+      String(builtinInfo?.baseUrl ?? "").trim() ||
+      "";
+
+    if (isQwenOAuthSave && !baseUrlForSave) {
+      try {
+        const res = await getQwenPortalCredentials();
+        if (res.success && res.resourceUrl) {
+          baseUrlForSave = String(res.resourceUrl).trim();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     const errors = {};
-    if (!detailForm.baseUrl.trim()) {
+    if (!detailForm.model?.trim()) {
+      errors.model = true;
+    }
+    if (!baseUrlForSave.trim()) {
       errors.baseUrl = true;
     }
+
+    if (!isQwenOAuthSave && !detailForm.apiKey.trim()) {
+      errors.apiKey = true;
+    }
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
-      setMessage("请填写所有必填字段。");
+      MessageManager.error(
+        isQwenOAuthSave
+          ? "请填写模型名称；若 Base URL 为空，请先完成 Qwen 授权或填写地址。"
+          : "请填写所有必填字段（模型名称、Base URL、API Key）",
+      );
       return;
     }
 
-    setMessage("");
     setSaving(true);
     try {
       const draft =
@@ -490,27 +620,25 @@ export default function SettingsPage() {
       if (!draft.models) draft.models = {};
       if (!draft.models.providers) draft.models.providers = {};
 
-      // 获取当前供应商的内置信息
-      const builtinInfo = builtinProviders.find(
-        (p) => p.id === selectedProviderId,
-      );
-
       // Build provider config with models array
       const existingModels =
         draft.models.providers[selectedProviderId]?.models || [];
+
+      // ModelCombobox 的 model → 写入 fgbg.json 里该 provider 的 models[].id（首项为主模型）
+      const modelIdToUse = String(detailForm.model ?? "").trim();
 
       // 对于内置供应商，保留其默认的 models 配置
       const updatedModels =
         builtinInfo?.models?.length > 0
           ? builtinInfo.models.map((m, i) =>
-              i === 0 ? { ...m, id: detailForm.modelName || m.id } : m,
+              i === 0 ? { ...m, id: modelIdToUse || m.id } : m,
             )
           : existingModels.length > 0
             ? existingModels.map((m, i) =>
-                i === 0 ? { ...m, id: detailForm.modelName || m.id } : m,
+                i === 0 ? { ...m, id: modelIdToUse || m.id } : m,
               )
-            : detailForm.modelName
-              ? [{ id: detailForm.modelName }]
+            : modelIdToUse
+              ? [{ id: modelIdToUse }]
               : [];
 
       const apiKeyForSave =
@@ -518,8 +646,8 @@ export default function SettingsPage() {
           ? ""
           : detailForm.apiKey;
 
-      draft.models.providers[selectedProviderId] = {
-        baseUrl: detailForm.baseUrl || builtinInfo?.baseUrl || "",
+      const providerDraft = {
+        baseUrl: baseUrlForSave,
         apiKey: apiKeyForSave,
         api:
           draft.models.providers[selectedProviderId]?.api ||
@@ -528,6 +656,10 @@ export default function SettingsPage() {
         models: updatedModels,
         enabled: selectedProvider?.enabled !== false,
       };
+      if (selectedProviderId === "qwen-portal") {
+        providerDraft.auth = isQwenOAuthSave ? "oauth" : "api-key";
+      }
+      draft.models.providers[selectedProviderId] = providerDraft;
 
       providers.forEach((p) => {
         if (draft.models.providers[p.id]) {
@@ -542,9 +674,9 @@ export default function SettingsPage() {
         setBaseConfig(payload.config);
         setMetadata(payload.metadata || {});
       }
-      setMessage("保存成功。");
+      MessageManager.success("保存成功");
     } catch (error) {
-      setMessage(`保存失败: ${error.message}`);
+      MessageManager.error(`保存失败: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -552,7 +684,6 @@ export default function SettingsPage() {
 
   const handleSaveLogging = async () => {
     if (!rawConfig || !baseConfig) return;
-    setMessage("");
     setSaving(true);
     try {
       const draft =
@@ -579,9 +710,9 @@ export default function SettingsPage() {
         setBaseConfig(payload.config);
         setMetadata(payload.metadata || {});
       }
-      setMessage("保存成功。");
+      MessageManager.success("保存成功");
     } catch (error) {
-      setMessage(`保存失败: ${error.message}`);
+      MessageManager.error(`保存失败: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -590,9 +721,9 @@ export default function SettingsPage() {
   const handleEvictLoggingCache = async () => {
     try {
       await evictLoggingCache();
-      setMessage("日志配置缓存已清除，系统将重新读取配置。");
+      MessageManager.info("日志配置缓存已清除，系统将重新读取配置。");
     } catch (error) {
-      setMessage(`清除缓存失败: ${error.message}`);
+      MessageManager.info(`清除缓存失败: ${error.message}`);
     }
   };
 
@@ -601,15 +732,14 @@ export default function SettingsPage() {
     // Validation
     if (channelsForm.qqbotEnabled) {
       if (!channelsForm.qqbotAppId.trim()) {
-        setMessage("开启 QQBot 通道时，AppId 不能为空。");
+        MessageManager.info("开启 QQBot 通道时，AppId 不能为空。");
         return;
       }
       if (!channelsForm.qqbotClientSecret.trim()) {
-        setMessage("开启 QQBot 通道时，Client Secret 不能为空。");
+        MessageManager.info("开启 QQBot 通道时，Client Secret 不能为空。");
         return;
       }
     }
-    setMessage("");
     setSaving(true);
     try {
       const draft =
@@ -643,9 +773,9 @@ export default function SettingsPage() {
         setBaseConfig(payload.config);
         setMetadata(payload.metadata || {});
       }
-      setMessage("保存成功。");
+      MessageManager.success("保存成功");
     } catch (error) {
-      setMessage(`保存失败: ${error.message}`);
+      MessageManager.error(`保存失败: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -710,12 +840,9 @@ export default function SettingsPage() {
       rawConfig,
     );
     setMemorySearchRepairing(true);
-    setMessage("");
     try {
       await repairLocalMemorySearch(payload);
-      setMessage(
-        "已按当前表单尝试下载/修复本地模型，完成后请再次点击「测试连接」。",
-      );
+      MessageManager.success("已按当前表单尝试下载/修复本地模型，完成后请再次点击「测试连接」。");
       setMemorySearchTestFix(null);
     } catch (error) {
       setMemorySearchTestHint(error?.message || String(error));
@@ -734,31 +861,31 @@ export default function SettingsPage() {
     setMemorySearchTestResult(null);
     setMemorySearchTestHint("");
     setMemorySearchTestFix(null);
-    setMessage("已切换为本地模式，请填写嵌入模型并保存后再测试。");
+    MessageManager.info("已切换为本地模式，请填写嵌入模型并保存后再测试。");
   };
 
   const handleSaveMemoryHeartbeat = async () => {
     if (!rawConfig || !baseConfig) return;
     if (memoryHeartbeatForm.mode === "remote") {
       if (!String(memoryHeartbeatForm.endpoint || "").trim()) {
-        setMessage("远程模式下请填写 endpoint。");
+        MessageManager.info("远程模式下请填写 endpoint。");
         return;
       }
       if (!String(memoryHeartbeatForm.apiKey || "").trim()) {
-        setMessage("远程模式下请填写 API Key。");
+        MessageManager.info("远程模式下请填写 API Key。");
         return;
       }
     }
     if (memoryHeartbeatForm.mode === "local") {
       if (!String(memoryHeartbeatForm.model || "").trim()) {
-        setMessage("本地模式下请填写嵌入模型。");
+        MessageManager.info("本地模式下请填写嵌入模型。");
         return;
       }
       if (
         Number(memoryHeartbeatForm.embeddingDimensions) !==
         LOCAL_EMBEDDING_DIMENSIONS
       ) {
-        setMessage(`本地模式下向量维度必须为 ${LOCAL_EMBEDDING_DIMENSIONS}。`);
+        MessageManager.info(`本地模式下向量维度必须为 ${LOCAL_EMBEDDING_DIMENSIONS}。`);
         return;
       }
     }
@@ -768,7 +895,7 @@ export default function SettingsPage() {
       if (!Array.isArray(parsed)) throw new Error("not array");
       allowedScriptsArr = parsed;
     } catch {
-      setMessage("「允许脚本」须为合法 JSON 数组。");
+      MessageManager.info("「允许脚本」须为合法 JSON 数组。");
       return;
     }
     const intervalMs = Math.min(
@@ -779,7 +906,6 @@ export default function SettingsPage() {
       3,
       Math.max(1, Number(memoryHeartbeatForm.concurrency) || 1),
     );
-    setMessage("");
     setSaving(true);
     try {
       const draft =
@@ -804,25 +930,24 @@ export default function SettingsPage() {
         setBaseConfig(payload.config);
         setMetadata(payload.metadata || {});
       }
-      setMessage("保存成功。");
+      MessageManager.success("保存成功");
     } catch (error) {
-      setMessage(`保存失败: ${error.message}`);
+      MessageManager.error(`保存失败: ${error.message}`);
     } finally {
       setSaving(false);
     }
   };
 
   const handleReset = async () => {
-    setMessage("");
     setResetting(true);
     try {
       const payload = await resetFgbgConfig();
       setRawConfig(payload.config);
       setBaseConfig(payload.config);
       setMetadata(payload.metadata || {});
-      setMessage("已恢复默认配置。");
+      MessageManager.success("已恢复默认配置");
     } catch (error) {
-      setMessage(`恢复默认失败: ${error.message}`);
+      MessageManager.error(`恢复默认失败: ${error.message}`);
     } finally {
       setResetting(false);
     }
@@ -871,11 +996,11 @@ export default function SettingsPage() {
       };
       setProviders((prev) => [...prev, newProvider]);
       setSelectedProviderId(id);
+      const firstBuiltinModel = builtinInfo?.models?.[0]?.id || "";
       setDetailForm({
-        modelName: builtinInfo?.models?.[0]?.id || "",
         apiKey: "",
         baseUrl: builtinInfo?.baseUrl || "",
-        model: "",
+        model: firstBuiltinModel,
       });
     } else {
       // 添加自定义供应商
@@ -891,7 +1016,6 @@ export default function SettingsPage() {
       setProviders((prev) => [...prev, newProvider]);
       setSelectedProviderId(newId);
       setDetailForm({
-        modelName: "",
         apiKey: "",
         baseUrl: "",
         model: "",
@@ -944,7 +1068,7 @@ export default function SettingsPage() {
             handleQwenPortalAuth,
             qwenAuthBusy,
             qwenAuthHint,
-            setQwenCredentialMode,
+            handleQwenCredentialModeChange,
             setQwenAuthHint,
             setConnectionResult,
             showApiKey,

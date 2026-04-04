@@ -41,6 +41,12 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
                 contextWindow: 8192,
                 maxTokens: 16 * 1024,
                 tokenRatio: 0.75,
+                compat: {
+                  supportsStore: false,
+                  supportsUsageInStreaming: false,
+                  maxTokensField: "max_tokens",
+                  supportsStrictMode: false,
+                },
               },
             ],
           },

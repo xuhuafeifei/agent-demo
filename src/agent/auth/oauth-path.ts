@@ -8,6 +8,7 @@ export interface QwenPortalCredentials {
   access: string;
   refresh: string;
   expires: number;
+  resourceUrl?: string;
 }
 
 interface AuthProfile {
