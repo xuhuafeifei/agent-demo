@@ -6,6 +6,7 @@ import {
   writeFgbgUserConfig,
   evicateFgbgUserConfigCache,
 } from "../../../config/index.js";
+import { validateRequest, loggingConfigSchema } from "../validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -123,7 +124,16 @@ export function createLoggingRouter() {
   // POST /config/logging/save - 保存日志配置
   router.post("/save", async (req, res) => {
     try {
-      const loggingConfig = req.body && typeof req.body === "object" ? req.body : {};
+      // 校验请求体
+      const validation = validateRequest(loggingConfigSchema, req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          error: validation.error,
+        });
+      }
+
+      const loggingConfig = validation.data;
 
       // 读取当前配置
       const currentConfig = readFgbgUserConfig();

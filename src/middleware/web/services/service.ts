@@ -108,6 +108,10 @@ export function applyConfigPatch(
 ) {
   Object.keys(patch).forEach((key) => {
     const newValue = patch[key];
+    if (newValue === null) {
+      delete target[key];
+      return;
+    }
     if (isPlainObject(newValue)) {
       if (!isPlainObject(target[key])) {
         target[key] = {};
@@ -169,9 +173,18 @@ export function patchConfig(
     updated as Record<string, unknown>,
     patch as Record<string, unknown>,
   );
+
+  // 校验：保护 qwen-portal 不被删除
+  if (current.models?.providers?.["qwen-portal"]) {
+    const updatedProviders = updated.models?.providers as Record<string, unknown> | undefined;
+    if (!updatedProviders || !updatedProviders["qwen-portal"]) {
+      throw new Error("qwen-portal 是内置核心配置，不允许删除。");
+    }
+  }
+
   writeFgbgUserConfig(updated);
   evicateFgbgUserConfigCache();
-  
+
   return readConfigWithMetadata();
 }
 

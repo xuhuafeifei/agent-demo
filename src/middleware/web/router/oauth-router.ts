@@ -30,7 +30,7 @@ function normalizeResourceUrl(resourceUrl?: string): string {
 export function createOAuthRouter() {
   const router = Router();
 
-  // GET /config/qwen-portal/credentials - Get current OAuth credentials info (resourceUrl only)
+  // GET .../qwen-portal/oauth/credentials — OAuth credentials info (resourceUrl only)
   router.get("/credentials", (_req, res) => {
     try {
       const credentials = getQwenPortalCredentials();

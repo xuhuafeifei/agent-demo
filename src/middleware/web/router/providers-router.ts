@@ -9,6 +9,7 @@ import {
   buildQwenPortalProbeChatCompletionBody,
   normalizeQwenOAuthResourceBaseUrl,
 } from "../../../agent/qwen-dashscope.js";
+import { validateRequest, testConnectionRequestSchema } from "../validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -173,19 +174,27 @@ export function createProvidersRouter() {
   // POST /config/test-connection - 测试模型连接
   router.post("/test-connection", async (req, res) => {
     try {
-      let { baseUrl, apiKey, model } = req.body;
-      const providerId = req.body.providerId;
-      const qwenCredentialType = req.body.qwenCredentialType as
-        | "oauth"
-        | "api_key"
-        | undefined;
-
-      if (!model) {
+      // 校验请求体
+      const validation = validateRequest(testConnectionRequestSchema, req.body);
+      if (!validation.success) {
         return res.status(400).json({
           success: false,
-          error: "Missing required field: model",
+          error: validation.error,
         });
       }
+
+      if (!validation.data) {
+        return res.status(400).json({
+          success: false,
+          error: "请求数据无效",
+        });
+      }
+
+      let baseUrl = validation.data.baseUrl;
+      let apiKey = validation.data.apiKey;
+      const model = validation.data.model;
+      const providerId = validation.data.providerId;
+      const qwenCredentialType = validation.data.qwenCredentialType;
 
       let isQwenOAuth = false;
       // qwen-portal 需要特殊处理
@@ -233,7 +242,7 @@ export function createProvidersRouter() {
         });
       }
 
-      const apiUrl = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+      const apiUrl = `${baseUrl.toString().replace(/\/+$/, "")}/chat/completions`;
 
       const isQwenProvider = providerId === "qwen-portal";
       // qwen-portal 需要特殊处理

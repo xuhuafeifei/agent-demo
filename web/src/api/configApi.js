@@ -81,7 +81,7 @@ export async function getPrimaryModel() {
 }
 
 export async function getQwenPortalCredentials() {
-  return requestJson("/api/config/qwen-portal/credentials");
+  return requestJson("/api/config/qwen-portal/oauth/credentials");
 }
 
 export async function getDefaultModelProvider() {

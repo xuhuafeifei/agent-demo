@@ -6,6 +6,7 @@ import {
   resetConfig,
   hasProtectedPath,
 } from "../services/service.js";
+import { validateRequest, qqbotChannelSchema, heartbeatConfigSchema } from "../validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -47,6 +48,27 @@ export function createFgbgRouter() {
     }
 
     try {
+      // 校验特定字段
+      if (patchRaw.channels?.qqbot) {
+        const qqbotValidation = validateRequest(qqbotChannelSchema, patchRaw.channels.qqbot);
+        if (!qqbotValidation.success) {
+          return res.status(400).json({
+            success: false,
+            error: `QQBot 配置校验失败: ${qqbotValidation.error}`,
+          });
+        }
+      }
+
+      if (patchRaw.heartbeat) {
+        const heartbeatValidation = validateRequest(heartbeatConfigSchema, patchRaw.heartbeat);
+        if (!heartbeatValidation.success) {
+          return res.status(400).json({
+            success: false,
+            error: `心跳配置校验失败: ${heartbeatValidation.error}`,
+          });
+        }
+      }
+
       const result = patchConfig(patchRaw);
       res.json({
         success: true,

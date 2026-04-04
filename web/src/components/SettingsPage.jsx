@@ -5,7 +5,6 @@ import {
   resetFgbgConfig,
   getProviderModels,
   getSupportedModelProviders,
-  getConfiguredProviders,
   evictLoggingCache,
   startQwenPortalOAuth,
   pollQwenPortalOAuth,
@@ -129,6 +128,11 @@ export default function SettingsPage() {
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [defaultProviderId, setDefaultProviderId] = useState(null);
 
+  const builtinProvidersRef = useRef([]);
+  builtinProvidersRef.current = builtinProviders;
+  const defaultProviderIdRef = useRef(null);
+  defaultProviderIdRef.current = defaultProviderId;
+
   // Load config
   useEffect(() => {
     let mounted = true;
@@ -180,20 +184,20 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // 合并已配置的 providers（只显示 fgbg.json 中已配置的，不显示 implicit 模板）
+  // 仅在 rawConfig 变化时从服务端快照重建列表（不把 builtin/default 的异步回调放进依赖，否则会冲掉未保存的删除）
   useEffect(() => {
     if (!rawConfig) return;
     const modelsConfig = rawConfig.models || {};
     const providerEntries = Object.entries(modelsConfig.providers || {});
-    
-    // 只显示已配置的 provider
     const configuredIds = new Set(providerEntries.map(([id]) => id));
-    
+    const bp = builtinProvidersRef.current;
+    const def = defaultProviderIdRef.current;
+
     const loaded = Array.from(configuredIds).map((id) => {
       const cfg = modelsConfig.providers?.[id];
-      const builtinInfo = builtinProviders.find((p) => p.id === id);
+      const builtinInfo = bp.find((p) => p.id === id);
       const hasApiKey = cfg?.apiKey && cfg.apiKey.trim().length > 0;
-      
+
       return {
         id,
         name: getProviderName(id, builtinInfo),
@@ -204,20 +208,31 @@ export default function SettingsPage() {
         hasApiKey,
       };
     });
-    
+
     setProviders(loaded.length ? loaded : []);
     setSelectedProviderId((prev) => {
       if (prev && loaded.some((p) => p.id === prev)) return prev;
-      // 优先选中后端返回的默认 provider
-      if (defaultProviderId && loaded.some((p) => p.id === defaultProviderId)) {
-        return defaultProviderId;
-      }
-      // 其次选中第一个有 apiKey 的 provider
+      if (def && loaded.some((p) => p.id === def)) return def;
       const firstWithKey = loaded.find((p) => p.hasApiKey);
       if (firstWithKey) return firstWithKey.id;
       return loaded[0]?.id ?? null;
     });
-  }, [rawConfig, builtinProviders, defaultProviderId]);
+  }, [rawConfig]);
+
+  // 内置模板晚到：只补全名称/是否内置，不重算 provider id 集合
+  useEffect(() => {
+    if (!builtinProviders.length) return;
+    setProviders((prev) =>
+      prev.map((p) => {
+        const builtinInfo = builtinProviders.find((x) => x.id === p.id);
+        return {
+          ...p,
+          name: getProviderName(p.id, builtinInfo),
+          isBuiltin: !!builtinInfo,
+        };
+      }),
+    );
+  }, [builtinProviders]);
 
   // 从 fgbg 配置同步「记忆 + 心跳」表单
   useEffect(() => {
@@ -315,18 +330,16 @@ export default function SettingsPage() {
     };
   }, []);
 
-  // 当 defaultProviderId 加载完成后，自动切换到默认 provider
+  // defaultProviderId 晚到：仅当当前选中已无效时才落到默认（不在每次 providers 引用变化时抢走选中项）
   useEffect(() => {
-    if (defaultProviderId && providers.length > 0) {
-      setSelectedProviderId((prev) => {
-        // 如果默认值存在且当前没选中或选中的是 fallback 的，切换到默认值
-        if (providers.some((p) => p.id === defaultProviderId)) {
-          return defaultProviderId;
-        }
-        return prev;
-      });
-    }
-  }, [defaultProviderId, providers]);
+    if (!defaultProviderId) return;
+    setSelectedProviderId((prev) => {
+      if (prev && providers.some((p) => p.id === prev)) return prev;
+      if (providers.some((p) => p.id === defaultProviderId)) return defaultProviderId;
+      const firstWithKey = providers.find((p) => p.hasApiKey);
+      return firstWithKey?.id ?? providers[0]?.id ?? null;
+    });
+  }, [defaultProviderId, providers.length]);
 
   // Load model options when provider changes (use frontend maintained list)
   useEffect(() => {
@@ -674,9 +687,20 @@ export default function SettingsPage() {
       }
       draft.models.providers[selectedProviderId] = providerDraft;
 
+      // 1. 更新所有现存 providers 的 enabled 状态
       providers.forEach((p) => {
         if (draft.models.providers[p.id]) {
           draft.models.providers[p.id].enabled = p.enabled;
+        }
+      });
+
+      // 2. 清理已删除的 providers 配置
+      // 找出 rawConfig 中存在但当前 providers 列表中不存在的 ID，将它们从 draft 中移除
+      // 这样 deepDiff 才能检测到删除操作
+      const currentProviderIds = new Set(providers.map((p) => p.id));
+      Object.keys(draft.models.providers).forEach((id) => {
+        if (!currentProviderIds.has(id)) {
+          delete draft.models.providers[id];
         }
       });
 
@@ -976,6 +1000,13 @@ export default function SettingsPage() {
 
   const handleDeleteProvider = () => {
     if (!selectedProviderId) return;
+
+    // 校验：qwen-portal 不能删除
+    if (selectedProviderId === "qwen-portal") {
+      MessageManager.error("qwen-portal 是内置核心配置，不允许删除。");
+      return;
+    }
+
     setProviders((prev) => {
       const next = prev.filter((p) => p.id !== selectedProviderId);
       if (next.length) setSelectedProviderId(next[0].id);

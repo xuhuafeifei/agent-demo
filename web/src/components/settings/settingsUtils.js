@@ -73,6 +73,12 @@ export function deepDiff(current, base) {
     const diff = deepDiff(current[key], base[key]);
     if (diff !== undefined) out[key] = diff;
   });
+  // Keys removed from current vs base (merge-only PATCH would otherwise keep stale values)
+  Object.keys(base).forEach((key) => {
+    if (!(key in current)) {
+      out[key] = null;
+    }
+  });
   return Object.keys(out).length ? out : undefined;
 }
 

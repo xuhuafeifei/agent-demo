@@ -8,6 +8,7 @@ import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import type { FgbgUserConfig } from "../../../types.js";
 import type { RecursivePartial } from "../services/service.js";
 import { mergeMemorySearchForTest } from "../services/service.js";
+import { validateRequest, memorySearchTestRequestSchema } from "../validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -20,14 +21,16 @@ export function createMemorySearchRouter() {
   // POST /config/memory-search/test - Test memory embedding
   router.post("/test", async (req, res) => {
     try {
-      const body = req.body && typeof req.body === "object" ? req.body : {};
-      const partial = (
-        body as {
-          memorySearch?: RecursivePartial<
-            FgbgUserConfig["agents"]["memorySearch"]
-          >;
-        }
-      ).memorySearch;
+      // 校验请求体
+      const validation = validateRequest(memorySearchTestRequestSchema, req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          error: validation.error,
+        });
+      }
+
+      const partial = validation.data?.memorySearch || {};
       const base = readFgbgUserConfig();
       const merged = mergeMemorySearchForTest(base, partial);
       const result = await testMemorySearchEmbedding(merged);
@@ -57,14 +60,16 @@ export function createMemorySearchRouter() {
   // POST /config/memory-search/repair-local - Repair local GGUF model
   router.post("/repair-local", async (req, res) => {
     try {
-      const body = req.body && typeof req.body === "object" ? req.body : {};
-      const partial = (
-        body as {
-          memorySearch?: RecursivePartial<
-            FgbgUserConfig["agents"]["memorySearch"]
-          >;
-        }
-      ).memorySearch;
+      // 校验请求体
+      const validation = validateRequest(memorySearchTestRequestSchema, req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          error: validation.error,
+        });
+      }
+
+      const partial = validation.data?.memorySearch || {};
       const base = readFgbgUserConfig();
       const merged = mergeMemorySearchForTest(base, partial);
       const result = await repairLocalMemorySearchModel(merged);
