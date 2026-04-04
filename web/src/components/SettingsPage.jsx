@@ -104,6 +104,8 @@ export default function SettingsPage() {
     apiKey: "",
     baseUrl: "",
     model: "",
+    maxTokens: "",
+    tokenRatio: "",
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
@@ -404,7 +406,19 @@ export default function SettingsPage() {
     const firstModelId = providerCfg.models?.[0]?.id || "";
     const modelToUse =
       firstModelId || getDefaultModelForProvider(selectedProviderId);
-    
+    const modelRow =
+      providerCfg.models?.find((m) => m.id === modelToUse) ||
+      providerCfg.models?.[0] ||
+      {};
+    const resolvedMaxTokens =
+      providerCfg.maxTokens !== undefined && providerCfg.maxTokens !== null
+        ? providerCfg.maxTokens
+        : modelRow.maxTokens;
+    const resolvedTokenRatio =
+      providerCfg.tokenRatio !== undefined && providerCfg.tokenRatio !== null
+        ? providerCfg.tokenRatio
+        : modelRow.tokenRatio;
+
     // qwen-portal oauth 模式：从 auth-profile.json 读取凭证
     const isQwenOAuth = selectedProviderId === "qwen-portal" && !providerCfg.apiKey;
     
@@ -427,6 +441,14 @@ export default function SettingsPage() {
         apiKey: providerCfg.apiKey || "",
         baseUrl,
         model: modelToUse,
+        maxTokens:
+          resolvedMaxTokens !== undefined && resolvedMaxTokens !== null
+            ? resolvedMaxTokens
+            : "",
+        tokenRatio:
+          resolvedTokenRatio !== undefined && resolvedTokenRatio !== null
+            ? resolvedTokenRatio
+            : "",
       });
       
       setShowApiKey(false);
@@ -463,7 +485,43 @@ export default function SettingsPage() {
   };
 
   const handleDetailChange = (field, value) => {
-    setDetailForm((prev) => ({ ...prev, [field]: value }));
+    setDetailForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (
+        field === "model" &&
+        selectedProviderId &&
+        rawConfig &&
+        typeof value === "string"
+      ) {
+        const providerCfg =
+          rawConfig?.models?.providers?.[selectedProviderId] || {};
+        const modelRow =
+          providerCfg.models?.find((m) => m.id === value) || {};
+        if (
+          providerCfg.maxTokens !== undefined &&
+          providerCfg.maxTokens !== null
+        ) {
+          next.maxTokens = providerCfg.maxTokens;
+        } else if (
+          modelRow.maxTokens !== undefined &&
+          modelRow.maxTokens !== null
+        ) {
+          next.maxTokens = modelRow.maxTokens;
+        }
+        if (
+          providerCfg.tokenRatio !== undefined &&
+          providerCfg.tokenRatio !== null
+        ) {
+          next.tokenRatio = providerCfg.tokenRatio;
+        } else if (
+          modelRow.tokenRatio !== undefined &&
+          modelRow.tokenRatio !== null
+        ) {
+          next.tokenRatio = modelRow.tokenRatio;
+        }
+      }
+      return next;
+    });
     setConnectionResult(null);
     setFormErrors((prev) => ({ ...prev, [field]: false }));
   };
@@ -672,16 +730,43 @@ export default function SettingsPage() {
           ? ""
           : detailForm.apiKey;
 
+      // 【修复】获取现有 Provider 配置，确保保存时不丢失其他字段（如 headers, authHeader 等）
+      const existingProvider = draft.models.providers[selectedProviderId] || {};
+      
       const providerDraft = {
+        ...existingProvider,
         baseUrl: baseUrlForSave,
         apiKey: apiKeyForSave,
         api:
-          draft.models.providers[selectedProviderId]?.api ||
+          existingProvider.api ||
           builtinInfo?.api ||
           "openai-completions",
         models: updatedModels,
         enabled: selectedProvider?.enabled !== false,
       };
+
+      const maxTokRaw = detailForm.maxTokens;
+      const ratioRaw = detailForm.tokenRatio;
+      const maxTokStr =
+        maxTokRaw === "" || maxTokRaw === undefined || maxTokRaw === null
+          ? ""
+          : String(maxTokRaw).trim();
+      const ratioStr =
+        ratioRaw === "" || ratioRaw === undefined || ratioRaw === null
+          ? ""
+          : String(ratioRaw).trim();
+      if (maxTokStr !== "") {
+        const n = parseInt(maxTokStr, 10);
+        if (Number.isFinite(n)) providerDraft.maxTokens = n;
+      } else {
+        delete providerDraft.maxTokens;
+      }
+      if (ratioStr !== "") {
+        const n = parseFloat(ratioStr);
+        if (Number.isFinite(n)) providerDraft.tokenRatio = n;
+      } else {
+        delete providerDraft.tokenRatio;
+      }
       if (selectedProviderId === "qwen-portal") {
         providerDraft.auth = isQwenOAuthSave ? "oauth" : "api-key";
       }
@@ -1036,10 +1121,13 @@ export default function SettingsPage() {
       setProviders((prev) => [...prev, newProvider]);
       setSelectedProviderId(id);
       const firstBuiltinModel = builtinInfo?.models?.[0]?.id || "";
+      const bm = builtinInfo?.models?.[0];
       setDetailForm({
         apiKey: "",
         baseUrl: builtinInfo?.baseUrl || "",
         model: firstBuiltinModel,
+        maxTokens: bm?.maxTokens ?? "",
+        tokenRatio: bm?.tokenRatio ?? "",
       });
     } else {
       // 添加自定义供应商
@@ -1058,6 +1146,8 @@ export default function SettingsPage() {
         apiKey: "",
         baseUrl: "",
         model: "",
+        maxTokens: "",
+        tokenRatio: "",
       });
     }
   };

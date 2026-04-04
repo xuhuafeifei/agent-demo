@@ -303,12 +303,73 @@ export default function SetModelPage({ modelTab }) {
               )}
             </div>
 
-            {/* Collapsible sections */}
-            <CollapsibleSection title="功能提供商">
-              <p className="settings-collapsible-placeholder">功能提供商配置</p>
-            </CollapsibleSection>
-            <CollapsibleSection title="高级选项">
-              <p className="settings-collapsible-placeholder">高级选项配置</p>
+            {/* Advanced Options */}
+            <CollapsibleSection title="高级选项" defaultOpen>
+              <div className="settings-form-group">
+                <label className="settings-form-label">Max Tokens</label>
+                <input
+                  type="number"
+                  className="settings-form-input"
+                  min={0}
+                  value={
+                    detailForm.maxTokens === "" ||
+                    detailForm.maxTokens === undefined ||
+                    detailForm.maxTokens === null
+                      ? ""
+                      : detailForm.maxTokens
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") {
+                      handleDetailChange("maxTokens", "");
+                      return;
+                    }
+                    const n = parseInt(v, 10);
+                    handleDetailChange(
+                      "maxTokens",
+                      Number.isFinite(n) ? n : "",
+                    );
+                  }}
+                  placeholder="例如 65536"
+                />
+                <p className="settings-advanced-hint">
+                  上下文窗口对应的 Token 上限；常用约 64K（65536）。用于判断是否触发会话压缩。
+                </p>
+              </div>
+              <div className="settings-form-group">
+                <label className="settings-form-label">Token Ratio</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  max={1}
+                  className="settings-form-input"
+                  value={
+                    detailForm.tokenRatio === "" ||
+                    detailForm.tokenRatio === undefined ||
+                    detailForm.tokenRatio === null
+                      ? ""
+                      : detailForm.tokenRatio
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") {
+                      handleDetailChange("tokenRatio", "");
+                      return;
+                    }
+                    const n = parseFloat(v);
+                    handleDetailChange(
+                      "tokenRatio",
+                      Number.isFinite(n) ? n : "",
+                    );
+                  }}
+                  placeholder="例如 0.75"
+                />
+                <p className="settings-advanced-hint">
+                  压缩阈值比例（默认 0.75）。当估算 Token 超过 Max Tokens
+                  × 该比例时，将尝试压缩上下文。
+                </p>
+              </div>
             </CollapsibleSection>
           </div>
 

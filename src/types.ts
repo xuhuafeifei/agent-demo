@@ -39,6 +39,9 @@ export type ProviderConfig = {
   headers?: Record<string, string>;
   authHeader?: boolean;
   models: ModelDefinitionConfig[];
+  // 新增高级选项字段
+  maxTokens?: number; // 默认 65536
+  tokenRatio?: number; // 默认 0.75
 };
 
 export type ModelRef = {

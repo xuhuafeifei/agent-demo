@@ -1333,6 +1333,13 @@
   color: var(--text-secondary);
 }
 
+.settings-advanced-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #15803d;
+}
+
 .settings-inline-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;

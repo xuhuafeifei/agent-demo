@@ -473,6 +473,16 @@ export function buildRuntimeModelsFromProviders(
         ...(provider.headers ?? {}),
         ...(modelDef.headers ?? {}),
       };
+      const maxTokens =
+        typeof provider.maxTokens === "number"
+          ? provider.maxTokens
+          : modelDef.maxTokens;
+      const tokenRatio =
+        typeof provider.tokenRatio === "number"
+          ? provider.tokenRatio
+          : typeof modelDef.tokenRatio === "number"
+            ? modelDef.tokenRatio
+            : 0.75;
       const model: RuntimeModel = {
         id: modelDef.id,
         name: modelDef.name,
@@ -483,14 +493,12 @@ export function buildRuntimeModelsFromProviders(
         input: [...modelDef.input],
         cost: { ...modelDef.cost },
         contextWindow: modelDef.contextWindow,
-        maxTokens: modelDef.maxTokens,
+        maxTokens,
         ...(Object.keys(mergedHeaders).length > 0
           ? { headers: mergedHeaders }
           : {}),
         ...(modelDef.compat ? { compat: { ...modelDef.compat } } : {}),
-        ...(typeof modelDef.tokenRatio === "number"
-          ? { tokenRatio: modelDef.tokenRatio }
-          : { tokenRatio: 0.75 }), // 新增字段，默认 0.75
+        tokenRatio,
         apiKey,
       };
       models[key] = model;
