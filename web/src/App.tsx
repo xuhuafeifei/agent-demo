@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MessageSquare,
   ChartNoAxesCombined,
@@ -6,27 +6,29 @@ import {
   Zap,
   MessageCircleMore,
   Settings,
-} from "lucide-react";
-import { useChatStore } from "./store/chatStore";
-import { useSSEChat } from "./hooks/useSSEChat";
-import { getHistory, clearHistory } from "./api/configApi";
-import Sidebar, { SIDEBAR_KEY, navItems } from "./components/Sidebar";
-import Header from "./components/Header";
-import ContextSnapshotDock from "./components/ContextSnapshotDock";
-import MessageList from "./components/MessageList";
-import InputArea from "./components/InputArea";
-import SettingsPage from "./components/SettingsPage";
-import { MessageContainer } from "./components/Message";
-import "./styles.css";
-import "./styles/message.css";
+} from 'lucide-react';
+import type { ReactNode, ForwardRefExoticComponent } from 'react';
+import { useChatStore } from './store/chatStore';
+import { useSSEChat } from './hooks/useSSEChat';
+import { getHistory, clearHistory } from './api/configApi';
+import Sidebar, { SIDEBAR_KEY, navItems, type NavItem } from './components/Sidebar';
+import Header from './components/Header';
+import ContextSnapshotDock from './components/ContextSnapshotDock';
+import MessageList from './components/MessageList';
+import InputArea from './components/InputArea';
+import SettingsPage from './components/SettingsPage';
+import { MessageContainer } from './components/Message';
+import type { WrappedMessage } from './components/MessageList';
+import './styles.css';
+import './styles/message.css';
 
 // Attach icons to navItems
-navItems[0].icon = MessageSquare;
-navItems[1].icon = ChartNoAxesCombined;
-navItems[2].icon = FolderKanban;
-navItems[3].icon = Zap;
-navItems[4].icon = MessageCircleMore;
-navItems[5].icon = Settings;
+(navItems[0] as any).icon = MessageSquare;
+(navItems[1] as any).icon = ChartNoAxesCombined;
+(navItems[2] as any).icon = FolderKanban;
+(navItems[3] as any).icon = Zap;
+(navItems[4] as any).icon = MessageCircleMore;
+(navItems[5] as any).icon = Settings;
 
 const DESKTOP_BREAKPOINT = 1024;
 const MOBILE_BREAKPOINT = 768;
@@ -35,7 +37,7 @@ const MOBILE_BREAKPOINT = 768;
  * 主应用组件
  */
 export default function App() {
-  const [activeNav, setActiveNav] = useState("chat");
+  const [activeNav, setActiveNav] = useState('chat');
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
@@ -43,10 +45,10 @@ export default function App() {
   const [forceScrollToBottom, setForceScrollToBottom] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const scrollRef = useRef(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const getAllMessages = useChatStore((state) => state.getAllMessages);
-  const allMessages = getAllMessages();
+  const allMessages: WrappedMessage[] = getAllMessages();
 
   const isStreaming = useChatStore((state) => state.isStreaming);
   const isThinking = useChatStore((state) => state.isThinking);
@@ -63,7 +65,7 @@ export default function App() {
 
   const isMobile = viewportWidth < MOBILE_BREAKPOINT;
 
-  const handleSendMessage = async (text) => {
+  const handleSendMessage = async (text: string) => {
     addUserMessage(text);
     setForceScrollToBottom(true);
     try {
@@ -76,7 +78,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(SIDEBAR_KEY) === "1";
+    const saved = window.localStorage.getItem(SIDEBAR_KEY) === '1';
     if (window.innerWidth < DESKTOP_BREAKPOINT) {
       setCollapsed(true);
     } else {
@@ -90,7 +92,7 @@ export default function App() {
     async function loadHistory() {
       setIsLoadingHistory(true);
       try {
-        const response = await getHistory();
+        const response = await getHistory() as any;
         if (!mounted || !response.success) return;
 
         const history = response.history || [];
@@ -100,21 +102,21 @@ export default function App() {
         // 将历史消息按顺序添加到 chatStore
         history.forEach((item, index) => {
           const ts =
-            typeof item.timestamp === "number"
+            typeof item.timestamp === 'number'
               ? item.timestamp
               : Date.now() - (history.length - index) * 1000;
 
-          if (item.role === "user") {
+          if (item.role === 'user') {
             const content =
-              typeof item.content === "string"
+              typeof item.content === 'string'
                 ? item.content
-                : JSON.stringify(item.content || "");
+                : JSON.stringify(item.content || '');
             addUserMessage(content, ts);
-          } else if (item.role === "assistant") {
+          } else if (item.role === 'assistant') {
             const content =
-              typeof item.content === "string"
+              typeof item.content === 'string'
                 ? item.content
-                : JSON.stringify(item.content || "");
+                : JSON.stringify(item.content || '');
             startStreaming(ts);
             appendStreamChunk(content, ts);
             endStreaming();
@@ -130,7 +132,7 @@ export default function App() {
           }, 50);
         }
       } catch (error) {
-        console.error("Failed to load history:", error);
+        console.error('Failed to load history:', error);
       } finally {
         if (mounted) {
           setIsLoadingHistory(false);
@@ -149,49 +151,50 @@ export default function App() {
       if (window.innerWidth < DESKTOP_BREAKPOINT) {
         setCollapsed(true);
       } else {
-        setCollapsed(window.localStorage.getItem(SIDEBAR_KEY) === "1");
+        setCollapsed(window.localStorage.getItem(SIDEBAR_KEY) === '1');
       }
       if (window.innerWidth >= MOBILE_BREAKPOINT) {
         setMobileOpen(false);
       }
     };
 
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        document.querySelector(".input-textarea")?.focus();
+        const el = document.querySelector('.input-textarea') as HTMLTextAreaElement | null;
+        el?.focus();
       }
-      if (e.key === "Escape") {
+      if (e.key === 'Escape') {
         setMobileOpen(false);
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const shellClassName = useMemo(() => {
-    if (isMobile) return "shell mobile";
-    return `shell ${collapsed ? "sidebar-collapsed" : ""}`;
+    if (isMobile) return 'shell mobile';
+    return `shell ${collapsed ? 'sidebar-collapsed' : ''}`;
   }, [collapsed, isMobile]);
 
   return (
     <div className="app-bg">
       {/* Global Message Container */}
       <MessageContainer />
-      
+
       <div className={shellClassName}>
         <Sidebar
           collapsed={collapsed}
           onToggle={() => {
             const next = !collapsed;
             setCollapsed(next);
-            window.localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
+            window.localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
           }}
           activeNav={activeNav}
           onSelectNav={setActiveNav}
@@ -207,11 +210,11 @@ export default function App() {
             onOpenMobile={() => setMobileOpen(true)}
           />
           <main className="chat-main">
-            {activeNav === "setting" ? (
+            {activeNav === 'setting' ? (
               <SettingsPage />
             ) : (
               <>
-                {activeNav === "chat" ? (
+                {activeNav === 'chat' ? (
                   <ContextSnapshotDock contextEvents={contextEvents} />
                 ) : null}
                 <MessageList

@@ -1,23 +1,50 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Copy, Check, ChevronUp, ChevronDown } from "lucide-react";
-import { renderMarkdown, copyText } from "../utils/markdown";
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Copy, Check, ChevronUp, ChevronDown } from 'lucide-react';
+import { renderMarkdown, copyText } from '../utils/markdown';
+import type { Message, ToolCall } from '@/types';
+import type { RefObject } from 'react';
+
+export interface WrappedMessage {
+  type: 'message' | 'tool_call';
+  data: Message | ToolCall;
+  timestamp: number;
+}
+
+/**
+ * MessageList 组件 props
+ */
+interface MessageListProps {
+  allMessages: WrappedMessage[];
+  isStreaming: boolean;
+  isThinking: boolean;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  onScrollChange?: (show: boolean) => void;
+  forceScrollToBottom: boolean;
+  isLoadingHistory: boolean;
+}
 
 /**
  * Assistant 消息组件（无边框设计）
  */
-function AssistantMessage({ content, streaming }) {
+function AssistantMessage({
+  content,
+  streaming,
+}: {
+  content: string;
+  streaming: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   return (
     <article className="message assistant">
       <div className="llm-response">
         <div
-          className={`llm-content ${streaming ? "streaming" : ""}`}
+          className={`llm-content ${streaming ? 'streaming' : ''}`}
           dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
         />
         <div className="copy-wrap">
           <button
-            className={`copy-btn ${copied ? "copied" : ""}`}
+            className={`copy-btn ${copied ? 'copied' : ''}`}
             type="button"
             aria-label="复制内容"
             onClick={async () => {
@@ -38,11 +65,19 @@ function AssistantMessage({ content, streaming }) {
 /**
  * Thinking 消息组件（可折叠）
  */
-function ThinkingMessage({ id, content, isStreaming }) {
+function ThinkingMessage({
+  id,
+  content,
+  isStreaming,
+}: {
+  id: string;
+  content: string;
+  isStreaming: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   const displayContent =
-    typeof content === "string" ? content.replace(/\n{3,}/g, "") : content;
+    typeof content === 'string' ? content.replace(/\n{3,}/g, '\n\n') : content;
 
   return (
     <section className="thinking-item" key={id}>
@@ -75,12 +110,12 @@ function ThinkingMessage({ id, content, isStreaming }) {
 /**
  * ToolCall 卡片组件（可折叠，支持滚轮）
  */
-function ToolCallCard({ toolCall }) {
+function ToolCallCard({ toolCall }: { toolCall: ToolCall }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <section
-      className={`tool-card status-${toolCall.status || "running"} ${expanded ? "expanded" : "collapsed"}`}
+      className={`tool-card status-${toolCall.status || 'running'} ${expanded ? 'expanded' : 'collapsed'}`}
     >
       <button
         className="tool-toggle"
@@ -90,14 +125,14 @@ function ToolCallCard({ toolCall }) {
         onClick={() => setExpanded((prev) => !prev)}
       >
         <div className="tool-header">
-          <span className="tool-title">{toolCall.title || "工具调用"}</span>
-          <span className="tool-status">{toolCall.detail || "进行中..."}</span>
+          <span className="tool-title">{toolCall.title || '工具调用'}</span>
+          <span className="tool-status">{toolCall.detail || '进行中...'}</span>
         </div>
         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
       {expanded ? (
         <div id={`tool-${toolCall.id}`} className="tool-content">
-          <div className="tool-path">{toolCall.content || "-"}</div>
+          <div className="tool-path">{toolCall.content || '-'}</div>
         </div>
       ) : null}
     </section>
@@ -107,7 +142,7 @@ function ToolCallCard({ toolCall }) {
 /**
  * 用户消息组件
  */
-function UserMessage({ content }) {
+function UserMessage({ content }: { content: string }) {
   return (
     <article className="message user">
       <div className="user-bubble">{content}</div>
@@ -126,13 +161,16 @@ function MessageList({
   onScrollChange,
   forceScrollToBottom,
   isLoadingHistory,
-}) {
+}: MessageListProps) {
   const userHasScrolledRef = useRef(false);
   const lastThinkingId = useMemo(() => {
     for (let i = allMessages.length - 1; i >= 0; i -= 1) {
       const item = allMessages[i];
-      if (item.type === "message" && item.data?.role === "thinking") {
-        return item.data.id;
+      if (
+        item.type === 'message' &&
+        (item.data as Message).role === 'thinking'
+      ) {
+        return (item.data as Message).id;
       }
     }
     return null;
@@ -172,8 +210,8 @@ function MessageList({
       }
     };
 
-    el.addEventListener("scroll", handleScroll);
-    return () => el.removeEventListener("scroll", handleScroll);
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
   }, [scrollRef, onScrollChange]);
 
   return (
@@ -189,45 +227,49 @@ function MessageList({
         ) : null}
 
         {allMessages.map((item, idx) => {
-          if (item.data?.content === "" || item.data?.content === undefined) {
+          if (
+            (item.data as Message).content === '' ||
+            (item.data as Message).content === undefined
+          ) {
             return null;
           }
 
-          if (item.type === "tool_call") {
-            return <ToolCallCard key={item.data.id} toolCall={item.data} />;
+          if (item.type === 'tool_call') {
+            return <ToolCallCard key={(item.data as ToolCall).id} toolCall={item.data as ToolCall} />;
           }
 
-          if (item.type === "message") {
-            const msg = item.data;
+          if (item.type === 'message') {
+            const msg = item.data as Message;
 
-            if (msg.role === "user") {
-              const content = typeof msg.content === "string" 
-                ? msg.content 
-                : JSON.stringify(msg.content || "");
+            if (msg.role === 'user') {
+              const content =
+                typeof msg.content === 'string'
+                  ? msg.content
+                  : JSON.stringify(msg.content || '');
               return <UserMessage key={msg.id} content={content} />;
             }
 
-            if (msg.role === "thinking") {
-              const content = typeof msg.content === "string"
-                ? msg.content
-                : JSON.stringify(msg.content || "");
+            if (msg.role === 'thinking') {
+              const content =
+                typeof msg.content === 'string'
+                  ? msg.content
+                  : JSON.stringify(msg.content || '');
               return (
                 <ThinkingMessage
                   key={msg.id}
                   id={msg.id}
                   content={content}
-                  isStreaming={
-                    isStreaming && isThinking && msg.id === lastThinkingId
-                  }
+                  isStreaming={isStreaming && isThinking && msg.id === lastThinkingId}
                 />
               );
             }
 
-            if (msg.role === "assistant") {
+            if (msg.role === 'assistant') {
               const isLast = idx === allMessages.length - 1;
-              const content = typeof msg.content === "string"
-                ? msg.content
-                : JSON.stringify(msg.content || "");
+              const content =
+                typeof msg.content === 'string'
+                  ? msg.content
+                  : JSON.stringify(msg.content || '');
               return (
                 <AssistantMessage
                   key={msg.id}

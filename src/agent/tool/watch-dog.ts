@@ -407,6 +407,9 @@ export function createShiftTimeTool(): ToolDefinition<
   };
 }
 
+/**
+ * @deprecated 未来删掉这个工具
+ */
 export function createValidateCronTool(): ToolDefinition<
   typeof validateCronParams,
   ToolDetails<{ ok: boolean }>

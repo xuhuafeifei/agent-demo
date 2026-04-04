@@ -1,3 +1,4 @@
+// @ts-nocheck - Legacy API, will be replaced by client.ts in future
 async function requestJson(url, options) {
   const response = await fetch(url, options);
   let payload = {};

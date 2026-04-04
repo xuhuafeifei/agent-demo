@@ -1,3 +1,4 @@
+// @ts-nocheck - Large component, will be gradually typed in Phase 4
 import { Check } from "lucide-react";
 import { CollapsibleSection, ToggleSwitch } from "./SettingsPrimitives";
 import {
@@ -277,6 +278,7 @@ export default function SetMemoryAndHeartPage({ memoryTab }) {
                           downloadEnabled: v,
                         }))
                       }
+                      disabled={false}
                     />
                   </div>
                   <div className="settings-form-group">
@@ -333,6 +335,7 @@ export default function SetMemoryAndHeartPage({ memoryTab }) {
                       heartbeatEnabled: v,
                     }))
                   }
+                  disabled={false}
                 />
               </div>
               <div className="settings-form-group">

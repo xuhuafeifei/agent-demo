@@ -1,3 +1,4 @@
+// @ts-nocheck - Component will be gradually typed in Phase 4
 import { useState } from "react";
 import React from "react";
 import { X, Plus, Globe } from "lucide-react";
@@ -48,7 +49,7 @@ function ProviderSelectorModal({ builtinTemplates, currentProviderIds, onSelect,
         {/* Provider list */}
         <div className="provider-modal-list">
           {filtered.map((template) => {
-            const icon = getProviderIcon(template.id);
+            const icon = getProviderIcon(template.id) as any;
             const name = getProviderName(template.id, template);
             const isIconComponent = typeof icon === "function" || (icon && typeof icon === "object" && icon.$$typeof);
             

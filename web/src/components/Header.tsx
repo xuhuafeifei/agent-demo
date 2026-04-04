@@ -1,15 +1,17 @@
-import {
-  Search,
-  Sun,
-  Moon,
-  Monitor,
-  Menu,
-} from "lucide-react";
+import { Search, Sun, Moon, Monitor, Menu } from 'lucide-react';
+
+/**
+ * Header 组件 props
+ */
+interface HeaderProps {
+  isMobile: boolean;
+  onOpenMobile: () => void;
+}
 
 /**
  * 顶部栏组件
  */
-export default function Header({ isMobile, onOpenMobile }) {
+export default function Header({ isMobile, onOpenMobile }: HeaderProps) {
   return (
     <header className="header-bar">
       <div className="header-left">

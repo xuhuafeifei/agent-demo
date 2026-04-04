@@ -1,24 +1,51 @@
-import { useCallback } from "react";
-import { useChatStore } from "../store/chatStore";
+import { useCallback } from 'react';
+import { useChatStore } from '../store/chatStore';
+
+/**
+ * SSE 事件负载
+ */
+interface SSEPayload {
+  type?: string;
+  timestamp?: number;
+  content?: string;
+  delta?: string;
+  thinkingDelta?: string;
+  toolCallId?: string;
+  id?: string;
+  kind?: string;
+  toolName?: string;
+  title?: string;
+  args?: Record<string, unknown>;
+  status?: string;
+  detail?: string;
+  error?: string;
+  contextWindow?: number;
+  model?: string;
+  reason?: string;
+  contextText?: string;
+}
 
 /**
  * 解析 SSE 数据块
  */
-function parseSseBlocks(rawBuffer, onEvent) {
-  const blocks = rawBuffer.split("\n\n");
-  const rest = blocks.pop() || "";
+function parseSseBlocks(
+  rawBuffer: string,
+  onEvent: (type: string, payload: SSEPayload) => void
+): string {
+  const blocks = rawBuffer.split('\n\n');
+  const rest = blocks.pop() || '';
 
   blocks.forEach((block) => {
     if (!block.trim()) return;
-    const lines = block.split("\n");
-    let eventType = "";
-    const dataLines = [];
+    const lines = block.split('\n');
+    let eventType = '';
+    const dataLines: string[] = [];
 
     lines.forEach((line) => {
-      if (line.startsWith("event:")) {
+      if (line.startsWith('event:')) {
         eventType = line.slice(6).trim();
       }
-      if (line.startsWith("data:")) {
+      if (line.startsWith('data:')) {
         dataLines.push(line.slice(5).trimStart());
       }
     });
@@ -26,7 +53,7 @@ function parseSseBlocks(rawBuffer, onEvent) {
     if (!dataLines.length) return;
 
     try {
-      const payload = JSON.parse(dataLines.join("\n"));
+      const payload = JSON.parse(dataLines.join('\n'));
       onEvent(eventType || payload.type, payload);
     } catch {
       // keep stream alive even with malformed blocks
@@ -53,65 +80,67 @@ export function useSSEChat() {
   } = useChatStore();
 
   const handleEvent = useCallback(
-    (type, payload) => {
+    (type: string, payload: SSEPayload) => {
       switch (type || payload?.type) {
-        case "streamStart":
+        case 'streamStart':
           startStreaming(payload?.timestamp);
           break;
 
-        case "agent_message_chunk":
+        case 'agent_message_chunk':
           appendStreamChunk(
-            payload?.content || payload?.delta || "",
+            payload?.content || payload?.delta || '',
             payload?.timestamp
           );
           break;
 
-        case "agent_thought_chunk":
+        case 'agent_thought_chunk':
           appendThinkingChunk(
-            payload?.content || payload?.thinkingDelta || "",
+            payload?.content || payload?.thinkingDelta || '',
             payload?.timestamp
           );
           break;
 
-        case "tool_call":
+        case 'tool_call':
           addToolCall({
-            toolCallId: payload.toolCallId || payload.id,
-            kind: payload.kind || payload.toolName,
-            title: payload.title || `正在执行 ${payload.toolName || "工具"}`,
+            toolCallId: payload.toolCallId || payload.id || '',
+            kind: payload.kind || payload.toolName || '',
+            title: payload.title || `正在执行 ${payload.toolName || '工具'}`,
             content:
               payload.content ||
-              (payload.args ? JSON.stringify(payload.args) : "-"),
-            status: payload.status || "running",
-            detail: payload.detail || "进行中...",
+              (payload.args ? JSON.stringify(payload.args) : '-'),
+            status: payload.status || 'running',
+            detail: payload.detail || '进行中...',
             timestamp: payload.timestamp ?? Date.now(),
           });
           break;
 
-        case "tool_call_update":
-          updateToolCall(payload.toolCallId || payload.id, {
+        case 'tool_call_update':
+          updateToolCall(payload.toolCallId || payload.id || '', {
             status: payload.status,
             detail: payload.detail,
             content: payload.content,
           });
           break;
 
-        case "assistant_break":
+        case 'assistant_break':
           breakAssistantSegment();
           break;
 
-        case "context_snapshot":
+        case 'context_snapshot':
           addContextSnapshot(payload);
           break;
 
-        case "context_used":
+        case 'context_used':
           addContextUsed(payload);
           break;
 
-        case "error":
-          appendStreamChunk(`\n\n**错误**: ${payload?.error || "未知错误"}`);
+        case 'error':
+          appendStreamChunk(
+            `\n\n**错误**: ${payload?.error || '未知错误'}`
+          );
           break;
 
-        case "streamEnd":
+        case 'streamEnd':
           endStreaming();
           break;
 
@@ -133,10 +162,10 @@ export function useSSEChat() {
   );
 
   const sendMessage = useCallback(
-    async (message) => {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+    async (message: string) => {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
       });
 
@@ -146,7 +175,7 @@ export function useSSEChat() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();

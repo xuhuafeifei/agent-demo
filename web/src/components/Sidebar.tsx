@@ -1,16 +1,44 @@
-import { useState, useRef } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useState, useRef } from 'react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import type { ReactNode } from 'react';
 
-const SIDEBAR_KEY = "agent_demo_sidebar_collapsed";
+export const SIDEBAR_KEY = 'agent_demo_sidebar_collapsed';
 
-const navItems = [
-  { key: "chat", label: "聊天", icon: null },
-  { key: "overview", label: "概览", icon: null },
-  { key: "channel", label: "频道", icon: null },
-  { key: "instance", label: "实例", icon: null },
-  { key: "session", label: "会话", icon: null },
-  { key: "setting", label: "设置", icon: null },
+export interface NavItem {
+  key: string;
+  label: string;
+  icon: ReactNode;
+}
+
+export const navItems: NavItem[] = [
+  { key: 'chat', label: '聊天', icon: null },
+  { key: 'overview', label: '概览', icon: null },
+  { key: 'channel', label: '频道', icon: null },
+  { key: 'instance', label: '实例', icon: null },
+  { key: 'session', label: '会话', icon: null },
+  { key: 'setting', label: '设置', icon: null },
 ];
+
+interface TooltipState {
+  show: boolean;
+  text: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Sidebar 组件 props
+ */
+interface SidebarProps {
+  collapsed: boolean;
+  onToggle: () => void;
+  activeNav: string;
+  onSelectNav: (key: string) => void;
+  isMobile: boolean;
+  mobileOpen: boolean;
+  onCloseMobile: () => void;
+  navItems?: NavItem[];
+}
 
 /**
  * 侧边栏组件
@@ -24,14 +52,19 @@ export default function Sidebar({
   mobileOpen,
   onCloseMobile,
   navItems: customNavItems,
-}) {
-  const [tooltip, setTooltip] = useState({ show: false, text: "", x: 0, y: 0 });
-  const tooltipTimerRef = useRef(null);
+}: SidebarProps) {
+  const [tooltip, setTooltip] = useState<TooltipState>({
+    show: false,
+    text: '',
+    x: 0,
+    y: 0,
+  });
+  const tooltipTimerRef = useRef<number | null>(null);
 
   const items = customNavItems || navItems;
   const wrapperClass = isMobile
-    ? `mobile-sidebar ${mobileOpen ? "open" : ""}`
-    : `sidebar ${collapsed ? "collapsed" : ""}`;
+    ? `mobile-sidebar ${mobileOpen ? 'open' : ''}`
+    : `sidebar ${collapsed ? 'collapsed' : ''}`;
 
   return (
     <>
@@ -62,12 +95,12 @@ export default function Sidebar({
 
         <nav className="sidebar-nav" role="navigation">
           {items.map((item) => {
-            const Icon = item.icon;
+            const Icon = item.icon as React.ElementType | null;
             const active = activeNav === item.key;
             return (
               <button
                 key={item.key}
-                className={`nav-item ${active ? "active" : ""}`}
+                className={`nav-item ${active ? 'active' : ''}`}
                 type="button"
                 onClick={() => {
                   onSelectNav(item.key);
@@ -120,5 +153,3 @@ export default function Sidebar({
     </>
   );
 }
-
-export { SIDEBAR_KEY, navItems };

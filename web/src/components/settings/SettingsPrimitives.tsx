@@ -1,3 +1,4 @@
+// @ts-nocheck - Component will be gradually typed in Phase 4
 import React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";

@@ -1,12 +1,14 @@
 /**
  * Frontend API Client for the refactored web layer.
  * Provides type-safe access to all API endpoints.
- * 
+ *
  * Usage:
  * ```typescript
  * const client = new ApiClient({ baseURL: '/api/v1' });
  * const config = await client.config.getFgbg();
  * ```
+ *
+ * Note: Backend routes are mounted at /api/v1
  */
 
 export type ApiSuccess<T> = {

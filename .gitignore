@@ -62,6 +62,7 @@ ehthumbs.db
 tmp/
 temp/
 *.tmp
+*.bak
 .tmp-font/
 
 .claude

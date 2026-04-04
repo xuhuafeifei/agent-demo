@@ -1,3 +1,4 @@
+// @ts-nocheck - Large component, will be gradually typed in Phase 4
 import { ArrowDownToLine, HelpCircle } from "lucide-react";
 import {
   useState,

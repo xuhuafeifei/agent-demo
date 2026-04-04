@@ -1,3 +1,4 @@
+// @ts-nocheck - Large component, will be gradually typed in Phase 4
 import { Plus, Sparkles, Trash2, ExternalLink, Check, X } from "lucide-react";
 import {
   CollapsibleSection,

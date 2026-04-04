@@ -1,3 +1,4 @@
+// @ts-nocheck - Large component, will be gradually typed in Phase 4
 import { Eye, EyeOff, HelpCircle } from "lucide-react";
 
 export default function SetChannelsPage({ channelsTab }) {

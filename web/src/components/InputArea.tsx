@@ -1,5 +1,5 @@
-import React from "react";
-import { useState, useRef, useEffect, useMemo } from "react";
+import React from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   AtSign,
   Paperclip,
@@ -7,22 +7,62 @@ import {
   ArrowDown,
   ChevronDown,
   Check,
-} from "lucide-react";
-import { useChatStore } from "../store/chatStore";
-import { getFgbgConfig, setPrimaryModel } from "../api/configApi";
-import { getProviderIcon, getProviderName } from "./settings/settingsUtils";
+} from 'lucide-react';
+import type { RefObject, ReactNode } from 'react';
+import { useChatStore } from '../store/chatStore';
+import { getFgbgConfig, setPrimaryModel } from '../api/configApi';
+import { getProviderIcon, getProviderName } from './settings/settingsUtils';
+import type { ComponentType } from 'react';
+
+/**
+ * 模型选项
+ */
+interface ModelItem {
+  id: string;
+  label: string;
+}
+
+/**
+ * 模型分组
+ */
+interface ModelGroup {
+  providerId: string;
+  icon: ReactNode;
+  name: string;
+  models: ModelItem[];
+}
+
+/**
+ * InputArea 组件 props
+ */
+interface InputAreaProps {
+  onSend: (text: string) => void;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  showScrollButton: boolean;
+}
+
+interface ProviderInfo {
+  providerId: string;
+  icon: ReactNode;
+  name: string;
+  isIconComponent: boolean;
+}
 
 /**
  * 底部输入框组件
  */
-export default function InputArea({ onSend, scrollRef, showScrollButton }) {
-  const [value, setValue] = useState("");
+export default function InputArea({
+  onSend,
+  scrollRef,
+  showScrollButton,
+}: InputAreaProps) {
+  const [value, setValue] = useState('');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const [primaryModel, setPrimaryModelState] = useState("");
-  const [groupedModels, setGroupedModels] = useState([]);
+  const [primaryModel, setPrimaryModelState] = useState('');
+  const [groupedModels, setGroupedModels] = useState<ModelGroup[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
-  const textareaRef = useRef(null);
-  const dropdownRef = useRef(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const isStreaming = useChatStore((state) => state.isStreaming);
 
   const canSend = value.trim().length > 0 && !isStreaming;
@@ -33,32 +73,34 @@ export default function InputArea({ onSend, scrollRef, showScrollButton }) {
     async function loadModels() {
       setLoadingModels(true);
       try {
-        const res = await getFgbgConfig();
+        const res = await getFgbgConfig() as any;
         if (!mounted) return;
 
         const providers = res.config?.models?.providers || {};
-        const primary = res.config?.agents?.defaults?.model?.primary || "";
+        const primary = res.config?.agents?.defaults?.model?.primary || '';
 
         setPrimaryModelState(primary);
 
         // 构建按供应商分组的模型列表
-        const groups = [];
-        Object.entries(providers).forEach(([providerId, providerCfg]) => {
-          if (providerCfg.models && providerCfg.models.length > 0) {
-            const icon = getProviderIcon(providerId);
-            const name = getProviderName(providerId);
-            const models = providerCfg.models.map((m) => ({
-              id: `${providerId}/${m.id}`,
-              label: m.name || m.id,
-            }));
-            groups.push({ providerId, icon, name, models });
+        const groups: ModelGroup[] = [];
+        Object.entries(providers).forEach(
+          ([providerId, providerCfg]: [string, any]) => {
+            if (providerCfg.models && providerCfg.models.length > 0) {
+              const icon = getProviderIcon(providerId) as ReactNode;
+              const name = getProviderName(providerId);
+              const models = providerCfg.models.map((m: { id: string; name?: string }) => ({
+                id: `${providerId}/${m.id}`,
+                label: m.name || m.id,
+              }));
+              groups.push({ providerId, icon, name, models });
+            }
           }
-        });
+        );
 
         setGroupedModels(groups);
       } catch (error) {
         if (mounted) {
-          console.error("Failed to load models:", error);
+          console.error('Failed to load models:', error);
         }
       } finally {
         if (mounted) setLoadingModels(false);
@@ -72,37 +114,35 @@ export default function InputArea({ onSend, scrollRef, showScrollButton }) {
 
   // 点击外部关闭下拉框
   useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target)
-      ) {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowModelDropdown(false);
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // 选择主模型
-  const handleSelectModel = async (modelId) => {
+  const handleSelectModel = async (modelId: string) => {
     try {
       await setPrimaryModel(modelId);
       setPrimaryModelState(modelId);
       setShowModelDropdown(false);
     } catch (error) {
-      console.error("Failed to set primary model:", error);
+      console.error('Failed to set primary model:', error);
     }
   };
 
   // 当前主模型的供应商信息
-  const currentProviderInfo = useMemo(() => {
+  const currentProviderInfo = useMemo((): ProviderInfo | null => {
     if (!primaryModel) return null;
-    const providerId = primaryModel.split("/")[0];
-    const icon = getProviderIcon(providerId);
+    const providerId = primaryModel.split('/')[0];
+    const icon = getProviderIcon(providerId) as ReactNode;
     const name = getProviderName(providerId);
     const isIconComponent =
-      typeof icon === "function" || (icon && typeof icon === "object" && icon.$$typeof);
+      typeof icon === 'function' ||
+      (icon && typeof icon === 'object' && '$$typeof' in icon);
     return { providerId, icon, name, isIconComponent };
   }, [primaryModel]);
 
@@ -116,7 +156,7 @@ export default function InputArea({ onSend, scrollRef, showScrollButton }) {
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-    textarea.style.height = "auto";
+    textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   }, [value]);
 
@@ -141,10 +181,10 @@ export default function InputArea({ onSend, scrollRef, showScrollButton }) {
           placeholder="继续提问，或输入 @ 来引用内容"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && canSend) {
+            if (e.key === 'Enter' && !e.shiftKey && canSend) {
               e.preventDefault();
               const text = value.trim();
-              setValue("");
+              setValue('');
               onSend(text);
             }
           }}
@@ -172,9 +212,10 @@ export default function InputArea({ onSend, scrollRef, showScrollButton }) {
                   <>
                     <span className="model-btn-icon">
                       {currentProviderInfo.isIconComponent
-                        ? React.createElement(currentProviderInfo.icon, {
-                            size: 16,
-                          })
+                        ? React.createElement(
+                            currentProviderInfo.icon as unknown as ComponentType<any>,
+                            { size: 16 }
+                          )
                         : String(currentProviderInfo.icon)}
                     </span>
                     <span className="model-btn-label">
@@ -200,22 +241,23 @@ export default function InputArea({ onSend, scrollRef, showScrollButton }) {
                       <div key={group.providerId} className="model-group">
                         <div className="model-group-header">
                           <span className="model-group-icon">
-                            {typeof group.icon === "function" ||
+                            {typeof group.icon === 'function' ||
                             (group.icon &&
-                              typeof group.icon === "object" &&
-                              group.icon.$$typeof)
-                              ? React.createElement(group.icon, { size: 14 })
+                              typeof group.icon === 'object' &&
+                              '$$typeof' in group.icon)
+                              ? React.createElement(
+                                  group.icon as unknown as ComponentType<any>,
+                                  { size: 14 }
+                                )
                               : String(group.icon)}
                           </span>
-                          <span className="model-group-name">
-                            {group.name}
-                          </span>
+                          <span className="model-group-name">{group.name}</span>
                         </div>
                         <div className="model-group-items">
                           {group.models.map((model) => (
                             <button
                               key={model.id}
-                              className={`model-dropdown-item ${primaryModel === model.id ? "active" : ""}`}
+                              className={`model-dropdown-item ${primaryModel === model.id ? 'active' : ''}`}
                               onClick={() => handleSelectModel(model.id)}
                             >
                               <span className="model-dropdown-item-label">
@@ -238,14 +280,14 @@ export default function InputArea({ onSend, scrollRef, showScrollButton }) {
             </div>
 
             <button
-              className={`send-btn ${canSend ? "active" : "disabled"}`}
+              className={`send-btn ${canSend ? 'active' : 'disabled'}`}
               type="button"
               aria-label="发送消息"
               disabled={!canSend}
               onClick={() => {
                 const text = value.trim();
                 if (!text) return;
-                setValue("");
+                setValue('');
                 onSend(text);
               }}
             >

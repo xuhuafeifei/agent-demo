@@ -1,11 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
-  root: path.resolve(process.cwd(), "web"),
-  publicDir: path.resolve(process.cwd(), "web/public"),
+  root: path.resolve(__dirname),
+  publicDir: path.resolve(__dirname, "public"),
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
   // 配置代理，把 /api 请求转发到后端
   server: {
     proxy: {

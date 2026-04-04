@@ -1,3 +1,4 @@
+// @ts-nocheck - Large component, will be gradually typed in Phase 4
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
   getFgbgConfig,

@@ -1,10 +1,17 @@
-import { useState, useRef, useMemo, useEffect } from "react";
-import { Layers2, X } from "lucide-react";
-import { copyText } from "../utils/markdown";
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { Layers2, X } from 'lucide-react';
+import { copyText } from '../utils/markdown';
+import type { ContextEvent } from '@/types';
+import type { RefObject } from 'react';
 
-function buildLineDiff(prevText, nextText) {
-  const a = String(prevText || "").split("\n");
-  const b = String(nextText || "").split("\n");
+export interface DiffLine {
+  type: 'add' | 'del' | 'same';
+  line: string;
+}
+
+export function buildLineDiff(prevText: string, nextText: string): DiffLine[] {
+  const a = String(prevText || '').split('\n');
+  const b = String(nextText || '').split('\n');
   const n = a.length;
   const m = b.length;
   const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
@@ -19,48 +26,57 @@ function buildLineDiff(prevText, nextText) {
     }
   }
 
-  const out = [];
+  const out: DiffLine[] = [];
   let i = n;
   let j = m;
   while (i > 0 && j > 0) {
     if (a[i - 1] === b[j - 1]) {
-      out.push({ type: "same", line: a[i - 1] });
+      out.push({ type: 'same', line: a[i - 1] });
       i -= 1;
       j -= 1;
     } else if (dp[i - 1][j] >= dp[i][j - 1]) {
-      out.push({ type: "del", line: a[i - 1] });
+      out.push({ type: 'del', line: a[i - 1] });
       i -= 1;
     } else {
-      out.push({ type: "add", line: b[j - 1] });
+      out.push({ type: 'add', line: b[j - 1] });
       j -= 1;
     }
   }
   while (i > 0) {
-    out.push({ type: "del", line: a[i - 1] });
+    out.push({ type: 'del', line: a[i - 1] });
     i -= 1;
   }
   while (j > 0) {
-    out.push({ type: "add", line: b[j - 1] });
+    out.push({ type: 'add', line: b[j - 1] });
     j -= 1;
   }
   return out.reverse();
 }
 
 /**
+ * ContextSnapshotDock 组件 props
+ */
+interface ContextSnapshotDockProps {
+  contextEvents: ContextEvent[];
+}
+
+/**
  * 聊天区悬浮快照入口
  */
-export default function ContextSnapshotDock({ contextEvents }) {
+export default function ContextSnapshotDock({
+  contextEvents,
+}: ContextSnapshotDockProps) {
   const [contextOpen, setContextOpen] = useState(false);
-  const [expandedId, setExpandedId] = useState(null);
-  const dockRef = useRef(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
 
   const snapshotEvents = useMemo(
     () =>
       [...(contextEvents || [])]
-        .filter((event) => event.kind === "snapshot")
+        .filter((event): event is ContextEvent & { kind: 'snapshot' } => event.kind === 'snapshot')
         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
         .slice(0, 2),
-    [contextEvents],
+    [contextEvents]
   );
 
   const latest = snapshotEvents[0] || null;
@@ -69,34 +85,35 @@ export default function ContextSnapshotDock({ contextEvents }) {
   const diffLines = useMemo(
     () =>
       latest && previous
-        ? buildLineDiff(previous.contextText, latest.contextText)
+        ? buildLineDiff(previous.contextText || '', latest.contextText || '')
         : [],
-    [latest, previous],
+    [latest, previous]
   );
 
   useEffect(() => {
     if (!contextOpen) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
         setContextOpen(false);
         setExpandedId(null);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [contextOpen]);
 
   useEffect(() => {
     if (!contextOpen) return;
-    const onPointerDown = (e) => {
+    const onPointerDown = (e: PointerEvent) => {
       const el = dockRef.current;
-      if (el && !el.contains(e.target)) {
+      if (el && !el.contains(e.target as Node)) {
         setContextOpen(false);
         setExpandedId(null);
       }
     };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () =>
+      document.removeEventListener('pointerdown', onPointerDown, true);
   }, [contextOpen]);
 
   if (!snapshotEvents.length) return null;
@@ -104,7 +121,7 @@ export default function ContextSnapshotDock({ contextEvents }) {
   return (
     <div
       ref={dockRef}
-      className={`context-snapshot-dock ${contextOpen ? "context-snapshot-dock--open" : ""}`}
+      className={`context-snapshot-dock ${contextOpen ? 'context-snapshot-dock--open' : ''}`}
     >
       {contextOpen ? (
         <div className="context-panel context-panel--fab">
@@ -124,15 +141,13 @@ export default function ContextSnapshotDock({ contextEvents }) {
             {snapshotEvents.map((event, index) => (
               <div key={event.id} className="context-item">
                 <div className="context-meta">
-                  <strong>
-                    {index === 0 ? "最新快照" : "上一轮快照"}
-                  </strong>
-                  <span className="context-reason">{event.reason || "-"}</span>
+                  <strong>{index === 0 ? '最新快照' : '上一轮快照'}</strong>
+                  <span className="context-reason">{event.reason || '-'}</span>
                   <button
                     type="button"
                     className="context-chip-btn"
                     onClick={async () => {
-                      await copyText(event.contextText || "");
+                      await copyText(event.contextText || '');
                     }}
                   >
                     复制
@@ -142,15 +157,17 @@ export default function ContextSnapshotDock({ contextEvents }) {
                     className="context-chip-btn"
                     onClick={() =>
                       setExpandedId((prev) =>
-                        prev === event.id ? null : event.id,
+                        prev === event.id ? null : event.id
                       )
                     }
                   >
-                    {expandedId === event.id ? "收起" : "展开"}
+                    {expandedId === event.id ? '收起' : '展开'}
                   </button>
                 </div>
                 {expandedId === event.id ? (
-                  <pre className="context-body-pre">{event.contextText || "-"}</pre>
+                  <pre className="context-body-pre">
+                    {event.contextText || '-'}
+                  </pre>
                 ) : null}
               </div>
             ))}
@@ -165,9 +182,9 @@ export default function ContextSnapshotDock({ contextEvents }) {
                       const text = diffLines
                         .map(
                           (item) =>
-                            `${item.type === "add" ? "+" : item.type === "del" ? "-" : " "}${item.line}`,
+                            `${item.type === 'add' ? '+' : item.type === 'del' ? '-' : ' '}${item.line}`
                         )
-                        .join("\n");
+                        .join('\n');
                       await copyText(text);
                     }}
                   >
@@ -178,13 +195,19 @@ export default function ContextSnapshotDock({ contextEvents }) {
                   {diffLines.map((item, idx) => (
                     <div
                       key={`${item.type}_${idx}`}
-                      className={`diff-line ${item.type === "add" ? "add" : item.type === "del" ? "del" : "same"}`}
+                      className={`diff-line ${
+                        item.type === 'add'
+                          ? 'add'
+                          : item.type === 'del'
+                          ? 'del'
+                          : 'same'
+                      }`}
                     >
-                      {item.type === "add"
-                        ? "+"
-                        : item.type === "del"
-                          ? "-"
-                          : " "}
+                      {item.type === 'add'
+                        ? '+'
+                        : item.type === 'del'
+                        ? '-'
+                        : ' '}
                       {item.line}
                     </div>
                   ))}
@@ -196,11 +219,11 @@ export default function ContextSnapshotDock({ contextEvents }) {
       ) : null}
       <button
         type="button"
-        className={`context-fab ${contextOpen ? "context-fab--active" : ""}`}
+        className={`context-fab ${contextOpen ? 'context-fab--active' : ''}`}
         aria-expanded={contextOpen}
         aria-label={
           contextOpen
-            ? "关闭上下文快照"
+            ? '关闭上下文快照'
             : `打开上下文快照（${snapshotEvents.length}）`
         }
         onClick={() => {
@@ -225,5 +248,3 @@ export default function ContextSnapshotDock({ contextEvents }) {
     </div>
   );
 }
-
-export { buildLineDiff };
