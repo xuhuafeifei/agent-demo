@@ -77,7 +77,7 @@ async function runSingleTask(
     result = await handler({ task, payload, config });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("[watch-dog] task(%s) exception: %s", task.task_name, message);
+    logger.error("task(%s) exception: %s", task.task_name, message);
     result = { status: "failed", errorMessage: message };
   }
 
@@ -146,7 +146,7 @@ async function processTasks(
     const task = tasks[current];
     const handler = HANDLERS[task.task_type];
     if (!handler) {
-      logger.error("[watch-dog] no handler for task_type=%s", task.task_type);
+      logger.error("no handler for task_type=%s", task.task_type);
       return;
     }
     await runSingleTask(task, handler, Date.now(), { triggerBy: "heartbeat" });
@@ -168,7 +168,7 @@ export async function runTaskByNameNow(taskName: string): Promise<boolean> {
   if (!task) return false;
   const handler = HANDLERS[task.task_type];
   if (!handler) {
-    logger.error("[watch-dog] no handler for task_type=%s", task.task_type);
+    logger.error("no handler for task_type=%s", task.task_type);
     return false;
   }
   // 手动执行：不更新 next_run_time，保持原始节拍
@@ -186,7 +186,7 @@ async function tickOnce(): Promise<void> {
   try {
     const cfg = getHeartbeatConfig();
     if (!cfg.enabled) {
-      logger.debug("[watch-dog] heartbeat disabled via config");
+      logger.debug("heartbeat disabled via config");
       return;
     }
     const nowIso = nowChinaIso();
@@ -196,7 +196,7 @@ async function tickOnce(): Promise<void> {
     await processTasks(tasks, limit);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("[watch-dog] tick error: %s", message);
+    logger.error("tick error: %s", message);
   } finally {
     ticking = false;
   }
@@ -245,7 +245,7 @@ export async function startWatchDog(): Promise<void> {
   if (timer) return;
   await ensureSystemTasks();
   tickLoop();
-  logger.info("[watch-dog] started");
+  logger.info("started");
 }
 
 /**
@@ -256,10 +256,10 @@ async function tickLoop(): Promise<void> {
     try {
       await tickOnce();
     } catch (err) {
-      logger.error("[watch-dog] tick exception: %s", err);
+      logger.error("tick exception: %s", err);
     }
     const cfg = getHeartbeatConfig();
-    await new Promise(res => setTimeout(res, cfg.intervalMs));
+    await new Promise((res) => setTimeout(res, cfg.intervalMs));
   }
 }
 
@@ -271,6 +271,6 @@ export function stopWatchDog(): void {
   if (timer) {
     clearTimeout(timer);
     timer = null;
-    logger.info("[watch-dog] stopped");
+    logger.info("stopped");
   }
 }

@@ -83,6 +83,8 @@ async function getDb(): Promise<sqlite.DatabaseSync> {
   db = new sqlite.DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode=WAL;");
   db.exec("PRAGMA synchronous=NORMAL;");
+  // 与其它协程路径（工具 upsert / 读任务）交错时避免立刻 SQLITE_BUSY
+  db.exec("PRAGMA busy_timeout=5000;");
   ensureSchema(db);
   return db;
 }
@@ -147,8 +149,9 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
   const timezone = input.timezone?.trim() || "Asia/Shanghai";
   const status: TaskStatus = input.status ?? "pending";
 
-  const stmt = database.prepare(
-    `INSERT INTO task_schedule
+  await serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `INSERT INTO task_schedule
       (task_name, task_type, payload_text, schedule_kind, schedule_expr, timezone, status, attempts, last_error, create_time, update_time, next_run_time)
      VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
      ON CONFLICT(task_name) DO UPDATE SET
@@ -160,19 +163,20 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
         status=excluded.status,
         update_time=excluded.update_time,
         next_run_time=excluded.next_run_time`,
-  );
-  stmt.run(
-    input.task_name,
-    input.task_type,
-    input.payload_text ?? null,
-    input.schedule_kind,
-    input.schedule_expr,
-    timezone,
-    status,
-    now,
-    now,
-    nextRun,
-  );
+    );
+    stmt.run(
+      input.task_name,
+      input.task_type,
+      input.payload_text ?? null,
+      input.schedule_kind,
+      input.schedule_expr,
+      timezone,
+      status,
+      now,
+      now,
+      nextRun,
+    );
+  });
   storeLogger.info(
     "upsert task_schedule name=%s type=%s kind=%s status=%s next=%s",
     input.task_name,
@@ -225,14 +229,16 @@ export async function listDueTasks(
  */
 export async function listAllTasks(): Promise<TaskScheduleRow[]> {
   const database = await getDb();
-  const stmt = database.prepare(
-    `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
+  return serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
             schedule_kind, schedule_expr, timezone,
             create_time, update_time, next_run_time, started_at, finished_at
      FROM task_schedule
      ORDER BY next_run_time ASC`,
-  );
-  return stmt.all() as TaskScheduleRow[];
+    );
+    return stmt.all() as TaskScheduleRow[];
+  });
 }
 
 /**
@@ -244,17 +250,19 @@ export async function triggerTaskByName(
   nowIso: string,
 ): Promise<boolean> {
   const database = await getDb();
-  const stmt = database.prepare(
-    `UPDATE task_schedule
+  return serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `UPDATE task_schedule
      SET status='pending',
          update_time=?,
          next_run_time=?,
          started_at=NULL,
          finished_at=NULL
      WHERE task_name=?`,
-  );
-  const result = stmt.run(nowIso, nowIso, taskName);
-  return typeof result.changes === "number" && result.changes > 0;
+    );
+    const result = stmt.run(nowIso, nowIso, taskName);
+    return typeof result.changes === "number" && result.changes > 0;
+  });
 }
 
 /**
@@ -264,15 +272,17 @@ export async function getTaskByName(
   taskName: string,
 ): Promise<TaskScheduleRow | null> {
   const database = await getDb();
-  const stmt = database.prepare(
-    `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
+  return serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
             schedule_kind, schedule_expr, timezone,
             create_time, update_time, next_run_time, started_at, finished_at
      FROM task_schedule
      WHERE task_name = ?`,
-  );
-  const row = stmt.get(taskName) as TaskScheduleRow | undefined;
-  return row ?? null;
+    );
+    const row = stmt.get(taskName) as TaskScheduleRow | undefined;
+    return row ?? null;
+  });
 }
 
 /**
@@ -318,8 +328,7 @@ export async function markTaskRunning(
   startedAtIso: string,
 ): Promise<void> {
   const database = await getDb();
-  // 交由串行执行器执行
-  serialExecutor.execute(async () => {
+  await serialExecutor.execute(async () => {
     const stmt = database.prepare(
       `UPDATE task_schedule
      SET status='running',
@@ -329,7 +338,6 @@ export async function markTaskRunning(
      WHERE id=?`,
     );
     stmt.run(startedAtIso, startedAtIso, taskId);
-    // log
     storeLogger.info(
       "mark task_schedule id=%s status=running started_at=%s",
       taskId,
@@ -351,8 +359,7 @@ export async function finalizeTask(params: {
   lastError?: string | null;
 }): Promise<void> {
   const database = await getDb();
-  // 交给串行执行器执行
-  serialExecutor.execute(async () => {
+  await serialExecutor.execute(async () => {
     const stmt = database.prepare(
       `UPDATE task_schedule
      SET status = ?, finished_at = ?, update_time = ?, next_run_time = COALESCE(?, next_run_time), last_error = ?
@@ -366,7 +373,6 @@ export async function finalizeTask(params: {
       params.lastError ?? null,
       params.taskId,
     );
-    // log
     storeLogger.info(
       "finalize task_schedule id=%s status=%s finished_at=%s next_run_time=%s last_error=%s",
       params.taskId,
@@ -393,8 +399,7 @@ export async function insertTaskDetail(params: {
 }): Promise<void> {
   const database = await getDb();
   const now = nowChinaIso();
-  // 交由串行执行器执行
-  serialExecutor.execute(async () => {
+  await serialExecutor.execute(async () => {
     const stmt = database.prepare(
       `INSERT INTO task_schedule_detail
       (task_id, start_time, end_time, create_time, update_time, status, error_message, executor)

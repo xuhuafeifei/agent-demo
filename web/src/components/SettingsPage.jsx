@@ -301,7 +301,8 @@ export default function SettingsPage() {
       try {
         const payload = await getDefaultModelProvider();
         if (!mounted) return;
-        setDefaultProviderId(payload.defaultProvider || null);
+        const newDefaultId = payload.defaultProvider || null;
+        setDefaultProviderId(newDefaultId);
       } catch (error) {
         if (mounted) {
           console.error("Failed to load default provider:", error);
@@ -313,6 +314,19 @@ export default function SettingsPage() {
       mounted = false;
     };
   }, []);
+
+  // 当 defaultProviderId 加载完成后，自动切换到默认 provider
+  useEffect(() => {
+    if (defaultProviderId && providers.length > 0) {
+      setSelectedProviderId((prev) => {
+        // 如果默认值存在且当前没选中或选中的是 fallback 的，切换到默认值
+        if (providers.some((p) => p.id === defaultProviderId)) {
+          return defaultProviderId;
+        }
+        return prev;
+      });
+    }
+  }, [defaultProviderId, providers]);
 
   // Load model options when provider changes (use frontend maintained list)
   useEffect(() => {

@@ -99,7 +99,7 @@ async function bootstrap() {
     startWatchDog();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    serverLogger.error("[watch-dog] failed to start: %s", message);
+    serverLogger.error("failed to start: %s", message);
   }
 }
 

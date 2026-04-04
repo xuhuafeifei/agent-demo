@@ -101,6 +101,8 @@ function resolveLogPath(template: string, now: Date): string {
   return template.replace(/YYYY-MM-DD/g, toDateText(now));
 }
 
+export { resolveLogPath };
+
 function shouldLog(level: LoggingLevel, minLevel: LoggingLevel): boolean {
   if (minLevel === "silent") return false;
   return LEVEL_WEIGHT[level] >= LEVEL_WEIGHT[minLevel];
