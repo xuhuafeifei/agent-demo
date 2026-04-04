@@ -60,7 +60,6 @@ export default function SettingsPage() {
     consoleStyle: "pretty",
     allowModule: [],
   });
-  const [evictingCache, setEvictingCache] = useState(false);
   // 日志配置过长：默认收起，仅保留简短配置头；用户可展开查看更多配置项
   const [loggingConfigExpanded, setLoggingConfigExpanded] = useState(false);
 
@@ -710,20 +709,15 @@ export default function SettingsPage() {
         setBaseConfig(payload.config);
         setMetadata(payload.metadata || {});
       }
+      
+      // 保存成功后自动刷新日志配置缓存
+      await evictLoggingCache();
+      
       MessageManager.success("保存成功");
     } catch (error) {
       MessageManager.error(`保存失败: ${error.message}`);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleEvictLoggingCache = async () => {
-    try {
-      await evictLoggingCache();
-      MessageManager.info("日志配置缓存已清除，系统将重新读取配置。");
-    } catch (error) {
-      MessageManager.info(`清除缓存失败: ${error.message}`);
     }
   };
 
@@ -1113,8 +1107,6 @@ export default function SettingsPage() {
       ) : activeTab === "logging" ? (
         <SetLoggingPage
           loggingTab={{
-            handleEvictLoggingCache,
-            evictingCache,
             saving,
             loggingConfigExpanded,
             setLoggingConfigExpanded,

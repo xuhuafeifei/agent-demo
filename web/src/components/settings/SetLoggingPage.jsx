@@ -1,9 +1,7 @@
-import { HelpCircle, RefreshCw } from "lucide-react";
+import { HelpCircle } from "lucide-react";
 
 export default function SetLoggingPage({ loggingTab }) {
   const {
-    handleEvictLoggingCache,
-    evictingCache,
     saving,
     loggingConfigExpanded,
     setLoggingConfigExpanded,
@@ -26,20 +24,6 @@ export default function SetLoggingPage({ loggingTab }) {
             </p>
           </div>
           <div className="settings-logging-config-actions">
-            <button
-              type="button"
-              className="settings-evict-btn"
-              onClick={handleEvictLoggingCache}
-              disabled={evictingCache || saving}
-              title="强制刷新：清除日志配置缓存，通知 logging 子系统重新读取配置"
-            >
-              <RefreshCw
-                size={16}
-                className={evictingCache ? "spinning" : ""}
-              />
-              <span>强制刷新</span>
-            </button>
-
             <button
               type="button"
               className="settings-logging-expand-btn"
