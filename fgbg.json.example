@@ -73,7 +73,7 @@
     "tools": ["read", "write", "append", "update", "getNow", "shiftTime"],
     "customTools": [
       "memorySearch",
-      "persistMemory",
+      "persistKnowledge",
       "loadSkill",
       "createReminderTask",
       "createAgentTask"

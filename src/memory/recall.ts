@@ -59,8 +59,9 @@ export async function searchMemory(
     if (fRank) score += 1 / (RRF_K + fRank);
     if (vRank) score += 1 / (RRF_K + vRank);
 
-    // 来源加权：MEMORY.md 略高于 sessions，再高于普通 memory
+    // 来源加权：MEMORY.md / userinfo 略高于 sessions，再高于普通 memory
     if (chunk.source === "MEMORY.md") score *= 1.1;
+    if (chunk.source === "userinfo") score *= 1.15;
     if (chunk.source === "sessions") score *= 1.05;
 
     hits.push({

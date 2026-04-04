@@ -3,7 +3,7 @@ import type { ToolRegisterConfig } from "../../types.js";
 import { createAppendTool } from "./append.js";
 import { createLoadSkillTool } from "./load-skill.js";
 import { createMemorySearchTool } from "./memory-search.js";
-import { createPersistMemoryTool } from "./persist-memory.js";
+import { createPersistKnowledgeTool } from "./persist-knowledge.js";
 import { createUpdateTool } from "./update.js";
 import { createCompactContextTool } from "./compact-context.js";
 import {
@@ -28,7 +28,7 @@ export const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
   // customTools: 业务工具（偏“让模型主动使用的能力”）
   customTools: [
     "memorySearch",
-    "persistMemory",
+    "persistKnowledge",
     "loadSkill",
     "createReminderTask",
     "createAgentTask",
@@ -68,10 +68,10 @@ const TOOL_REGISTRY: Record<
     description:
       "memorySearch(query, topKFts?, topKVector?, topN?) - retrieve recent memory",
   },
-  persistMemory: {
-    factory: (cwd) => createPersistMemoryTool(cwd),
+  persistKnowledge: {
+    factory: (cwd) => createPersistKnowledgeTool(cwd),
     description:
-      "persistMemory(filename, content) - persist as .md: USER.md for user info (name, preferences), memory/xxx.md for topic summaries, MEMORY.md for other; append if exists else create",
+      "persistKnowledge - discriminated by type (see JSON schema descriptions on each field): memory → ~/.fgbg/memory/*.md append/create; userinfo → workspace/userinfo/*.md overwrite+YAML frontmatter+indexed; skill → workspace/skills/<dir>/ SKILL.md+meta.json overwrite",
   },
   loadSkill: {
     factory: () => createLoadSkillTool(),
@@ -181,7 +181,7 @@ export class ToolRegister {
   getFilterContextToolNames(): string[] {
     return [
       "memorySearch",
-      "persistMemory",
+      "persistKnowledge",
       "loadSkill",
       "read",
       "reminderTask",

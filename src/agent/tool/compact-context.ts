@@ -11,7 +11,8 @@ const logger = getSubsystemConsoleLogger("compact-tool");
 export function createCompactContextTool() {
   return {
     name: "compactContext",
-    description: "压缩会话上下文，当会话过长时调用此工具来减少上下文大小",
+    description:
+      "Compress session context when the conversation is too long to reduce token usage.",
     parameters: {
       type: "object",
       properties: {},

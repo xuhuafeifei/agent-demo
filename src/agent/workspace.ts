@@ -20,15 +20,6 @@ const DEFAULT_SOUL_TEMPLATE = `# SOUL
 - Describe the long-term behavior and principles of the agent.
 `;
 
-const DEFAULT_USER_TEMPLATE = `# USER
-
-## Profile
-- Add user preferences and constraints here.
-
-## Working Style
-- Add collaboration conventions here.
-`;
-
 const DEFAULT_SKILL_TEMPLATE = `# SKILL
 
 > Global skill guidance file. Keep it concise.
@@ -82,7 +73,7 @@ function ensureBuiltinSkill(
 /**
  * 确保 Agent workspace 可用：
  * 1) 创建 ~/.fgbg/workspace（或环境变量覆盖路径）
- * 2) 初始化 SOUL.md / USER.md（仅首次创建）
+ * 2) 初始化 SOUL.md / SKILL.md（仅首次创建）、userinfo/ 与 skills/
  */
 export function ensureAgentWorkspace(): string {
   const workspaceDir = resolveWorkspaceDir();
@@ -91,16 +82,20 @@ export function ensureAgentWorkspace(): string {
   }
 
   const soulContent = readTemplateOrDefault(SOUL_TEMPLATE_PATH, DEFAULT_SOUL_TEMPLATE);
-  const userContent = readTemplateOrDefault(USER_TEMPLATE_PATH, DEFAULT_USER_TEMPLATE);
 
   ensureFileWithContent(path.join(workspaceDir, "SOUL.md"), soulContent);
-  ensureFileWithContent(path.join(workspaceDir, "USER.md"), userContent);
   ensureFileWithContent(path.join(workspaceDir, "SKILL.md"), DEFAULT_SKILL_TEMPLATE);
 
   const skillsDir = path.join(workspaceDir, "skills");
   if (!fs.existsSync(skillsDir)) {
     fs.mkdirSync(skillsDir, { recursive: true, mode: 0o700 });
   }
+
+  const userinfoDir = path.join(workspaceDir, "userinfo");
+  if (!fs.existsSync(userinfoDir)) {
+    fs.mkdirSync(userinfoDir, { recursive: true, mode: 0o700 });
+  }
+
   ensureBuiltinSkill(workspaceDir, "task-scheduler");
 
   return workspaceDir;
@@ -120,16 +115,67 @@ export function readWorkspaceSoul(): string {
   }
 }
 
+/** userinfo/*.md 头部 YAML frontmatter 解析结果 */
+export type UserinfoFrontmatter = {
+  name: string;
+  description: string;
+};
+
 /**
- * 读取 workspace 下的 USER.md。
- * 文件不存在时返回空字符串。
+ * 从 Markdown 正文解析 `---` ... `---` YAML 风格 frontmatter 中的 name / description（单行值）。
  */
-export function readWorkspaceUser(): string {
-  const workspaceDir = ensureAgentWorkspace();
-  const userPath = path.join(workspaceDir, "USER.md");
-  try {
-    return fs.readFileSync(userPath, "utf8");
-  } catch {
-    return "";
+export function parseUserinfoFrontmatter(content: string): UserinfoFrontmatter | null {
+  const lines = content.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return null;
+  const fields: Record<string, string> = {};
+  let i = 1;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "---") break;
+    const m = /^([a-zA-Z_][\w]*)\s*:\s*(.*)$/.exec(line);
+    if (m) fields[m[1]] = m[2].trim();
   }
+  if (i >= lines.length || lines[i].trim() !== "---") return null;
+  const name = (fields.name ?? "").trim();
+  const description = (fields.description ?? "").trim();
+  if (!name || !description) return null;
+  return { name, description };
+}
+
+/**
+ * 扫描 workspace/userinfo 下顶层 *.md，汇总 frontmatter 中的 name/description 供 system prompt ## User 使用。
+ */
+export function readWorkspaceUserinfoSummary(): string {
+  const workspaceDir = ensureAgentWorkspace();
+  const userinfoDir = path.join(workspaceDir, "userinfo");
+  if (!fs.existsSync(userinfoDir)) return "";
+
+  const names = fs
+    .readdirSync(userinfoDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md"))
+    .map((e) => e.name)
+    .sort();
+
+  const blocks: string[] = [];
+  for (const fileName of names) {
+    const filePath = path.join(userinfoDir, fileName);
+    let raw = "";
+    try {
+      raw = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const parsed = parseUserinfoFrontmatter(raw);
+    if (parsed) {
+      blocks.push(
+        `- **${parsed.name}**\n  description: ${parsed.description}\n  file: userinfo/${fileName}`,
+      );
+    } else {
+      blocks.push(
+        `- **${path.basename(fileName, ".md")}** (add YAML frontmatter with name/description)\n  file: userinfo/${fileName}`,
+      );
+    }
+  }
+
+  return blocks.join("\n");
 }

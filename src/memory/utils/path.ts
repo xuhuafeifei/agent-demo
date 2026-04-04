@@ -27,6 +27,20 @@ export function resolveWorkspaceMemoryPath(): string {
 }
 
 /**
+ * 工作区 userinfo/（扁平 *.md，参与 memorySearch）。
+ */
+export function resolveWorkspaceUserinfoDir(): string {
+  return path.join(resolveWorkspaceDir(), "userinfo");
+}
+
+/**
+ * 工作区 skills/（不参与 memorySearch，仅 loadSkill）。
+ */
+export function resolveWorkspaceSkillsDir(): string {
+  return path.join(resolveWorkspaceDir(), "skills");
+}
+
+/**
  * 用户 memory 目录（~/.fgbg/memory）。
  */
 export function resolveUserMemoryDir(): string {

@@ -49,9 +49,13 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const toolings = nonEmptyListOrFallback(input.toolings, ["N/A"]);
   const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
   const channel = normalizeChannel(input.channel);
-  const channelFormattingInstruction = getChannelFormattingInstruction(channel);
   return `## who you are
 ${soul}
+
+## Environment
+Please current date is ${nowText}! don't forget it!
+if you forget it, you can use the function tool, getNow to get the current date!
+In addition, if you see other time information elsewhere, those are outdated; ${nowText} is the correct one!
 
 ## Toolings
 
@@ -62,10 +66,9 @@ You have access to the following toolings:
 ${skillsMeta}
 
 ## User
-${user}
+Summaries from workspace **userinfo/*.md** (YAML frontmatter \`name\` / \`description\`). For full text or fuzzy recall use **memorySearch** and **read** on \`userinfo/...\`.
 
-## Environment
-Current date ${nowText}
+${user}
 
 ## Language
 If the user does not request it, reply in ${language}.
@@ -73,27 +76,26 @@ If the user does not request it, reply in ${language}.
 ## Workspace
 Your working directory is: ${workspace}
 
-## Current Chat Information
-user and assistant chat history
-${chatHistory}
-
 ## Channel
 ${channel}
-
-## Output Format
-${channelFormattingInstruction}
 
 ## Memory Recall
 Do not assume memory is preloaded in this prompt.
 When you need past memory or long-term context, use function tools to query memory by yourself.
 
+Boundary: **Project-level** long-term notes live in workspace **MEMORY.md** (this workspace). **User-level** topic summaries live under **~/.fgbg/memory/** (via persistKnowledge type memory). Do not confuse the two when persisting or searching.
+
 ## Memory Persistence
-Use the persistMemory tool to persist important info. Choose filename by content type (append if file exists, else create):
+Use **persistKnowledge** with required field **type**:
 
-- **USER.md** — Use for anything about the user: real name, nickname, preferences, working style, collaboration habits. When the user tells you their name or personal details, persist to USER.md.
-- **memory/xxx.md** — Use for topic/project summaries, domain knowledge, or session summaries that are not primarily about the user identity.
-- **MEMORY.md** — Use for general long-term facts that are neither user profile nor a single-topic summary.
+- **type: "memory"** — User-wide topic summaries in **~/.fgbg/memory/<fileName>.md** (append if file exists, else create). Fields: **fileName** (basename only, e.g. \`notes.md\`), **content** (plain Markdown body, no skill-style header).
+- **type: "userinfo"** — Preferences and collaboration habits in **workspace/userinfo/<fileName>.md** (overwrites file). Fields: **fileName**, **name**, **description**, **content**. The tool adds YAML frontmatter; these files are indexed for memorySearch and summarized in ## User above.
+- **type: "skill"** — Reusable procedures under **workspace/skills/<skillDir>/** (overwrites SKILL.md and meta.json). Fields: **skillDir**, **name**, **description**, **content**. Full steps: use **loadSkill(skillDir)**; do not rely on memorySearch for skill bodies.
 
-Rule: user identity and user-related info → USER.md; other summaries → memory/*.md or MEMORY.md.
+For **MEMORY.md** only: use **read** / **write** / **append** on the workspace file path—do not use persistKnowledge for it.
+
+## Current Chat Information
+user and assistant chat history
+${chatHistory}
 `;
 }

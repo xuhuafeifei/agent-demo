@@ -15,6 +15,8 @@ import {
   ensureDirSync,
   resolveUserMemoryDir,
   resolveWorkspaceMemoryPath,
+  resolveWorkspaceSkillsDir,
+  resolveWorkspaceUserinfoDir,
 } from "./utils/path.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { readFgbgUserConfig } from "../config/index.js";
@@ -55,15 +57,22 @@ function measureSync<T>(params: {
 
 /**
  * 根据路径推断来源类型，用于缺省 source 的场景。
- * 与 memory.ts 映射一致：workspace 的 MEMORY.md → memory；用户 memory 目录 → MEMORY.md。
+ * 与 memory.ts 映射一致：workspace 的 MEMORY.md → memory；用户 memory 目录 → MEMORY.md；userinfo → userinfo。
  */
 function detectSourceByPath(filePath: string): MemorySource {
   const normalized = path.resolve(filePath);
   if (filePath.endsWith(".jsonl")) return "sessions";
-  if (normalized === path.resolve(resolveWorkspaceMemoryPath()))
-    return "memory";
-  if (normalized.startsWith(path.resolve(resolveUserMemoryDir()) + path.sep))
+  if (normalized === path.resolve(resolveWorkspaceMemoryPath())) return "memory";
+  const userinfoDir = path.resolve(resolveWorkspaceUserinfoDir());
+  const userinfoPrefix = userinfoDir + path.sep;
+  if (normalized.startsWith(userinfoPrefix)) return "userinfo";
+  const userMem = path.resolve(resolveUserMemoryDir());
+  if (
+    normalized.startsWith(userMem + path.sep) ||
+    normalized === userMem
+  ) {
     return "MEMORY.md";
+  }
   return "memory";
 }
 
@@ -225,9 +234,12 @@ export async function syncAllMemorySources(
 ): Promise<SyncSummary> {
   const started = Date.now();
   ensureDirSync(resolveUserMemoryDir());
+  ensureDirSync(resolveWorkspaceUserinfoDir());
+
 
   const workspaceMemory = resolveWorkspaceMemoryPath();
   const userMemoryFiles = listMarkdownFiles(resolveUserMemoryDir());
+  const userinfoFiles = listMarkdownFiles(resolveWorkspaceUserinfoDir());
   const sessionFiles = sessionDir ? listJsonlFiles(sessionDir) : [];
 
   memoryLogger.debug("syncAllMemorySources: workspaceMemory", {
@@ -236,11 +248,15 @@ export async function syncAllMemorySources(
   memoryLogger.debug("syncAllMemorySources: userMemoryFiles", {
     userMemoryFiles,
   });
+  memoryLogger.debug("syncAllMemorySources: userinfoFiles", {
+    userinfoFiles,
+  });
   memoryLogger.debug("syncAllMemorySources: sessionFiles", { sessionFiles });
 
   const candidates = new Map<string, MemorySource>();
   candidates.set(path.resolve(workspaceMemory), "memory"); // 工作区 MEMORY.md 路径 → memory
   for (const p of userMemoryFiles) candidates.set(path.resolve(p), "MEMORY.md"); // 用户 memory 目录 → MEMORY.md
+  for (const p of userinfoFiles) candidates.set(path.resolve(p), "userinfo");
   for (const p of sessionFiles) candidates.set(path.resolve(p), "sessions");
 
   memoryLogger.debug("syncAllMemorySources: candidates", { candidates });

@@ -16,6 +16,7 @@ import {
   ensureDirSync,
   resolveUserMemoryDir,
   resolveWorkspaceMemoryPath,
+  resolveWorkspaceUserinfoDir,
 } from "./utils/path.js";
 import { resolveSessionDir } from "../agent/session/session-path.js";
 import { ensureAgentWorkspace } from "../agent/workspace.js";
@@ -79,10 +80,12 @@ export class MemoryIndexManager {
     ensureAgentWorkspace();
     const workspaceMemory = resolveWorkspaceMemoryPath();
     ensureDirSync(resolveUserMemoryDir());
+    ensureDirSync(resolveWorkspaceUserinfoDir());
 
-    // 两路监听：工作区 MEMORY.md 单文件 + 用户 ~/.fgbg/memory/*.md 目录
+    // 监听：工作区 MEMORY.md、~/.fgbg/memory/*.md、workspace/userinfo/*.md
     this.watchFile(workspaceMemory, "MEMORY.md");
     this.watchDir(resolveUserMemoryDir(), "memory");
+    this.watchDir(resolveWorkspaceUserinfoDir(), "userinfo");
 
     // 获取配置并创建准备策略
     const config = readFgbgUserConfig().agents.memorySearch;
@@ -165,7 +168,7 @@ export class MemoryIndexManager {
    * 所有来源最终归一化到内部 MemorySource，并按 path 去重防抖。
    */
   onMemorySourceChanged(
-    source: "workspace" | "memory" | "session",
+    source: "workspace" | "memory" | "session" | "userinfo",
     filePath: string,
   ): void {
     if (this.state !== "running") return;
@@ -175,6 +178,7 @@ export class MemoryIndexManager {
     if (source === "memory") mapped = "MEMORY.md"; // 用户 memory 目录（~/.fgbg/memory/*.md）→ MEMORY.md
     if (source === "workspace") mapped = "memory"; // 工作区 MEMORY.md 路径 → memory
     if (source === "session") mapped = "sessions";
+    if (source === "userinfo") mapped = "userinfo";
 
     // 同一路径防抖：取消未执行的定时器，只保留最后一次变更
     const existing = this.timerByPath.get(normalized);
@@ -280,16 +284,16 @@ export class MemoryIndexManager {
   }
 
   /**
-   * 监听目录下的 Markdown 文件（~/.fgbg/memory/*.md）。
+   * 监听目录下顶层 *.md（chokidar glob），事件映射到对应 MemorySource。
    */
-  private watchDir(dirPath: string, _source: "memory"): void {
+  private watchDir(dirPath: string, channel: "memory" | "userinfo"): void {
     const watcher = chokidar.watch(path.join(dirPath, "*.md"), {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
     });
 
     const onUpdate = (filePath: string) =>
-      this.onMemorySourceChanged("memory", filePath);
+      this.onMemorySourceChanged(channel, filePath);
     watcher.on("add", onUpdate);
     watcher.on("change", onUpdate);
     watcher.on("unlink", onUpdate);

@@ -9,7 +9,11 @@ import { errResult, okResult, type ToolDetails } from "./types.js";
 const toolLogger = getSubsystemConsoleLogger("tool");
 
 const loadSkillParameters = Type.Object({
-  skillDir: Type.String({ minLength: 1 }),
+  skillDir: Type.String({
+    minLength: 1,
+    description:
+      "Directory under workspace/skills/ containing SKILL.md (e.g. task-scheduler). Relative segments only; no .. or absolute paths.",
+  }),
 });
 
 type LoadSkillInput = Static<typeof loadSkillParameters>;

@@ -7,10 +7,32 @@ import { errResult, okResult, type ToolDetails } from "./types.js";
 const toolLogger = getSubsystemConsoleLogger("tool");
 
 const memorySearchParameters = Type.Object({
-  query: Type.String({ minLength: 1 }),
-  topKFts: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })),
-  topKVector: Type.Optional(Type.Number({ minimum: 1, maximum: 100 })),
-  topN: Type.Optional(Type.Number({ minimum: 1, maximum: 30 })),
+  query: Type.String({
+    minLength: 1,
+    description:
+      "Natural-language query to match indexed MEMORY.md, user memory, userinfo, and session logs.",
+  }),
+  topKFts: Type.Optional(
+    Type.Number({
+      minimum: 1,
+      maximum: 100,
+      description: "Max full-text (FTS) hits to consider before fusion (default from runtime).",
+    }),
+  ),
+  topKVector: Type.Optional(
+    Type.Number({
+      minimum: 1,
+      maximum: 100,
+      description: "Max vector nearest-neighbor hits to consider before fusion (default from runtime).",
+    }),
+  ),
+  topN: Type.Optional(
+    Type.Number({
+      minimum: 1,
+      maximum: 30,
+      description: "Final number of chunks to return after RRF fusion and ranking.",
+    }),
+  ),
 });
 
 type MemorySearchInput = Static<typeof memorySearchParameters>;

@@ -1,10 +1,11 @@
-import { HelpCircle } from "lucide-react";
+import { ArrowDownToLine, HelpCircle } from "lucide-react";
 import {
   useState,
   useEffect,
   useLayoutEffect,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 
 // 日志等级列表
@@ -23,6 +24,34 @@ const LEVEL_COLORS = {
 // 默认最大保存日志条数
 const DEFAULT_MAX_LOG_COUNT = 800;
 
+const LS_MAX_COUNT = "logViewerMaxCount";
+const LS_FOLLOW_TAIL = "logViewerFollowTail";
+
+function readStoredMaxCount() {
+  try {
+    const saved = localStorage.getItem(LS_MAX_COUNT);
+    if (saved) {
+      const n = parseInt(saved, 10);
+      if (!Number.isNaN(n)) {
+        return Math.max(100, Math.min(2000, n));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_MAX_LOG_COUNT;
+}
+
+function readStoredFollowTail() {
+  try {
+    const s = localStorage.getItem(LS_FOLLOW_TAIL);
+    if (s === null) return true;
+    return s === "1" || s === "true";
+  } catch {
+    return true;
+  }
+}
+
 export default function SetLoggingPage({ loggingTab }) {
   const {
     saving,
@@ -38,184 +67,178 @@ export default function SetLoggingPage({ loggingTab }) {
   // 日志状态
   const [selectedLevel, setSelectedLevel] = useState("debug");
   const [selectedModule, setSelectedModule] = useState("");
-  const [keyword, setKeyword] = useState("");
+  /** 输入框内容（未点搜索前不参与过滤） */
+  const [keywordDraft, setKeywordDraft] = useState("");
+  /** 已生效的关键词：点「搜索」或回车后写入 */
+  const [appliedKeyword, setAppliedKeyword] = useState("");
   const [logEntries, setLogEntries] = useState([]);
-  const [offset, setOffset] = useState(0);
   const [lastLineNum, setLastLineNum] = useState(0);
   const [isPolling, setIsPolling] = useState(false);
-  const [isAtBottom, setIsAtBottom] = useState(true); // 跟踪用户是否在底部
-  const [maxLogCount, setMaxLogCount] = useState(DEFAULT_MAX_LOG_COUNT);
+  const [maxLogCount, setMaxLogCount] = useState(readStoredMaxCount);
+  const [followTail, setFollowTail] = useState(readStoredFollowTail);
   const tableContainerRef = useRef(null); // 日志列表固定高度区域的滚动容器
   const pollingTimerRef = useRef(null);
+  /** 供 5s 定时器读取最新 level / 锚点行号 / 条数上限 */
+  const pollStateRef = useRef({
+    selectedLevel,
+    lastLineNum,
+    maxLogCount,
+  });
+  pollStateRef.current = { selectedLevel, lastLineNum, maxLogCount };
 
-  // 读取最大日志条数配置
-  useEffect(() => {
-    const saved = localStorage.getItem("logViewerMaxCount");
-    if (saved) {
-      setMaxLogCount(parseInt(saved, 10));
-    }
-  }, []);
-
-  // 保存最大日志条数配置
+  // 保存最大日志条数配置（持久化，与后端 level 过滤一致：仅保留当前展示等级及以上）
   const handleMaxLogCountChange = (value) => {
     const count = Math.max(100, Math.min(2000, parseInt(value, 10) || DEFAULT_MAX_LOG_COUNT));
     setMaxLogCount(count);
-    localStorage.setItem("logViewerMaxCount", count.toString());
+    try {
+      localStorage.setItem(LS_MAX_COUNT, count.toString());
+    } catch {
+      /* ignore */
+    }
   };
 
-  // 获取日志数据
-  const fetchLogs = useCallback(async (level, currentOffset, limit = 20) => {
+  const setFollowTailPersist = useCallback((next) => {
+    setFollowTail(next);
     try {
+      localStorage.setItem(LS_FOLLOW_TAIL, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // 只调一个接口：GET /api/config/logging/tail（全量 / 增量由 lastLineNum 与后端 replaced 决定）
+  const syncLogs = useCallback(async (forceFull) => {
+    try {
+      const { selectedLevel: level, lastLineNum: anchorState, maxLogCount: cap } =
+        pollStateRef.current;
+      const anchor = forceFull ? 0 : anchorState;
+
       const params = new URLSearchParams({
         level,
-        offset: currentOffset.toString(),
-        limit: limit.toString(),
+        maxCount: String(cap),
       });
-      const response = await fetch(`/api/config/logging/entries?${params}`);
-      const data = await response.json();
-      if (data.success) {
-        return data.entries;
+      if (anchor > 0) {
+        params.set("lastLineNum", String(anchor));
       }
+
+      const response = await fetch(`/api/config/logging/tail?${params}`);
+      const data = await response.json();
+      if (!data.success) return;
+
+      const entries = data.entries || [];
+      const replaced = Boolean(data.replaced);
+
+      if (entries.length === 0) {
+        if (forceFull || anchor <= 0) {
+          setLogEntries([]);
+          setLastLineNum(0);
+        }
+        return;
+      }
+
+      if (forceFull || anchor <= 0 || replaced) {
+        setLogEntries(entries);
+        setLastLineNum(entries[entries.length - 1].lineNum);
+        return;
+      }
+
+      let nextLast = 0;
+      setLogEntries((prev) => {
+        const merged = [...prev, ...entries].slice(-cap);
+        nextLast = merged.length ? merged[merged.length - 1].lineNum : 0;
+        return merged;
+      });
+      setLastLineNum(nextLast);
     } catch (error) {
       console.error("Failed to fetch logs:", error);
     }
-    return [];
   }, []);
 
-  // 根据行号查找已存在的日志索引
-  const findEntryByLineNum = useCallback((entries, lineNum) => {
-    return entries.findIndex((entry) => entry.lineNum === lineNum);
-  }, []);
-
-  // 初始加载日志（切换等级时）
-  const loadInitialLogs = useCallback(async (level) => {
-    // 加载最新的 maxLogCount 条日志
-    const entries = await fetchLogs(level, 0, maxLogCount);
-    setLogEntries(entries);
-    if (entries.length > 0) {
-      setLastLineNum(entries[entries.length - 1].lineNum);
-      setOffset(entries.length);
-    } else {
-      setLastLineNum(0);
-      setOffset(0);
-    }
-  }, [fetchLogs, maxLogCount]);
-
-  // 轮询新日志
-  const pollNewLogs = useCallback(async () => {
-    if (!lastLineNum) return;
-
-    let currentOffset = 0;
-    let batchSize = 20;
-    let found = false;
-
-    // 尝试 20, 40, 80 条
-    for (const size of [20, 40, 80]) {
-      const entries = await fetchLogs(selectedLevel, currentOffset, size);
-      if (entries.length === 0) break;
-
-      // 查找与 lastLineNum 匹配的行
-      const matchIndex = findEntryByLineNum(entries, lastLineNum);
-      if (matchIndex !== -1) {
-        // 找到匹配，追加后续日志
-        const newEntries = entries.slice(matchIndex + 1);
-        if (newEntries.length > 0) {
-          setLogEntries((prev) => {
-            const combined = [...prev, ...newEntries];
-            // 限制最大条数
-            return combined.slice(-maxLogCount);
-          });
-          if (newEntries.length > 0) {
-            setLastLineNum(newEntries[newEntries.length - 1].lineNum);
-          }
-        }
-        found = true;
-        break;
-      }
-      currentOffset += size;
-    }
-
-    // 如果 80 条都没找到，说明产生了超过 80 条新日志，重新加载
-    if (!found) {
-      await loadInitialLogs(selectedLevel);
-    }
-  }, [selectedLevel, lastLineNum, fetchLogs, findEntryByLineNum, loadInitialLogs, maxLogCount]);
-
-  // 启动/停止轮询
   useEffect(() => {
     setIsPolling(true);
-    pollingTimerRef.current = setInterval(pollNewLogs, 5000);
-
+    const id = setInterval(() => {
+      void syncLogs(false);
+    }, 5000);
+    pollingTimerRef.current = id;
     return () => {
-      if (pollingTimerRef.current) {
-        clearInterval(pollingTimerRef.current);
-        pollingTimerRef.current = null;
-      }
+      clearInterval(id);
+      pollingTimerRef.current = null;
       setIsPolling(false);
     };
-  }, [pollNewLogs]);
+  }, [syncLogs]);
 
-  // 初始加载日志（组件挂载时）
+  // 切换等级或最大条数：整表重拉（lastLineNum 由 ref 在下一帧前可能仍旧，用 forceFull 保证走最新快照）
   useEffect(() => {
-    const load = async () => {
-      const entries = await fetchLogs(selectedLevel, 0, maxLogCount);
-      setLogEntries(entries);
-      if (entries.length > 0) {
-        setLastLineNum(entries[entries.length - 1].lineNum);
-        setOffset(entries.length);
-      } else {
-        setLastLineNum(0);
-        setOffset(0);
-      }
-    };
-    load();
-    // 初始加载后滚动到底部
-    setTimeout(() => {
-      const el = tableContainerRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-      }
-      setIsAtBottom(true);
-    }, 100);
-  }, []); // 只在组件挂载时执行一次
+    void syncLogs(true);
+  }, [selectedLevel, maxLogCount, syncLogs]);
 
-  // 过滤日志 (Moved up to fix initialization error)
-  const filteredLogs = logEntries.filter((entry) => {
-    if (selectedModule && entry.subsystem !== selectedModule) return false;
-    if (keyword && !entry.message.toLowerCase().includes(keyword.toLowerCase())) return false;
-    return true;
-  });
+  const filteredLogs = useMemo(() => {
+    const q = appliedKeyword.trim().toLowerCase();
+    return logEntries.filter((entry) => {
+      if (selectedModule && entry.subsystem !== selectedModule) return false;
+      if (q && !entry.message.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [logEntries, selectedModule, appliedKeyword]);
 
-  // 监听日志列表区域滚动，判断是否在底部（仅在该固定高度容器内滚轮）
+  const applyKeywordSearch = useCallback(() => {
+    setAppliedKeyword(keywordDraft.trim());
+  }, [keywordDraft]);
+
+  // 跟随置底：DOM 提交后立刻滚到底（比 rAF 更稳，新数据渲染完再滚）
   useLayoutEffect(() => {
+    if (!followTail) return;
     const el = tableContainerRef.current;
-    if (!el) return undefined;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [followTail, logEntries]);
 
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = el;
-      const atBottom = scrollHeight - scrollTop - clientHeight < 50;
-      setIsAtBottom(atBottom);
+  // 滚轮在内层日志框上时：设置页外层若未到底则先滚外层，再滚内层（需 passive:false 才能 preventDefault）
+  useEffect(() => {
+    const inner = tableContainerRef.current;
+    if (!inner) return;
+
+    const toPixelsY = (e) => {
+      let y = e.deltaY;
+      if (e.deltaMode === 1) y *= 16;
+      else if (e.deltaMode === 2) y *= inner.clientHeight || 1;
+      return y;
     };
 
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
-    return () => el.removeEventListener("scroll", handleScroll);
+    const onWheel = (e) => {
+      const outer = inner.closest(".settings-page");
+      if (!outer) return;
+
+      const dy = toPixelsY(e);
+      if (dy === 0) return;
+
+      const eps = 1;
+      const outerMax = Math.max(0, outer.scrollHeight - outer.clientHeight);
+      const roomOuterDown = outerMax - outer.scrollTop;
+      const roomOuterUp = outer.scrollTop;
+      const roomInnerUp = inner.scrollTop;
+
+      if (dy > 0) {
+        if (roomOuterDown > eps) {
+          e.preventDefault();
+          outer.scrollTop = Math.min(outerMax, outer.scrollTop + dy);
+        }
+        return;
+      }
+
+      if (roomInnerUp > eps) return;
+      if (roomOuterUp > eps) {
+        e.preventDefault();
+        outer.scrollTop = Math.max(0, outer.scrollTop + dy);
+      }
+    };
+
+    inner.addEventListener("wheel", onWheel, { passive: false });
+    return () => inner.removeEventListener("wheel", onWheel);
   }, []);
 
-  // 当日志更新时，如果用户在底部，则自动滚动到底部
-  useEffect(() => {
-    const el = tableContainerRef.current;
-    if (isAtBottom && el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [filteredLogs, isAtBottom]);
-
-  // 切换日志等级时重新加载
-  const handleLevelChange = async (newLevel) => {
+  const handleLevelChange = (newLevel) => {
     setSelectedLevel(newLevel);
-    setOffset(0);
-    setLastLineNum(0);
-    await loadInitialLogs(newLevel);
   };
 
   return (
@@ -488,15 +511,30 @@ export default function SetLoggingPage({ loggingTab }) {
         </div>
         <div className="settings-logging-search-body">
           <div className="settings-logging-search-filters">
-            <div className="settings-form-group">
+            <div className="settings-form-group settings-form-group--keyword-search">
               <label className="settings-form-label">关键词</label>
-              <input
-                type="text"
-                className="settings-form-input"
-                placeholder="输入关键词搜索日志"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-              />
+              <div className="settings-logging-keyword-row">
+                <input
+                  type="text"
+                  className="settings-form-input"
+                  placeholder="输入后点搜索或回车"
+                  value={keywordDraft}
+                  onChange={(e) => setKeywordDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setAppliedKeyword(e.currentTarget.value.trim());
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="settings-logging-search-btn"
+                  onClick={applyKeywordSearch}
+                >
+                  搜索
+                </button>
+              </div>
             </div>
             <div className="settings-form-group">
               <label className="settings-form-label">日志等级</label>
@@ -532,7 +570,12 @@ export default function SetLoggingPage({ loggingTab }) {
               </select>
             </div>
             <div className="settings-form-group">
-              <label className="settings-form-label">最大显示条数</label>
+              <label
+                className="settings-form-label"
+                title="保存在本机浏览器，刷新后仍有效；与当前「日志等级」筛选一致，仅保留该等级及更高级别"
+              >
+                最大显示条数
+              </label>
               <input
                 type="number"
                 className="settings-form-input"
@@ -544,7 +587,7 @@ export default function SetLoggingPage({ loggingTab }) {
               />
             </div>
           </div>
-          <div className="settings-logging-search-results">
+          <div className="settings-logging-search-results settings-logging-search-results--fab">
             <div
               ref={tableContainerRef}
               className="settings-logging-search-results-container"
@@ -564,7 +607,7 @@ export default function SetLoggingPage({ loggingTab }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredLogs.map((entry, index) => (
+                    {filteredLogs.map((entry) => (
                       <tr key={entry.lineNum}>
                         <td className="col-line-num">{entry.lineNum}</td>
                         <td className="col-level">
@@ -595,6 +638,29 @@ export default function SetLoggingPage({ loggingTab }) {
                 </table>
               )}
             </div>
+            <button
+              type="button"
+              className={`settings-logging-follow-fab ${followTail ? "is-active" : ""}`}
+              onClick={() => {
+                const next = !followTail;
+                setFollowTailPersist(next);
+                if (next) {
+                  requestAnimationFrame(() => {
+                    const el = tableContainerRef.current;
+                    if (el) el.scrollTop = el.scrollHeight;
+                  });
+                }
+              }}
+              aria-pressed={followTail}
+              title={
+                followTail
+                  ? "已开启：追加日志时自动滚到底"
+                  : "已关闭：追加日志时不自动滚动，可自由查看历史位置"
+              }
+            >
+              <ArrowDownToLine size={18} strokeWidth={2.25} aria-hidden />
+              <span>{followTail ? "跟随置底" : "跟随关"}</span>
+            </button>
           </div>
         </div>
       </div>

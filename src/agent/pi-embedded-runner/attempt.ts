@@ -253,7 +253,7 @@ export async function runEmbeddedPiAgent(params: {
     attemptLogger.warn("会话需要压缩，正在执行内置压缩功能");
     onEvent({ type: "compaction_start" });
     try {
-      // 压缩前截断不重要的工具结果（如 memorySearch、persistMemory 等）
+      // 压缩前截断不重要的工具结果（如 memorySearch、persistKnowledge 等）
       // 避免这些工具的大量返回内容占用压缩后的 token 配额
       // 每个工具结果保留前 500 字符，这样既保留上下文又节省 token
       const messages = session.agent.state.messages;

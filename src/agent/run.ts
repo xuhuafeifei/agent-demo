@@ -19,7 +19,10 @@ import {
 import { prepareBeforeGetReply } from "./pre-run.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { getMemoryIndexManager } from "../memory/index.js";
-import { readWorkspaceSoul, readWorkspaceUser } from "./workspace.js";
+import {
+  readWorkspaceSoul,
+  readWorkspaceUserinfoSummary,
+} from "./workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { resolveWorkspaceDir } from "../utils/app-path.js";
 import { getAgentToolings } from "./tool/index.js";
@@ -89,7 +92,11 @@ function getSessionMessageEntrys(): SessionMessageEntry[] {
  * Get conversation history in chronological order for frontend API.
  * Returns a simplified format for frontend consumption.
  */
-export function getHistory(): Array<{ role: string; content: string; timestamp?: number }> {
+export function getHistory(): Array<{
+  role: string;
+  content: string;
+  timestamp?: number;
+}> {
   const messageEntrys = getSessionMessageEntrys();
 
   // Filter to only keep user and assistant messages
@@ -101,16 +108,17 @@ export function getHistory(): Array<{ role: string; content: string; timestamp?:
   const recent = filtered.slice(-DEFAULT_HISTORY_LIMIT);
 
   // Transform to frontend-friendly format
-  const history: Array<{ role: string; content: string; timestamp?: number }> = [];
-  const baseTimestamp = Date.now() - (recent.length * 1000); // Base timestamp for ordering
-  
+  const history: Array<{ role: string; content: string; timestamp?: number }> =
+    [];
+  const baseTimestamp = Date.now() - recent.length * 1000; // Base timestamp for ordering
+
   recent.forEach((msg, idx) => {
     const raw = msg.message as {
       role?: string;
       content?: unknown[];
       toolName?: string;
     };
-    
+
     // Extract text content from the message
     const textParts: string[] = [];
     if (Array.isArray(raw.content)) {
@@ -121,13 +129,13 @@ export function getHistory(): Array<{ role: string; content: string; timestamp?:
         }
       }
     }
-    
+
     // Only add if there's text content
     if (textParts.length > 0) {
       history.push({
         role: raw.role || "unknown",
         content: textParts.join("\n"),
-        timestamp: baseTimestamp + (idx * 1000), // Sequential timestamps for ordering
+        timestamp: baseTimestamp + idx * 1000, // Sequential timestamps for ordering
       });
     }
   });
@@ -264,7 +272,7 @@ export async function getReplyFromAgent(params: {
   // 提示词函数是纯组合器：数据由调用方准备后传入。
   const prompt = buildSystemPrompt({
     soul: readWorkspaceSoul(),
-    user: readWorkspaceUser(),
+    user: readWorkspaceUserinfoSummary(),
     nowText: formatChinaIso(new Date()),
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
     chatHistory: chatHistoryText,
