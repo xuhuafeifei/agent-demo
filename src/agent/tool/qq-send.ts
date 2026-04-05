@@ -7,7 +7,7 @@ const qqSendParameters = Type.Object({
   content: Type.String({
     minLength: 1,
     description:
-      "Text content to send to QQ. The target user is resolved automatically from config or recent session context.",
+      "Text content to send to QQ. The target user is `channels.qqbot.targetOpenid` in fgbg.json.",
   }),
 });
 
@@ -22,15 +22,14 @@ export function createQQSendTool(): ToolDefinition<
   typeof qqSendParameters,
   ToolDetails<QQSendOutput>
 >;
+
 export function createQQSendTool(deps: {
-  resolveLastSeenOpenid: () => string;
-  sendQQDirectMessage: (openid: string, content: string) => Promise<boolean>;
+  sendQQDirectMessage: (content: string) => Promise<boolean>;
 }): ToolDefinition<typeof qqSendParameters, ToolDetails<QQSendOutput>>;
+
 export function createQQSendTool(deps?: {
-  resolveLastSeenOpenid: () => string;
-  sendQQDirectMessage: (openid: string, content: string) => Promise<boolean>;
+  sendQQDirectMessage: (content: string) => Promise<boolean>;
 }): ToolDefinition<typeof qqSendParameters, ToolDetails<QQSendOutput>> {
-  const resolveLastSeenOpenid = deps?.resolveLastSeenOpenid ?? (() => "");
   const sendQQDirectMessage = deps?.sendQQDirectMessage ?? (async () => false);
 
   return {
@@ -46,9 +45,8 @@ export function createQQSendTool(deps?: {
           message: "content 不能为空",
         });
       }
-      const cfgOpenid =
+      const openid =
         readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
-      const openid = cfgOpenid || resolveLastSeenOpenid().trim();
       if (!openid) {
         return errResult(
           "未找到 QQ 目标用户，请先在 fgbg.json 配置 channels.qqbot.targetOpenid",
@@ -58,7 +56,7 @@ export function createQQSendTool(deps?: {
           },
         );
       }
-      const sent = await sendQQDirectMessage(openid, content);
+      const sent = await sendQQDirectMessage(content);
       if (!sent) {
         return errResult("QQ 消息发送失败", {
           code: "INTERNAL_ERROR",

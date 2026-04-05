@@ -38,7 +38,6 @@ eventBus.on<unknown[]>(TOPIC_TOOL_BEFORE_BUILD, (dynamicTools) => {
   qqLogger.info("qq dynamic tool created!");
   dynamicTools.push(
     createQQSendTool({
-      resolveLastSeenOpenid: () => getLastSeenQQOpenid(),
       sendQQDirectMessage,
     }),
   );
@@ -70,15 +69,19 @@ async function ensureQQGatewayReady(
 }
 
 /**
- * qq-gateway准备好后，发送单向消息到目标用户
- * @param openid 目标 openid
- * @param content 消息内容
- * @returns 是否发送成功
+ * qq-gateway 准备好后，向 fgbg.json 中 `channels.qqbot.targetOpenid` 对应用户发送单向消息。
+ * openid 仅从用户配置文件读取，不由调用方传入。
  */
-export async function sendQQDirectMessage(
-  openid: string,
-  content: string,
-): Promise<boolean> {
+export async function sendQQDirectMessage(content: string): Promise<boolean> {
+  const openid =
+    readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
+  if (!openid) {
+    qqLogger.error(
+      "sendQQDirectMessage failed: channels.qqbot.targetOpenid missing in fgbg.json",
+    );
+    return false;
+  }
+
   const ready = await ensureQQGatewayReady(7000);
   if (!ready) {
     qqLogger.error(

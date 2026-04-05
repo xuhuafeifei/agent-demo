@@ -190,19 +190,18 @@ function qqTargetOpenidFromFgbg(): string {
 async function deliverReminderByChannels(params: {
   channels: Array<"qq" | "web">;
   text: string;
-  qqOpenid?: string;
 }): Promise<HandlerResult> {
-  const { channels, text, qqOpenid } = params;
+  const { channels, text } = params;
   let successCount = 0;
   const errors: string[] = [];
 
   for (const ch of channels) {
     if (ch === "qq") {
-      if (!qqOpenid) {
+      if (!qqTargetOpenidFromFgbg()) {
         errors.push("qq target missing");
         continue;
       }
-      const ok = await sendQQDirectMessage(qqOpenid, text);
+      const ok = await sendQQDirectMessage(text);
       if (ok) successCount++;
       else errors.push("qq send failed");
     } else if (ch === "web") {
@@ -233,11 +232,9 @@ export const executeReminderHandler: TaskHandler = async ({ task, payload }) => 
     return { status: "failed", errorMessage: "content is required" };
   }
   const channels = toChannelList(p.channels);
-  const qqOpenid = qqTargetOpenidFromFgbg();
   const result = await deliverReminderByChannels({
     channels,
     text: content,
-    qqOpenid,
   });
   handlerLogger.info(
     "execute_reminder completed task_name=%s status=%s",
@@ -290,11 +287,9 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
     }
 
     const channels = toChannelList(p.channels);
-    const qqOpenid = qqTargetOpenidFromFgbg();
     const deliverResult = await deliverReminderByChannels({
       channels,
       text: finalText,
-      qqOpenid,
     });
     handlerLogger.info(
       "execute_agent completed task_name=%s status=%s notify=true",
