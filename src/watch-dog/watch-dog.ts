@@ -49,6 +49,7 @@ function parsePayload(payloadText: string | null): TaskPayload {
  */
 function toDetailStatus(result: HandlerResult): TaskDetailStatus {
   if (result.status === "success") return "success";
+  if (result.status === "skipped") return "skipped";
   if (result.status === "timeout") return "timeout";
   return "failed";
 }
@@ -99,7 +100,7 @@ async function runSingleTask(
     }
     finalStatus = "pending";
   } else {
-    if (result.status === "success") {
+    if (result.status === "success" || result.status === "skipped") {
       finalStatus = "done";
     } else if (result.status === "timeout") {
       finalStatus = "timeout";
@@ -108,20 +109,30 @@ async function runSingleTask(
     }
   }
 
+  const lastErrorForSchedule =
+    result.status === "failed" || result.status === "timeout"
+      ? (result.errorMessage ?? null)
+      : null;
+
   await finalizeTask({
     taskId: task.id,
     status: finalStatus,
     finishedAtIso: finishedAt,
     nextRunTimeIso: nextRun,
-    lastError: result.errorMessage ?? null,
+    lastError: lastErrorForSchedule,
   });
+
+  const detailMessage =
+    result.status === "skipped"
+      ? "skipped (blacklist period)"
+      : (result.errorMessage ?? null);
 
   await insertTaskDetail({
     taskId: task.id,
     startTimeIso: startedAt,
     endTimeIso: finishedAt,
     status: toDetailStatus(result),
-    errorMessage: result.errorMessage ?? null,
+    errorMessage: detailMessage,
     executor: task.task_type,
   });
 }

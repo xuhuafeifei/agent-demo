@@ -12,8 +12,35 @@ import { errResult, okResult, type ToolDetails } from "./types.js";
 import { getLastSeenQQOpenid } from "../../middleware/qq/qq-layer.js";
 import { formatChinaIso } from "../../watch-dog/time.js";
 import { computeNextRunFromCron } from "../../watch-dog/cron.js";
+import { formatBlacklistPresetLines } from "../../watch-dog/blacklist-presets.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
+
+const BLACKLIST_TOOL_PRESET_BLOCK = formatBlacklistPresetLines();
+
+const blacklistPeriodsSchema = Type.Optional(
+  Type.Array(
+    Type.Object({
+      type: Type.Literal("cron", {
+        description: 'Only "cron" is evaluated; other values are ignored.',
+      }),
+      content: Type.String({
+        minLength: 1,
+        description: [
+          "Unix 5-field cron (minute hour day-of-month month day-of-week), OR exact string match (after trim) to one preset cron below.",
+          "Model must copy a preset `cron` literally for preset semantics.",
+          "Presets:",
+          BLACKLIST_TOOL_PRESET_BLOCK,
+        ].join("\n"),
+      }),
+    }),
+    {
+      minItems: 1,
+      description:
+        "Optional: do not run business logic when current fire time matches any rule; cron schedules still advance next_run as usual.",
+    },
+  ),
+);
 
 const listTasksParams = Type.Object({});
 type ListTasksInput = Static<typeof listTasksParams>;
@@ -142,6 +169,7 @@ const createReminderTaskParams = Type.Object({
       description: "Optional task name. Auto-generated when omitted.",
     }),
   ),
+  blacklistPeriods: blacklistPeriodsSchema,
 });
 type CreateReminderTaskInput = Static<typeof createReminderTaskParams>;
 
@@ -204,6 +232,7 @@ const createAgentTaskParams = Type.Object({
       description: "Optional task name. Auto-generated when omitted.",
     }),
   ),
+  blacklistPeriods: blacklistPeriodsSchema,
 });
 type CreateAgentTaskInput = Static<typeof createAgentTaskParams>;
 
@@ -494,12 +523,15 @@ export function createReminderTaskTool(): ToolDefinition<
       }
 
       const qqOpenid = getLastSeenQQOpenid();
-      const payload = {
+      const payload: Record<string, unknown> = {
         content,
         channels,
         timezone,
         target: qqOpenid ? { qqOpenid } : {},
       };
+      if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
+        payload.blacklistPeriods = params.blacklistPeriods;
+      }
 
       try {
         await upsertTaskSchedule({
@@ -599,7 +631,7 @@ export function createAgentTaskTool(): ToolDefinition<
       }
 
       const qqOpenid = getLastSeenQQOpenid();
-      const payload = {
+      const payload: Record<string, unknown> = {
         goal,
         notify,
         channels,
@@ -607,6 +639,9 @@ export function createAgentTaskTool(): ToolDefinition<
         mode,
         target: qqOpenid ? { qqOpenid } : {},
       };
+      if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
+        payload.blacklistPeriods = params.blacklistPeriods;
+      }
 
       try {
         await upsertTaskSchedule({

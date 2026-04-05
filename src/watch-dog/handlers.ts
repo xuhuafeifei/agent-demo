@@ -12,6 +12,7 @@ import type {
   TaskPayload,
 } from "./types.js";
 import { watchDogLogger } from "./watch-dog.js";
+import { shouldSkipTaskForBlacklistNow } from "./blacklist-check.js";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../event-bus/index.js";
 import { sendQQDirectMessage } from "../middleware/qq/qq-layer.js";
 import { formatChinaIso, nowChinaIso } from "./time.js";
@@ -21,7 +22,7 @@ const eventBus = getEventBus();
 const handlerLogger = getSubsystemConsoleLogger("watch-dog:handler");
 
 export type HandlerResult = {
-  status: "success" | "failed" | "timeout";
+  status: "success" | "failed" | "timeout" | "skipped";
   errorMessage?: string;
 };
 
@@ -107,10 +108,15 @@ async function runWithTimeout(
  * @returns 执行结果
  */
 export const executeScriptHandler: TaskHandler = async ({
+  task,
   payload,
   config,
 }) => {
   watchDogLogger.info("[execute_script] triggered");
+  if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
+    watchDogLogger.info("[execute_script] skipped (blacklist)");
+    return { status: "skipped" };
+  }
   const workspaceDir = resolveWorkspaceDir();
   const scriptsDir = path.join(workspaceDir, "scripts");
   const payloadObj = (payload ?? {}) as ScriptTaskPayload;
@@ -207,6 +213,13 @@ async function deliverReminderByChannels(params: {
 
 export const executeReminderHandler: TaskHandler = async ({ task, payload }) => {
   handlerLogger.info("execute_reminder trigger! task_name=%s", task.task_name);
+  if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
+    handlerLogger.info(
+      "execute_reminder skipped (blacklist) task_name=%s",
+      task.task_name,
+    );
+    return { status: "skipped" };
+  }
   const p = (payload ?? {}) as ReminderTaskPayload;
   const content = typeof p.content === "string" ? p.content.trim() : "";
   if (!content) {
@@ -231,6 +244,13 @@ export const executeReminderHandler: TaskHandler = async ({ task, payload }) => 
 
 export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
   handlerLogger.info("execute_agent trigger! task_name=%s", task.task_name);
+  if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
+    handlerLogger.info(
+      "execute_agent skipped (blacklist) task_name=%s",
+      task.task_name,
+    );
+    return { status: "skipped" };
+  }
   const p = (payload ?? {}) as AgentTaskPayload;
   const goal = typeof p.goal === "string" ? p.goal.trim() : "";
   if (!goal) {

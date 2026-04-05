@@ -1,7 +1,8 @@
 import { CronExpressionParser } from "cron-parser";
 import { formatChinaIso } from "./time.js";
 
-function normalizeCronTo6(cron: string): string {
+/** 将五段 Unix cron 补秒为 0，或原样返回六段表达式（供 cron-parser 使用）。 */
+export function normalizeCronTo6(cron: string): string {
   const parts = cron.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 5) return `0 ${parts.join(" ")}`;
   if (parts.length === 6) return parts.join(" ");

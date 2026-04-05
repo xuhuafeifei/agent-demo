@@ -5,7 +5,7 @@ import { nowChinaIso } from "./time.js";
 import { createSerialExecutor } from "./serial-sql.js";
 
 export type TaskStatus = "pending" | "running" | "done" | "failed" | "timeout";
-export type TaskDetailStatus = "success" | "failed" | "timeout";
+export type TaskDetailStatus = "success" | "failed" | "timeout" | "skipped";
 
 export type TaskScheduleKind = "once" | "cron";
 
