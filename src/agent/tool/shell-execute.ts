@@ -8,6 +8,31 @@ import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 const toolLogger = getSubsystemConsoleLogger("shell-execute");
 const promisifiedExec = promisify(exec);
 
+/** Node `exec` 失败时除 `message` 外常带 `stderr`/`stdout`/`code`，仅打 message 会看不到真实原因 */
+function formatExecFailure(error: unknown): string {
+  const e = error as {
+    message?: string;
+    stderr?: string;
+    stdout?: string;
+    code?: number | string;
+  };
+  const base = e.message ?? String(error);
+  const stderr = (e.stderr ?? "").trim();
+  const stdout = (e.stdout ?? "").trim();
+  const code = e.code;
+  const parts: string[] = [base];
+  if (code !== undefined && code !== null) {
+    parts.push(`exitCode: ${String(code)}`);
+  }
+  if (stderr && !base.includes(stderr)) {
+    parts.push(`stderr:\n${stderr}`);
+  }
+  if (stdout && !base.includes(stdout)) {
+    parts.push(`stdout:\n${stdout}`);
+  }
+  return parts.join("\n\n");
+}
+
 // 工具参数定义
 const shellExecuteParameters = Type.Object({
   command: Type.String({ minLength: 1 }),
@@ -53,16 +78,14 @@ export function createShellExecuteTool(): ToolDefinition<typeof shellExecutePara
             stderr: stderr.trim()
           }
         );
-      } catch (error: any) {
-        toolLogger.warn(`Error executing command: ${error.message}`);
+      } catch (error: unknown) {
+        const detail = formatExecFailure(error);
+        toolLogger.warn(`Error executing command:\n${detail}`);
 
-        return errResult(
-          `Error executing command: ${error.message}`,
-          {
-            code: "INTERNAL_ERROR",
-            message: error.message,
-          }
-        );
+        return errResult(`Error executing command:\n${detail}`, {
+          code: "INTERNAL_ERROR",
+          message: detail,
+        });
       }
     },
   };

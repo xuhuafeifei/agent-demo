@@ -98,6 +98,10 @@ export async function sendC2CMessage(params: {
     }),
   });
   if (!response.ok) {
-    throw new Error(`发送私聊消息失败: ${JSON.stringify(response, null, 2)}`);
+    const errBody = await response.text().catch(() => "");
+    const hint = errBody.trim() || "(empty body)";
+    throw new Error(
+      `发送私聊消息失败: HTTP ${response.status} ${response.statusText}; body: ${hint}`,
+    );
   }
 }
