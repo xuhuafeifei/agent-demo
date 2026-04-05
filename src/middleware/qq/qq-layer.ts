@@ -19,18 +19,19 @@ let lastSeenUserOpenid = "";
 let reconnectFn: (() => Promise<void>) | null = null;
 let isConnecting = false;
 
-function persistTargetOpenidIfMissing(openid: string): void {
+/** 每次收到用户私聊事件时写入，覆盖原 `targetOpenid`（与旧「仅空时写入」不同） */
+function persistTargetOpenid(openid: string): void {
   const value = openid.trim();
   if (!value) return;
   const cfg = readFgbgUserConfig();
-  const current = cfg.channels.qqbot.targetOpenid?.trim();
-  if (current) return;
-
   if (cfg.channels.qqbot.enabled === false) return;
+
+  const current = cfg.channels.qqbot.targetOpenid?.trim();
+  if (current === value) return;
 
   cfg.channels.qqbot.targetOpenid = value;
   writeFgbgUserConfig(cfg);
-  qqLogger.info("已自动写入 channels.qqbot.targetOpenid");
+  qqLogger.info("已更新 channels.qqbot.targetOpenid（覆盖为当前私聊用户）");
 }
 
 eventBus.on<unknown[]>(TOPIC_TOOL_BEFORE_BUILD, (dynamicTools) => {
@@ -89,8 +90,10 @@ export async function sendQQDirectMessage(content: string): Promise<boolean> {
     );
     return false;
   }
+  const qqbotAppId = readFgbgUserConfig().channels.qqbot.appId?.trim() ?? "";
   qqLogger.info(
-    "sendQQDirectMessage will POST: fgbg channels.qqbot.targetOpenid (recipient)=%s contentLength=%s content=%s",
+    "sendQQDirectMessage will POST: qqbot.appId=%s targetOpenid(recipient)=%s contentLength=%s content=%s (openid 仅对当前 appId 对应机器人有效，勿跨机器人复用)",
+    qqbotAppId,
     openid,
     String(content.length),
     JSON.stringify(content),
@@ -196,7 +199,7 @@ export async function startQQLayer(): Promise<void> {
         const userOpenId = c2cEvent.author.user_openid;
         lastSeenUserOpenid = userOpenId;
         // 持久化目标 openid
-        persistTargetOpenidIfMissing(userOpenId);
+        persistTargetOpenid(userOpenId);
         const inboundMessageId = c2cEvent.id;
         const inboundText = c2cEvent.content.trim();
         if (!inboundText) return;
