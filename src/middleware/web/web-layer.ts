@@ -7,6 +7,7 @@ import { createMemorySearchRouter } from "./router/memory-search-router.js";
 import { createProvidersRouter } from "./router/providers-router.js";
 import { createLoggingRouter } from "./router/logging-router.js";
 import { createOAuthRouter } from "./router/oauth-router.js";
+import { createApprovalRouter } from "./router/approval-router.js";
 
 /**
  * Create the web layer router.
@@ -20,6 +21,7 @@ export function createWebLayer() {
   router.use("/chat", createChatRouter());
   router.use("/history", createHistoryRouter());
   router.use("/status", createStatusRouter());
+  router.use("/approve", createApprovalRouter());
 
   // Config routers
   router.use("/config/fgbg", createFgbgRouter());

@@ -462,6 +462,166 @@
   line-height: 1.6;
 }
 
+/* Permission request (inline timeline) */
+.permission-card {
+  position: relative;
+  padding-left: 0;
+  margin: 8px 0;
+}
+
+.permission-card::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-light);
+}
+
+.permission-card::after {
+  content: "?";
+  position: absolute;
+  left: -24px;
+  top: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--status-gray);
+}
+
+.permission-card.status-approved::after {
+  content: "✓";
+  color: var(--status-green);
+}
+
+.permission-card.status-denied::after,
+.permission-card.status-expired::after {
+  content: "✗";
+  color: var(--status-red);
+}
+
+.permission-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+
+.permission-toggle:hover {
+  color: var(--text-primary);
+}
+
+.permission-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.permission-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.permission-tool-name {
+  font-family: "JetBrainsBrains Mono", monospace;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg-code);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+}
+
+.permission-status {
+  font-size: 12px;
+  color: var(--text-placeholder);
+}
+
+.permission-content {
+  background: var(--bg-code);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.permission-args {
+  margin: 0;
+  font-family: "JetBrainsBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.permission-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.permission-btn {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.permission-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.permission-btn-allow {
+  background: var(--status-green);
+  color: #fff;
+}
+
+.permission-btn-allow:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.permission-btn-deny {
+  background: transparent;
+  color: var(--status-red);
+  border-color: color-mix(in srgb, var(--status-red) 45%, transparent);
+}
+
+.permission-btn-deny:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--status-red) 12%, transparent);
+}
+
+.permission-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--status-red);
+}
+
+.permission-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-placeholder);
+  text-align: center;
+}
+
 /* Responsive */
 @media (max-width: 1023px) {
   .chat-thread {

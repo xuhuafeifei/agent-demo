@@ -7,7 +7,9 @@ export type ToolErrorCode =
   | "ALREADY_EXISTS"
   | "CONFLICT"
   | "IO_ERROR"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  /** 用户在前端拒绝工具审批（非抛错路径） */
+  | "USER_REJECTED";
 
 export type ToolError = {
   code: ToolErrorCode;

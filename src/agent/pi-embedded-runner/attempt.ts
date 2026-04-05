@@ -16,6 +16,7 @@ import type { RuntimeModel } from "../../types.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { createAgentToolBundle } from "../tool/index.js";
 import { ToolRegister } from "../tool/tool-register.js";
+import { toolReturnedFailure } from "../tool/tool-result-ui.js";
 
 const attemptLogger = getSubsystemConsoleLogger("attempt");
 
@@ -443,7 +444,7 @@ export async function runEmbeddedPiAgent(params: {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           result: event.result,
-          isError: event.isError,
+          isError: event.isError || toolReturnedFailure(event.result),
           alias: getToolDisplayName(event.toolName),
         });
         break;

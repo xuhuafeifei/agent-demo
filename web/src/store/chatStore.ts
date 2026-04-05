@@ -4,13 +4,10 @@ import type {
   ToolCall,
   ContextEvent,
   SSEEventType,
+  WrappedMessage,
+  PermissionTimelineItem,
+  PermissionRequestStatus,
 } from '@/types';
-
-interface WrappedMessage {
-  type: 'message' | 'tool_call';
-  data: Message | ToolCall;
-  timestamp: number;
-}
 
 interface ChatStore {
   // State
@@ -19,6 +16,7 @@ interface ChatStore {
   contextEvents: ContextEvent[];
   isStreaming: boolean;
   isThinking: boolean;
+  permissionRequests: PermissionTimelineItem[];
 
   // Actions
   addUserMessage: (text: string, timestamp?: number) => void;
@@ -40,6 +38,16 @@ interface ChatStore {
     model?: string;
     timestamp?: number;
   }) => void;
+  addPermissionRequest: (payload: {
+    toolUseId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+    timestamp: number;
+  }) => void;
+  updatePermissionRequestStatus: (
+    toolUseId: string,
+    status: Extract<PermissionRequestStatus, 'approved' | 'denied'>
+  ) => void;
   getAllMessages: () => WrappedMessage[];
   clearMessages: () => void;
 }
@@ -64,6 +72,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
     contextEvents: [],
     isStreaming: false,
     isThinking: false,
+    permissionRequests: [],
 
     /**
      * 添加用户消息
@@ -217,7 +226,13 @@ export const useChatStore = create<ChatStore>((set, get) => {
       streamingMessageIndex = null;
       thinkingMessageIndex = null;
       lastEventType = null; // 重置 event 类型
-      set({ isStreaming: false, isThinking: false });
+      set((state) => ({
+        isStreaming: false,
+        isThinking: false,
+        permissionRequests: state.permissionRequests.map((p) =>
+          p.status === 'pending' ? { ...p, status: 'expired' as const } : p
+        ),
+      }));
     },
 
     /**
@@ -309,30 +324,61 @@ export const useChatStore = create<ChatStore>((set, get) => {
       }));
     },
 
+    addPermissionRequest: (payload) => {
+      const item: PermissionTimelineItem = {
+        id: uid(),
+        status: 'pending',
+        toolUseId: payload.toolUseId,
+        toolName: payload.toolName,
+        args: payload.args,
+        timestamp: payload.timestamp,
+      };
+      set((state) => ({
+        permissionRequests: [...state.permissionRequests, item],
+      }));
+    },
+
+    updatePermissionRequestStatus: (toolUseId, status) => {
+      set((state) => ({
+        permissionRequests: state.permissionRequests.map((p) =>
+          p.toolUseId === toolUseId && p.status === 'pending'
+            ? { ...p, status }
+            : p
+        ),
+      }));
+    },
+
     /**
-     * 获取所有消息（包括 ToolCall）并按时间戳排序 - VSCode 方式
+     * 获取所有消息（包括 ToolCall、审批）并按时间戳排序 - VSCode 方式
      */
     getAllMessages: (): WrappedMessage[] => {
-      const { messages, toolCalls } = get();
+      const { messages, toolCalls, permissionRequests } = get();
 
-      // 普通消息
       const regularMessages: WrappedMessage[] = messages.map((msg) => ({
         type: 'message',
         data: msg,
         timestamp: msg.timestamp,
       }));
 
-      // ToolCall 消息
       const toolCallMessages: WrappedMessage[] = toolCalls.map((tool) => ({
         type: 'tool_call',
         data: tool,
         timestamp: tool.timestamp,
       }));
 
-      // 合并并按时间戳排序
-      return [...regularMessages, ...toolCallMessages].sort(
-        (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
+      const permissionMessages: WrappedMessage[] = permissionRequests.map(
+        (p) => ({
+          type: 'permission_request' as const,
+          data: p,
+          timestamp: p.timestamp,
+        })
       );
+
+      return [
+        ...regularMessages,
+        ...toolCallMessages,
+        ...permissionMessages,
+      ].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
     },
 
     /**
@@ -344,6 +390,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
         toolCalls: [],
         contextEvents: [],
         isThinking: false,
+        permissionRequests: [],
       });
       streamingMessageIndex = null;
       thinkingMessageIndex = null;

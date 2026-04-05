@@ -292,6 +292,31 @@ export class ApiClient {
         body: JSON.stringify({ message }),
       }),
   };
+
+  /**
+   * Approval API namespace
+   */
+  readonly approval = {
+    /**
+     * Approve or deny a tool execution request
+     */
+    respond: (toolUseId: string, approved: boolean) =>
+      request<{ ok: boolean; toolUseId: string; approved: boolean }>(
+        `${this.baseURL}/approve`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ toolUseId, approved }),
+        }
+      ),
+
+    /**
+     * Get pending approval requests (debug)
+     */
+    getPending: () =>
+      request<{ pending: Array<{ toolUseId: string; toolName: string; args: Record<string, unknown> }> }>(
+        `${this.baseURL}/approve/pending`
+      ),
+  };
 }
 
 /**

@@ -1,14 +1,17 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Copy, Check, ChevronUp, ChevronDown } from 'lucide-react';
 import { renderMarkdown, copyText } from '../utils/markdown';
-import type { Message, ToolCall } from '@/types';
+import type {
+  Message,
+  ToolCall,
+  WrappedMessage,
+  PermissionTimelineItem,
+} from '@/types';
 import type { RefObject } from 'react';
+import { useChatStore } from '../store/chatStore';
+import { api } from '../api/client';
 
-export interface WrappedMessage {
-  type: 'message' | 'tool_call';
-  data: Message | ToolCall;
-  timestamp: number;
-}
+export type { WrappedMessage };
 
 /**
  * MessageList 组件 props
@@ -150,6 +153,95 @@ function UserMessage({ content }: { content: string }) {
   );
 }
 
+function PermissionRequestCard({ item }: { item: PermissionTimelineItem }) {
+  const updatePermissionRequestStatus = useChatStore(
+    (s) => s.updatePermissionRequestStatus
+  );
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const respond = useCallback(
+    async (approved: boolean) => {
+      if (item.status !== 'pending') return;
+      setLoading(true);
+      setError(null);
+      const res = await api.approval.respond(item.toolUseId, approved);
+      setLoading(false);
+      if (!res.success) {
+        setError(res.error || '操作失败');
+        return;
+      }
+      updatePermissionRequestStatus(
+        item.toolUseId,
+        approved ? 'approved' : 'denied'
+      );
+    },
+    [item.status, item.toolUseId, updatePermissionRequestStatus]
+  );
+
+  const statusLabel =
+    item.status === 'pending'
+      ? '等待确认'
+      : item.status === 'approved'
+        ? '已允许'
+        : item.status === 'denied'
+          ? '已拒绝'
+          : '已过期（未操作或会话已结束）';
+
+  return (
+    <section
+      className={`permission-card status-${item.status} ${expanded ? 'expanded' : 'collapsed'}`}
+    >
+      <button
+        className="permission-toggle"
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={`permission-${item.id}`}
+        onClick={() => setExpanded((p) => !p)}
+      >
+        <div className="permission-header">
+          <span className="permission-title">工具审批</span>
+          <code className="permission-tool-name">{item.toolName}</code>
+          <span className="permission-status">{statusLabel}</span>
+        </div>
+        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {expanded ? (
+        <div id={`permission-${item.id}`} className="permission-content">
+          <pre className="permission-args">
+            {JSON.stringify(item.args, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+      {item.status === 'pending' ? (
+        <div className="permission-actions">
+          <button
+            type="button"
+            className="permission-btn permission-btn-allow"
+            disabled={loading}
+            onClick={() => respond(true)}
+          >
+            {loading ? '处理中…' : '允许'}
+          </button>
+          <button
+            type="button"
+            className="permission-btn permission-btn-deny"
+            disabled={loading}
+            onClick={() => respond(false)}
+          >
+            {loading ? '处理中…' : '拒绝'}
+          </button>
+        </div>
+      ) : null}
+      {error ? <p className="permission-error">{error}</p> : null}
+      {item.status === 'pending' ? (
+        <p className="permission-hint">5 分钟内未操作将自动拒绝</p>
+      ) : null}
+    </section>
+  );
+}
+
 /**
  * 消息列表组件 - VSCode 方式：按时间戳排序渲染
  */
@@ -166,12 +258,9 @@ function MessageList({
   const lastThinkingId = useMemo(() => {
     for (let i = allMessages.length - 1; i >= 0; i -= 1) {
       const item = allMessages[i];
-      if (
-        item.type === 'message' &&
-        (item.data as Message).role === 'thinking'
-      ) {
-        return (item.data as Message).id;
-      }
+      if (item.type !== 'message') continue;
+      const msg = item.data as Message;
+      if (msg.role === 'thinking') return msg.id;
     }
     return null;
   }, [allMessages]);
@@ -227,19 +316,30 @@ function MessageList({
         ) : null}
 
         {allMessages.map((item, idx) => {
-          if (
-            (item.data as Message).content === '' ||
-            (item.data as Message).content === undefined
-          ) {
-            return null;
+          if (item.type === 'permission_request') {
+            return (
+              <PermissionRequestCard
+                key={item.data.id}
+                item={item.data}
+              />
+            );
           }
 
           if (item.type === 'tool_call') {
-            return <ToolCallCard key={(item.data as ToolCall).id} toolCall={item.data as ToolCall} />;
+            return (
+              <ToolCallCard
+                key={(item.data as ToolCall).id}
+                toolCall={item.data as ToolCall}
+              />
+            );
           }
 
           if (item.type === 'message') {
             const msg = item.data as Message;
+
+            if (msg.content === '' || msg.content === undefined) {
+              return null;
+            }
 
             if (msg.role === 'user') {
               const content =
@@ -287,5 +387,11 @@ function MessageList({
   );
 }
 
-export { AssistantMessage, ThinkingMessage, ToolCallCard, UserMessage };
+export {
+  AssistantMessage,
+  ThinkingMessage,
+  ToolCallCard,
+  UserMessage,
+  PermissionRequestCard,
+};
 export default MessageList;

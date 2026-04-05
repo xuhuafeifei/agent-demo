@@ -6,6 +6,11 @@ import {
 import type { RuntimeStreamEvent } from "../../../agent/utils/events.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { writeNamedSse, writeSse } from "../utils/sse.js";
+import { approvalManager } from "../../../agent/approval-manager.js";
+import {
+  toolReturnedFailure,
+  toolUserRejected,
+} from "../../../agent/tool/tool-result-ui.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -40,6 +45,9 @@ export function createChatRouter() {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("Access-Control-Allow-Origin", "*");
+
+    // 注册当前 SSE response 到 approvalManager
+    approvalManager.setActiveRes(res);
     writeNamedSse(res, "streamStart", { startedAt: Date.now() });
     writeNamedSse(res, "user_message_chunk", { content: message });
 
@@ -110,13 +118,33 @@ export function createChatRouter() {
             const elapsedMs =
               typeof startedAt === "number" ? Date.now() - startedAt : 0;
             const displayName = getToolDisplayName(event.toolName, event.alias);
+            const failed =
+              event.isError || toolReturnedFailure(event.result);
+            const rejected = toolUserRejected(event.result);
+
+            let title: string;
+            let detail: string;
+            let status: string;
+            if (rejected) {
+              status = "error";
+              title = `已拒绝执行 ${displayName}`;
+              detail = `${displayName}已拒绝执行 (${elapsedMs}ms)`;
+            } else if (failed) {
+              status = "error";
+              title = `${displayName}执行失败`;
+              detail = `${displayName}执行失败 (${elapsedMs}ms)`;
+            } else {
+              status = "completed";
+              title = `${displayName}已完成`;
+              detail = `${displayName}完成 (${elapsedMs}ms)`;
+            }
+
             writeNamedSse(res, "tool_call_update", {
               id: event.toolCallId,
               toolCallId: event.toolCallId,
-              status: event.isError ? "error" : "completed",
-              detail: event.isError
-                ? `${displayName}执行失败 (${elapsedMs}ms)`
-                : `${displayName}完成 (${elapsedMs}ms)`,
+              title,
+              status,
+              detail,
               content: stringifySafe(event.result),
             });
           }
@@ -146,6 +174,10 @@ export function createChatRouter() {
         error: runtimeError.message,
       });
     } finally {
+      // 清理 approvalManager 中的 SSE response 引用
+      approvalManager.clearActiveRes();
+      // 取消所有未完成的审批（用户断开/请求结束时）
+      approvalManager.cancelAll();
       writeNamedSse(res, "streamEnd", { endedAt: Date.now() });
       res.end();
     }

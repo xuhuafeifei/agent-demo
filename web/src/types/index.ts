@@ -52,7 +52,48 @@ export type SSEEventType =
   | 'context_snapshot'
   | 'context_used'
   | 'error'
-  | 'streamEnd';
+  | 'streamEnd'
+  | 'permission_request';
+
+/**
+ * 工具审批请求（SSE payload / 与后端字段对齐）
+ */
+export interface PermissionRequest {
+  toolUseId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  timestamp: number;
+}
+
+export type PermissionRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'denied'
+  | 'expired';
+
+/**
+ * 对话时间线中的审批条目（含 UI 状态）
+ */
+export interface PermissionTimelineItem {
+  id: string;
+  toolUseId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  timestamp: number;
+  status: PermissionRequestStatus;
+}
+
+/**
+ * 消息列表合并项（消息 / 工具调用 / 审批）
+ */
+export type WrappedMessage =
+  | { type: 'message'; data: Message; timestamp: number }
+  | { type: 'tool_call'; data: ToolCall; timestamp: number }
+  | {
+      type: 'permission_request';
+      data: PermissionTimelineItem;
+      timestamp: number;
+    };
 
 export interface SSEEvent {
   event: SSEEventType;

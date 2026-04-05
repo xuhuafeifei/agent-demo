@@ -23,6 +23,8 @@ interface SSEPayload {
   model?: string;
   reason?: string;
   contextText?: string;
+  // Permission request fields
+  toolUseId?: string;
 }
 
 /**
@@ -77,6 +79,7 @@ export function useSSEChat() {
     addContextSnapshot,
     addContextUsed,
     breakAssistantSegment,
+    addPermissionRequest,
   } = useChatStore();
 
   const handleEvent = useCallback(
@@ -114,13 +117,16 @@ export function useSSEChat() {
           });
           break;
 
-        case 'tool_call_update':
-          updateToolCall(payload.toolCallId || payload.id || '', {
+        case 'tool_call_update': {
+          const id = payload.toolCallId || payload.id || '';
+          updateToolCall(id, {
             status: payload.status,
             detail: payload.detail,
             content: payload.content,
+            ...(typeof payload.title === 'string' ? { title: payload.title } : {}),
           });
           break;
+        }
 
         case 'assistant_break':
           breakAssistantSegment();
@@ -144,6 +150,15 @@ export function useSSEChat() {
           endStreaming();
           break;
 
+        case 'permission_request':
+          addPermissionRequest({
+            toolUseId: payload.toolUseId || '',
+            toolName: (payload.toolName as string) || '未知工具',
+            args: (payload.args as Record<string, unknown>) || {},
+            timestamp: payload.timestamp ?? Date.now(),
+          });
+          break;
+
         default:
           break;
       }
@@ -158,6 +173,7 @@ export function useSSEChat() {
       addContextSnapshot,
       addContextUsed,
       breakAssistantSegment,
+      addPermissionRequest,
     ]
   );
 

@@ -18,7 +18,7 @@ import MessageList from './components/MessageList';
 import InputArea from './components/InputArea';
 import SettingsPage from './components/SettingsPage';
 import { MessageContainer } from './components/Message';
-import type { WrappedMessage } from './components/MessageList';
+import type { WrappedMessage } from './types';
 import './styles.css';
 import './styles/message.css';
 
