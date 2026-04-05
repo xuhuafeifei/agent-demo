@@ -93,9 +93,6 @@ export async function sendC2CMessage(params: {
       msg_type: 0,
       msg_seq: nextMsgSeq(),
       ...(replyToMessageId ? { msg_id: replyToMessageId } : {}),
-      markdown: {
-        content,
-      },
     }),
   });
   if (!response.ok) {
