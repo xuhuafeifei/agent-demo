@@ -27,7 +27,6 @@ function persistTargetOpenid(openid: string): void {
   if (cfg.channels.qqbot.enabled === false) return;
 
   const current = cfg.channels.qqbot.targetOpenid?.trim();
-  qqLogger.info("persistTargetOpenid current=%s value=%s", current, value);
   if (current === value) return;
 
   cfg.channels.qqbot.targetOpenid = value;
@@ -90,14 +89,6 @@ export async function sendQQDirectMessage(content: string): Promise<boolean> {
     );
     return false;
   }
-  const qqbotAppId = readFgbgUserConfig().channels.qqbot.appId?.trim() ?? "";
-  qqLogger.info(
-    "sendQQDirectMessage will POST: qqbot.appId=%s targetOpenid(recipient)=%s contentLength=%s content=%s (openid 仅对当前 appId 对应机器人有效，勿跨机器人复用)",
-    qqbotAppId,
-    openid,
-    String(content.length),
-    JSON.stringify(content),
-  );
   try {
     await sendC2CMessage({
       accessToken: activeAccessToken,
