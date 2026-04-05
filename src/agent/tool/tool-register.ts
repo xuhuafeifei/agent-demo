@@ -14,7 +14,6 @@ import {
   createReminderTaskTool,
   createRunTaskTool,
   createShiftTimeTool,
-  createValidateCronTool,
 } from "./watch-dog.js";
 import { createShellExecuteTool } from "./shell-execute.js";
 import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
@@ -112,18 +111,14 @@ const TOOL_REGISTRY: Record<
     description:
       "shiftTime(time, offset_seconds) - shift HH:mm by seconds (wraps around 24h)",
   },
-  validateCron: {
-    factory: () => createValidateCronTool(),
-    description:
-      "validateCron(cron, timezone?) - validate cron expression (not implemented yet)",
-  },
   compactContext: {
     factory: () => createCompactContextTool(),
     description: "compactContext() - compress session context to reduce size",
   },
   shellExecute: {
     factory: () => createShellExecuteTool(),
-    description: "shellExecute(command) - execute any shell command on macOS system",
+    description:
+      "shellExecute(command) - execute any shell command on macOS system",
   },
 };
 

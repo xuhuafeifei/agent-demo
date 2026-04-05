@@ -436,27 +436,6 @@ export function createShiftTimeTool(): ToolDefinition<
   };
 }
 
-/**
- * @deprecated 未来删掉这个工具
- */
-export function createValidateCronTool(): ToolDefinition<
-  typeof validateCronParams,
-  ToolDetails<{ ok: boolean }>
-> {
-  return {
-    name: "validateCron",
-    label: "Validate Cron",
-    description: "Validate cron expression (not implemented yet).",
-    parameters: validateCronParams,
-    execute: async () => {
-      return errResult("validateCron 暂未实现", {
-        code: "INTERNAL_ERROR",
-        message: "not implemented",
-      });
-    },
-  };
-}
-
 export function createReminderTaskTool(): ToolDefinition<
   typeof createReminderTaskParams,
   ToolDetails<{ task_name: string; task_type: string; next_run_time: string }>
