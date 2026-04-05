@@ -17,6 +17,7 @@ import { getEventBus, TOPPIC_HEART_BEAT } from "../event-bus/index.js";
 import { sendQQDirectMessage } from "../middleware/qq/qq-layer.js";
 import { formatChinaIso, nowChinaIso } from "./time.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
+import { readFgbgUserConfig } from "../config/index.js";
 
 const eventBus = getEventBus();
 const handlerLogger = getSubsystemConsoleLogger("watch-dog:handler");
@@ -181,6 +182,11 @@ function toChannelList(value: unknown): Array<"qq" | "web"> {
   return list.length > 0 ? list : ["qq"];
 }
 
+/** QQ 投递目标仅来自 fgbg.json `channels.qqbot.targetOpenid`，不接受任务 payload。 */
+function qqTargetOpenidFromFgbg(): string {
+  return readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
+}
+
 async function deliverReminderByChannels(params: {
   channels: Array<"qq" | "web">;
   text: string;
@@ -227,8 +233,7 @@ export const executeReminderHandler: TaskHandler = async ({ task, payload }) => 
     return { status: "failed", errorMessage: "content is required" };
   }
   const channels = toChannelList(p.channels);
-  const qqOpenid =
-    typeof p.target?.qqOpenid === "string" ? p.target.qqOpenid.trim() : "";
+  const qqOpenid = qqTargetOpenidFromFgbg();
   const result = await deliverReminderByChannels({
     channels,
     text: content,
@@ -285,8 +290,7 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
     }
 
     const channels = toChannelList(p.channels);
-    const qqOpenid =
-      typeof p.target?.qqOpenid === "string" ? p.target.qqOpenid.trim() : "";
+    const qqOpenid = qqTargetOpenidFromFgbg();
     const deliverResult = await deliverReminderByChannels({
       channels,
       text: finalText,

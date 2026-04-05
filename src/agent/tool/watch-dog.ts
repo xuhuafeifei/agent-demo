@@ -9,7 +9,6 @@ import {
 import { runTaskByNameNow } from "../../watch-dog/watch-dog.js";
 import { upsertTaskSchedule } from "../../watch-dog/store.js";
 import { errResult, okResult, type ToolDetails } from "./types.js";
-import { getLastSeenQQOpenid } from "../../middleware/qq/qq-layer.js";
 import { formatChinaIso } from "../../watch-dog/time.js";
 import { computeNextRunFromCron } from "../../watch-dog/cron.js";
 import { formatBlacklistPresetLines } from "../../watch-dog/blacklist-presets.js";
@@ -501,12 +500,10 @@ export function createReminderTaskTool(): ToolDefinition<
         }
       }
 
-      const qqOpenid = getLastSeenQQOpenid();
       const payload: Record<string, unknown> = {
         content,
         channels,
         timezone,
-        target: qqOpenid ? { qqOpenid } : {},
       };
       if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
         payload.blacklistPeriods = params.blacklistPeriods;
@@ -609,14 +606,12 @@ export function createAgentTaskTool(): ToolDefinition<
         }
       }
 
-      const qqOpenid = getLastSeenQQOpenid();
       const payload: Record<string, unknown> = {
         goal,
         notify,
         channels,
         timezone,
         mode,
-        target: qqOpenid ? { qqOpenid } : {},
       };
       if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
         payload.blacklistPeriods = params.blacklistPeriods;

@@ -28,9 +28,6 @@ export type ReminderTaskPayload = BlacklistPayloadFields & {
   content: string;
   channels: Array<"qq" | "web">;
   timezone?: string;
-  target?: {
-    qqOpenid?: string;
-  };
 };
 
 export type AgentTaskPayload = BlacklistPayloadFields & {
@@ -39,7 +36,4 @@ export type AgentTaskPayload = BlacklistPayloadFields & {
   channels?: Array<"qq" | "web">;
   timezone?: string;
   mode?: "evolve" | "analyze_then_notify";
-  target?: {
-    qqOpenid?: string;
-  };
 };
