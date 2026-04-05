@@ -81,6 +81,7 @@ export async function sendC2CMessage(params: {
   replyToMessageId?: string;
 }): Promise<void> {
   const { accessToken, openid, content, replyToMessageId } = params;
+  // msg_type: 0 为文本；msg_type: 2 为 markdown。非沙箱下自定义 markdown 需内邀开通，否则易返回 11255 invalid request
   const response = await fetch(`${API_BASE}/v2/users/${openid}/messages`, {
     method: "POST",
     headers: {
@@ -88,12 +89,12 @@ export async function sendC2CMessage(params: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      content: "",
-      msg_type: 2, // 0 表示文本消息, 2 表示 markdown
-      msg_seq: nextMsgSeq(), // 消息序列号
-      ...(replyToMessageId ? { msg_id: replyToMessageId } : {}), // 回复消息时添加引用 ID
+      content,
+      msg_type: 0,
+      msg_seq: nextMsgSeq(),
+      ...(replyToMessageId ? { msg_id: replyToMessageId } : {}),
       markdown: {
-        content: content,
+        content,
       },
     }),
   });
