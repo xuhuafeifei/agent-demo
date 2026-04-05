@@ -27,11 +27,12 @@ function persistTargetOpenid(openid: string): void {
   if (cfg.channels.qqbot.enabled === false) return;
 
   const current = cfg.channels.qqbot.targetOpenid?.trim();
+  qqLogger.info("persistTargetOpenid current=%s value=%s", current, value);
   if (current === value) return;
 
   cfg.channels.qqbot.targetOpenid = value;
   writeFgbgUserConfig(cfg);
-  qqLogger.info("已更新 channels.qqbot.targetOpenid（覆盖为当前私聊用户）");
+  qqLogger.info("已更新 channels.qqbot.targetOpenid, 覆盖为当前私聊用户");
 }
 
 eventBus.on<unknown[]>(TOPIC_TOOL_BEFORE_BUILD, (dynamicTools) => {
@@ -74,8 +75,7 @@ async function ensureQQGatewayReady(
  * openid 仅从用户配置文件读取，不由调用方传入。
  */
 export async function sendQQDirectMessage(content: string): Promise<boolean> {
-  const openid =
-    readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
+  const openid = readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
   if (!openid) {
     qqLogger.error(
       "sendQQDirectMessage failed: channels.qqbot.targetOpenid missing in fgbg.json",
