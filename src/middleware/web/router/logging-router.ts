@@ -1,6 +1,11 @@
 import { Router } from "express";
 import fs from "node:fs";
-import { getSubsystemConsoleLogger, evictLoggingConfigCache, ensureLoggingSetting, resolveLogPath } from "../../../logger/logger.js";
+import {
+  getSubsystemConsoleLogger,
+  evictLoggingConfigCache,
+  ensureLoggingSetting,
+  resolveLogPath,
+} from "../../../logger/logger.js";
 import {
   readFgbgUserConfig,
   writeFgbgUserConfig,
@@ -24,10 +29,20 @@ const LEVEL_WEIGHT: Record<string, number> = {
 /**
  * 解析日志行，提取等级、模块和行号
  */
-function parseLogLine(line: string, lineNum: number): { lineNum: number; level: string; subsystem?: string; message: string } | null {
+function parseLogLine(
+  line: string,
+  lineNum: number,
+): {
+  lineNum: number;
+  level: string;
+  subsystem?: string;
+  message: string;
+} | null {
   // 匹配格式: [2026-03-29 12:00:00.000] [INFO] [subsystem] message
   // 或: [2026-03-29 12:00:00.000] [INFO] message
-  const match = line.match(/^\[([^\]]+)\]\s+\[([^\]]+)\](?:\s+\[([^\]]+)\])?\s+(.*)$/);
+  const match = line.match(
+    /^\[([^\]]+)\]\s+\[([^\]]+)\](?:\s+\[([^\]]+)\])?\s+(.*)$/,
+  );
   if (!match) return null;
 
   return {
@@ -254,16 +269,14 @@ export function createLoggingRouter() {
       const level = (req.query.level as string) || "debug";
       // 前端传入的最后一条日志行号，如果没有则为 undefined 或 0
       const lastLineNumParam = req.query.lastLineNum;
-      const lastLineNum = lastLineNumParam ? parseInt(lastLineNumParam as string, 10) : 0;
+      const lastLineNum = lastLineNumParam
+        ? parseInt(lastLineNumParam as string, 10)
+        : 0;
       const maxCount = parseInt(req.query.maxCount as string, 10) || 800;
 
       // 获取日志文件路径
       const cfg = ensureLoggingSetting();
       const logPath = resolveLogPath(cfg.file, new Date());
-
-      webLogger.debug(
-        `[config/logging/tail] Log: ${logPath}, Level: ${level}, LastLineNum: ${lastLineNum}, Max: ${maxCount}`,
-      );
 
       const allFiltered = filterLogEntries(logPath, level);
       let resultEntries: LogEntry[] = [];
@@ -275,21 +288,28 @@ export function createLoggingRouter() {
         resultEntries = allFiltered.slice(-maxCount);
       } else {
         // 增量获取：找到 lastLineNum 所在的位置
-        const lastIndex = allFiltered.findIndex((e) => e.lineNum === lastLineNum);
+        const lastIndex = allFiltered.findIndex(
+          (e) => e.lineNum === lastLineNum,
+        );
 
         if (lastIndex !== -1) {
           // 找到了，返回之后的数据
           resultEntries = allFiltered.slice(lastIndex + 1);
         } else {
           // 没找到（可能被清理或轮转了），降级为返回最后 maxCount 条
-          webLogger.warn(`[config/logging/tail] LastLineNum ${lastLineNum} not found, returning latest.`);
+          webLogger.warn(
+            `LastLineNum ${lastLineNum} not found, returning latest.`,
+          );
           replaced = true;
           resultEntries = allFiltered.slice(-maxCount);
         }
       }
 
       // 获取当前文件的最新行号（用于前端判断是否有新日志产生）
-      const currentMaxLineNum = allFiltered.length > 0 ? allFiltered[allFiltered.length - 1].lineNum : 0;
+      const currentMaxLineNum =
+        allFiltered.length > 0
+          ? allFiltered[allFiltered.length - 1].lineNum
+          : 0;
 
       res.json({
         success: true,
@@ -302,7 +322,7 @@ export function createLoggingRouter() {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error(
-        "[config/logging/tail] %s",
+        "Failed to fetch logs: %s",
         runtimeError.message,
         runtimeError,
       );
