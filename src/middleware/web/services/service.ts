@@ -160,9 +160,10 @@ export function readConfigWithMetadata() {
 /**
  * Patch config with a partial object.
  */
-export function patchConfig(
-  patch: RecursivePartial<FgbgUserConfig>,
-): { config: FgbgUserConfig; metadata: ReturnType<typeof buildConfigMetadata> } {
+export function patchConfig(patch: RecursivePartial<FgbgUserConfig>): {
+  config: FgbgUserConfig;
+  metadata: ReturnType<typeof buildConfigMetadata>;
+} {
   if (hasProtectedPath(patch as Record<string, unknown>)) {
     throw new Error("尝试修改受保护字段（例如 qwen API Key），操作被拒绝。");
   }
@@ -176,7 +177,9 @@ export function patchConfig(
 
   // 校验：保护 qwen-portal 不被删除
   if (current.models?.providers?.["qwen-portal"]) {
-    const updatedProviders = updated.models?.providers as Record<string, unknown> | undefined;
+    const updatedProviders = updated.models?.providers as
+      | Record<string, unknown>
+      | undefined;
     if (!updatedProviders || !updatedProviders["qwen-portal"]) {
       throw new Error("qwen-portal 是内置核心配置，不允许删除。");
     }
@@ -191,11 +194,75 @@ export function patchConfig(
 /**
  * Reset config to defaults.
  */
-export function resetConfig(): { config: FgbgUserConfig; metadata: ReturnType<typeof buildConfigMetadata> } {
+export function resetConfig(): {
+  config: FgbgUserConfig;
+  metadata: ReturnType<typeof buildConfigMetadata>;
+} {
   const defaults = getDefaultFgbgUserConfig();
   writeFgbgUserConfig(defaults);
   evicateFgbgUserConfigCache();
-  
+
+  return readConfigWithMetadata();
+}
+
+/**
+ * 恢复指定配置模块的默认值，不影响其他配置模块。
+ * @param sectionPath - 点分路径指定要恢复的配置模块（例如 "channels.qqbot"）
+ */
+export function resetConfigSection(sectionPath: string): {
+  config: FgbgUserConfig;
+  metadata: ReturnType<typeof buildConfigMetadata>;
+} {
+  // 读取当前配置和默认配置
+  const current = readFgbgUserConfig();
+  const defaults = getDefaultFgbgUserConfig();
+
+  // 解析路径（例如 "channels.qqbot" -> ["channels", "qqbot"]）
+  const pathParts = sectionPath.split(".");
+
+  // 从默认配置中提取指定部分的默认值
+  let defaultSection: unknown = defaults;
+  for (const part of pathParts) {
+    if (
+      defaultSection &&
+      typeof defaultSection === "object" &&
+      part in (defaultSection as Record<string, unknown>)
+    ) {
+      defaultSection = (defaultSection as Record<string, unknown>)[part];
+    } else {
+      throw new Error(`默认配置中不存在路径: ${sectionPath}`);
+    }
+  }
+
+  // 深拷贝当前配置，避免修改原对象
+  const updated = cloneConfig(current);
+  const updatedObj = updated as Record<string, unknown>;
+
+  // 在当前配置中找到目标路径的父节点
+  let targetSection: unknown = updatedObj;
+  for (let i = 0; i < pathParts.length - 1; i++) {
+    const part = pathParts[i];
+    if (
+      !targetSection ||
+      typeof targetSection !== "object" ||
+      !(part in (targetSection as Record<string, unknown>))
+    ) {
+      throw new Error(
+        `当前配置中不存在路径: ${pathParts.slice(0, i + 1).join(".")}`,
+      );
+    }
+    targetSection = (targetSection as Record<string, unknown>)[part];
+  }
+
+  // 将最后一级的值替换为默认值
+  const lastPart = pathParts[pathParts.length - 1];
+  (targetSection as Record<string, unknown>)[lastPart] = defaultSection;
+
+  // 写入磁盘并清除缓存
+  writeFgbgUserConfig(updated);
+  evicateFgbgUserConfigCache();
+
+  // 返回更新后的配置及元信息
   return readConfigWithMetadata();
 }
 
@@ -215,14 +282,14 @@ export function mergeMemorySearchForTest(
       ? partial.model.trim()
       : undefined;
   return {
-    mode: (partial.mode as FgbgUserConfig["agents"]["memorySearch"]["mode"]) ??
+    mode:
+      (partial.mode as FgbgUserConfig["agents"]["memorySearch"]["mode"]) ??
       ms.mode,
     model: partialModel ?? ms.model,
     endpoint: partial.endpoint ?? ms.endpoint,
     apiKey: partial.apiKey ?? ms.apiKey,
     chunkMaxChars: partial.chunkMaxChars ?? ms.chunkMaxChars,
-    embeddingDimensions:
-      partial.embeddingDimensions ?? ms.embeddingDimensions,
+    embeddingDimensions: partial.embeddingDimensions ?? ms.embeddingDimensions,
     download: {
       url: partial.download?.url ?? ms.download.url,
       timeout: partial.download?.timeout ?? ms.download.timeout,

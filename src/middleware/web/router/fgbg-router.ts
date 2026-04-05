@@ -4,6 +4,7 @@ import {
   readConfigWithMetadata,
   patchConfig,
   resetConfig,
+  resetConfigSection,
   hasProtectedPath,
 } from "../services/service.js";
 import { validateRequest, qqbotChannelSchema, heartbeatConfigSchema } from "../validators.js";
@@ -20,6 +21,18 @@ export function createFgbgRouter() {
   router.get("/", (_req, res) => {
     try {
       const result = readConfigWithMetadata();
+      
+      // 对 qqbot 配置进行脱敏，只返回 enabled、appId、clientSecret 三个字段
+      const config = result.config;
+      if (config.channels?.qqbot) {
+        const qqbot = config.channels.qqbot;
+        config.channels.qqbot = {
+          enabled: qqbot.enabled,
+          appId: qqbot.appId,
+          clientSecret: qqbot.clientSecret,
+        } as any;
+      }
+      
       res.json({
         success: true,
         config: result.config,
@@ -99,6 +112,34 @@ export function createFgbgRouter() {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error("[config/reset] %s", runtimeError.message, runtimeError);
+      res.status(500).json({
+        success: false,
+        error: runtimeError.message,
+      });
+    }
+  });
+
+  // POST /config/fgbg/reset/section - 恢复指定配置模块的默认值
+  router.post("/reset/section", (req, res) => {
+    const { section } = req.body || {};
+    if (!section || typeof section !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: "缺少必要参数: section",
+      });
+    }
+
+    try {
+      const result = resetConfigSection(section);
+      res.json({
+        success: true,
+        config: result.config,
+        metadata: result.metadata,
+      });
+    } catch (error: unknown) {
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
+      webLogger.error("[config/reset/section] %s", runtimeError.message, runtimeError);
       res.status(500).json({
         success: false,
         error: runtimeError.message,

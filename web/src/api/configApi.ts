@@ -31,6 +31,14 @@ export async function resetFgbgConfig() {
   });
 }
 
+export async function resetFgbgConfigSection(section) {
+  return requestJson("/api/config/fgbg/reset/section", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ section }),
+  });
+}
+
 /** 记忆嵌入连通性测试（与 embedding-provider 同源，不依赖先保存配置） */
 export async function testMemorySearchConfig(memorySearch) {
   return requestJson("/api/config/memory-search/test", {

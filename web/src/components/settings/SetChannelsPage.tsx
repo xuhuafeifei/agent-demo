@@ -115,56 +115,6 @@ export default function SetChannelsPage({ channelsTab }) {
                     </button>
                   </div>
                 </div>
-
-                {/* Target OpenID */}
-                <div className="settings-form-group">
-                  <label className="settings-form-label">
-                    Target OpenID
-                    <span
-                      className="settings-field-hint-wrap"
-                      title="可选，指定目标用户的 OpenID"
-                    >
-                      <HelpCircle size={14} />
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    className="settings-form-input"
-                    value={channelsForm.qqbotTargetOpenid}
-                    onChange={(e) =>
-                      setChannelsForm((prev) => ({
-                        ...prev,
-                        qqbotTargetOpenid: e.target.value,
-                      }))
-                    }
-                    placeholder="可选，指定目标用户 OpenID"
-                  />
-                </div>
-
-                {/* Accounts */}
-                <div className="settings-form-group">
-                  <label className="settings-form-label">
-                    账号配置（JSON）
-                    <span
-                      className="settings-field-hint-wrap"
-                      title="可选，多账号配置的 JSON 数组"
-                    >
-                      <HelpCircle size={14} />
-                    </span>
-                  </label>
-                  <textarea
-                    className="settings-form-input settings-form-textarea"
-                    value={channelsForm.qqbotAccounts}
-                    onChange={(e) =>
-                      setChannelsForm((prev) => ({
-                        ...prev,
-                        qqbotAccounts: e.target.value,
-                      }))
-                    }
-                    placeholder='[{"appId": "...", "clientSecret": "..."}]'
-                    rows={4}
-                  />
-                </div>
               </div>
             )}
           </div>

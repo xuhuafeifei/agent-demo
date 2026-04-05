@@ -4,6 +4,7 @@ import {
   getFgbgConfig,
   patchFgbgConfig,
   resetFgbgConfig,
+  resetFgbgConfigSection,
   getProviderModels,
   getSupportedModelProviders,
   evictLoggingCache,
@@ -68,8 +69,6 @@ export default function SettingsPage() {
     qqbotEnabled: false,
     qqbotAppId: "",
     qqbotClientSecret: "",
-    qqbotTargetOpenid: "",
-    qqbotAccounts: "",
   });
   const [showQqbotSecret, setShowQqbotSecret] = useState(false);
 
@@ -170,10 +169,6 @@ export default function SettingsPage() {
           qqbotEnabled: qqbot.enabled ?? false,
           qqbotAppId: qqbot.appId ?? "",
           qqbotClientSecret: qqbot.clientSecret ?? "",
-          qqbotTargetOpenid: qqbot.targetOpenid ?? "",
-          qqbotAccounts: Array.isArray(qqbot.accounts)
-            ? JSON.stringify(qqbot.accounts, null, 2)
-            : "",
         });
       } catch (error) {
         if (mounted) MessageManager.info(`加载配置失败: ${error.message}`);
@@ -865,23 +860,11 @@ export default function SettingsPage() {
           ? structuredClone(rawConfig)
           : JSON.parse(JSON.stringify(rawConfig || {}));
 
-      let accountsArr = null;
-      if (channelsForm.qqbotAccounts.trim()) {
-        try {
-          accountsArr = JSON.parse(channelsForm.qqbotAccounts);
-          if (!Array.isArray(accountsArr)) accountsArr = null;
-        } catch {
-          accountsArr = null;
-        }
-      }
-
       if (!draft.channels) draft.channels = {};
       draft.channels.qqbot = {
         enabled: channelsForm.qqbotEnabled,
         appId: channelsForm.qqbotAppId.trim(),
         clientSecret: channelsForm.qqbotClientSecret,
-        targetOpenid: channelsForm.qqbotTargetOpenid.trim() || undefined,
-        accounts: accountsArr,
       };
 
       const patch = deepDiff(draft, baseConfig);
@@ -1059,11 +1042,40 @@ export default function SettingsPage() {
   const handleReset = async () => {
     setResetting(true);
     try {
-      const payload = await resetFgbgConfig();
+      // 根据当前激活的 tab 决定恢复哪个部分
+      // 定义 tab 到配置路径的映射
+      const tabToSectionMap = {
+        models: "models",
+        memoryHeartbeat: null, // 特殊处理：需要恢复两个部分
+        logging: "logging",
+        channels: "channels.qqbot",
+      };
+
+      let payload;
+      const section = tabToSectionMap[activeTab];
+
+      if (activeTab === "memoryHeartbeat") {
+        // 记忆与心跳：需要恢复 agents.memorySearch 和 heartbeat 两个部分
+        await resetFgbgConfigSection("agents.memorySearch");
+        payload = await resetFgbgConfigSection("heartbeat");
+        MessageManager.success("已恢复记忆与心跳配置默认值");
+      } else if (section) {
+        // 其他单个配置模块
+        payload = await resetFgbgConfigSection(section);
+        const sectionName = {
+          models: "模型",
+          logging: "日志",
+          channels: "通道",
+        }[activeTab] || "配置";
+        MessageManager.success(`已恢复${sectionName}配置默认值`);
+      } else {
+        // 降级：恢复整个配置
+        payload = await resetFgbgConfig();
+        MessageManager.success("已恢复默认配置");
+      }
       setRawConfig(payload.config);
       setBaseConfig(payload.config);
       setMetadata(payload.metadata || {});
-      MessageManager.success("已恢复默认配置");
     } catch (error) {
       MessageManager.error(`恢复默认失败: ${error.message}`);
     } finally {
