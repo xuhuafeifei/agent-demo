@@ -5,6 +5,9 @@ import {
   type QQGatewayResponse,
   type QQTokenResponse,
 } from "./qq-utils.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+
+const qqApiLogger = getSubsystemConsoleLogger("qq-api");
 
 // 访问令牌缓存
 let tokenCache: { token: string; expiresAt: number } | null = null;
@@ -81,19 +84,25 @@ export async function sendC2CMessage(params: {
   replyToMessageId?: string;
 }): Promise<void> {
   const { accessToken, openid, content, replyToMessageId } = params;
-  // msg_type: 0 为文本；msg_type: 2 为 markdown。非沙箱下自定义 markdown 需内邀开通，否则易返回 11255 invalid request
+  const msgSeq = nextMsgSeq();
+  const bodyObj = {
+    content,
+    msg_type: 0,
+    msg_seq: msgSeq,
+    ...(replyToMessageId ? { msg_id: replyToMessageId } : {}),
+  };
+  qqApiLogger.info(
+    "sendC2CMessage POST /v2/users/%s/messages body=%s",
+    openid,
+    JSON.stringify(bodyObj),
+  );
   const response = await fetch(`${API_BASE}/v2/users/${openid}/messages`, {
     method: "POST",
     headers: {
       Authorization: `QQBot ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      content,
-      msg_type: 0,
-      msg_seq: nextMsgSeq(),
-      ...(replyToMessageId ? { msg_id: replyToMessageId } : {}),
-    }),
+    body: JSON.stringify(bodyObj),
   });
   if (!response.ok) {
     const errBody = await response.text().catch(() => "");

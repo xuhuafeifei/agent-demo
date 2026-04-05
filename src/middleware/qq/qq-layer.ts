@@ -89,6 +89,12 @@ export async function sendQQDirectMessage(content: string): Promise<boolean> {
     );
     return false;
   }
+  qqLogger.info(
+    "sendQQDirectMessage will POST: fgbg channels.qqbot.targetOpenid (recipient)=%s contentLength=%s content=%s",
+    openid,
+    String(content.length),
+    JSON.stringify(content),
+  );
   try {
     await sendC2CMessage({
       accessToken: activeAccessToken,
