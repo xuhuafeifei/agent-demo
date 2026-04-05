@@ -34,19 +34,25 @@ function parseLogLine(
   lineNum: number,
 ): {
   lineNum: number;
+  /** 第一对方括号内的时间文本（不含方括号），与文件行一致 */
+  time: string;
   level: string;
   subsystem?: string;
+  /** 去掉 [时间][级别][可选子系统] 后的剩余文本；不包含行首时间 */
   message: string;
 } | null {
-  // 匹配格式: [2026-03-29 12:00:00.000] [INFO] [subsystem] message
-  // 或: [2026-03-29 12:00:00.000] [INFO] message
-  const match = line.match(
+  // 文件行格式与 logger 一致，例如：
+  // [2026-04-04 00:00:00.406] [INFO] [watch-dog] [one_minute_heartbeat] triggered
+  // 第一组: 时间；第二组: 级别；第三组(可选): 子系统；其余全部归入 message（可含更多方括号）
+  const trimmed = line.replace(/^\uFEFF/, "");
+  const match = trimmed.match(
     /^\[([^\]]+)\]\s+\[([^\]]+)\](?:\s+\[([^\]]+)\])?\s+(.*)$/,
   );
   if (!match) return null;
 
   return {
     lineNum,
+    time: match[1].trim(),
     level: match[2].toLowerCase(),
     subsystem: match[3] || undefined,
     message: match[4],
@@ -55,6 +61,7 @@ function parseLogLine(
 
 type LogEntry = {
   lineNum: number;
+  time: string;
   level: string;
   subsystem?: string;
   message: string;

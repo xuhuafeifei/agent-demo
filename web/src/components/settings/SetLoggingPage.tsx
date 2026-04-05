@@ -1,5 +1,6 @@
 // @ts-nocheck - Large component, will be gradually typed in Phase 4
 import { ArrowDownToLine, HelpCircle } from "lucide-react";
+import { createPortal } from "react-dom";
 import {
   useState,
   useEffect,
@@ -79,6 +80,44 @@ export default function SetLoggingPage({ loggingTab }) {
   const [followTail, setFollowTail] = useState(readStoredFollowTail);
   const tableContainerRef = useRef(null); // 日志列表固定高度区域的滚动容器
   const pollingTimerRef = useRef(null);
+  /** 原生 title 对超长文本不可靠且延迟大；用固定定位浮层展示全文 */
+  const [cellTooltip, setCellTooltip] = useState(null);
+  const hideTooltipTimerRef = useRef(null);
+  const clearHideTooltipTimer = useCallback(() => {
+    if (hideTooltipTimerRef.current) {
+      clearTimeout(hideTooltipTimerRef.current);
+      hideTooltipTimerRef.current = null;
+    }
+  }, []);
+  const scheduleHideCellTooltip = useCallback(() => {
+    clearHideTooltipTimer();
+    hideTooltipTimerRef.current = setTimeout(() => {
+      setCellTooltip(null);
+      hideTooltipTimerRef.current = null;
+    }, 150);
+  }, [clearHideTooltipTimer]);
+  const openCellTooltip = useCallback(
+    (e, text) => {
+      if (typeof text !== "string" || !text.trim()) return;
+      clearHideTooltipTimer();
+      const r = e.currentTarget.getBoundingClientRect();
+      const pad = 8;
+      const maxW = Math.min(560, window.innerWidth - pad * 2);
+      setCellTooltip({
+        text,
+        left: Math.max(pad, Math.min(r.left, window.innerWidth - maxW - pad)),
+        top: r.bottom + 6,
+        maxW,
+      });
+    },
+    [clearHideTooltipTimer],
+  );
+  useEffect(
+    () => () => {
+      clearHideTooltipTimer();
+    },
+    [clearHideTooltipTimer],
+  );
   /** 供 5s 定时器读取最新 level / 锚点行号 / 条数上限 */
   const pollStateRef = useRef({
     selectedLevel,
@@ -592,6 +631,10 @@ export default function SetLoggingPage({ loggingTab }) {
             <div
               ref={tableContainerRef}
               className="settings-logging-search-results-container"
+              onScroll={() => {
+                clearHideTooltipTimer();
+                setCellTooltip(null);
+              }}
             >
               {filteredLogs.length === 0 ? (
                 <div className="settings-logging-search-empty">
@@ -602,6 +645,7 @@ export default function SetLoggingPage({ loggingTab }) {
                   <thead>
                     <tr>
                       <th className="col-line-num">#</th>
+                      <th className="col-time">时间</th>
                       <th className="col-level">等级</th>
                       <th className="col-subsystem">模块</th>
                       <th className="col-message">消息内容</th>
@@ -611,6 +655,15 @@ export default function SetLoggingPage({ loggingTab }) {
                     {filteredLogs.map((entry) => (
                       <tr key={entry.lineNum}>
                         <td className="col-line-num">{entry.lineNum}</td>
+                        <td
+                          className="col-time"
+                          onMouseEnter={(e) =>
+                            entry.time?.trim() && openCellTooltip(e, entry.time)
+                          }
+                          onMouseLeave={scheduleHideCellTooltip}
+                        >
+                          {entry.time || "—"}
+                        </td>
                         <td className="col-level">
                           <span
                             className="log-level-badge"
@@ -621,16 +674,29 @@ export default function SetLoggingPage({ loggingTab }) {
                             {entry.level.toUpperCase()}
                           </span>
                         </td>
-                        <td className="col-subsystem">
+                        <td
+                          className="col-subsystem"
+                          onMouseEnter={(e) =>
+                            entry.subsystem?.trim() &&
+                            openCellTooltip(e, entry.subsystem)
+                          }
+                          onMouseLeave={scheduleHideCellTooltip}
+                        >
                           {entry.subsystem ? (
-                            <span className="module-text" title={entry.subsystem}>
-                              {entry.subsystem}
-                            </span>
+                            <span className="module-text">{entry.subsystem}</span>
                           ) : (
                             <span className="module-text">-</span>
                           )}
                         </td>
-                        <td className="col-message">
+                        <td
+                          className="col-message"
+                          onMouseEnter={(e) =>
+                            entry.message != null &&
+                            String(entry.message).trim() &&
+                            openCellTooltip(e, String(entry.message))
+                          }
+                          onMouseLeave={scheduleHideCellTooltip}
+                        >
                           <span className="message-text">{entry.message}</span>
                         </td>
                       </tr>
@@ -665,6 +731,25 @@ export default function SetLoggingPage({ loggingTab }) {
           </div>
         </div>
       </div>
+      {cellTooltip &&
+        createPortal(
+          <div
+            className="settings-log-cell-tooltip"
+            style={{
+              position: "fixed",
+              left: cellTooltip.left,
+              top: cellTooltip.top,
+              maxWidth: cellTooltip.maxW,
+              zIndex: 100000,
+            }}
+            onMouseEnter={clearHideTooltipTimer}
+            onMouseLeave={scheduleHideCellTooltip}
+            role="tooltip"
+          >
+            {cellTooltip.text}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

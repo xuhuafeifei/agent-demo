@@ -1892,6 +1892,16 @@
   font-size: 10px;
 }
 
+.settings-logging-table .col-time {
+  width: 148px;
+  text-align: left;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .settings-logging-table .col-level {
   width: 60px;
   text-align: center;
@@ -1910,6 +1920,14 @@
   color: var(--text-primary);
   word-break: break-word;
   white-space: pre-wrap;
+  /* 多行时限制高度，超出部分截断；悬停用浮层看全文 */
+  max-height: 7.5em;
+  overflow: hidden;
+  vertical-align: top;
+}
+
+.settings-logging-table .message-text {
+  display: block;
 }
 
 .module-text {
@@ -1921,7 +1939,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
-  cursor: help; /* Shows tooltip icon */
+}
+
+/* 日志表单元格悬停全文（替代不可靠的 title + cursor:help 问号） */
+.settings-log-cell-tooltip {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  background: var(--bg-code, #1e1e1e);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  pointer-events: auto;
 }
 
 .log-level-badge {
