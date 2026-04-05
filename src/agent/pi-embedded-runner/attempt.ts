@@ -16,7 +16,7 @@ import type { RuntimeModel } from "../../types.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { createAgentToolBundle } from "../tool/index.js";
 import { ToolRegister } from "../tool/tool-register.js";
-import { toolReturnedFailure } from "../tool/tool-result-ui.js";
+import { toolReturnedFailure } from "../tool/utils/tool-result-ui.js";
 
 const attemptLogger = getSubsystemConsoleLogger("attempt");
 

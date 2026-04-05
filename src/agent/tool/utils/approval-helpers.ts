@@ -1,4 +1,4 @@
-import { approvalManager } from "../approval-manager.js";
+import { approvalManager } from "../../approval-manager.js";
 
 /**
  * 工具审批辅助函数

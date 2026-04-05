@@ -3,7 +3,7 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getMemoryIndexManager } from "../../memory/index.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { errResult, okResult, type ToolDetails } from "./types.js";
-import { requestApproval } from "./approval-helpers.js";
+import { requestApproval } from "./utils/approval-helpers.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -17,21 +17,24 @@ const memorySearchParameters = Type.Object({
     Type.Number({
       minimum: 1,
       maximum: 100,
-      description: "Max full-text (FTS) hits to consider before fusion (default from runtime).",
+      description:
+        "Max full-text (FTS) hits to consider before fusion (default from runtime).",
     }),
   ),
   topKVector: Type.Optional(
     Type.Number({
       minimum: 1,
       maximum: 100,
-      description: "Max vector nearest-neighbor hits to consider before fusion (default from runtime).",
+      description:
+        "Max vector nearest-neighbor hits to consider before fusion (default from runtime).",
     }),
   ),
   topN: Type.Optional(
     Type.Number({
       minimum: 1,
       maximum: 30,
-      description: "Final number of chunks to return after RRF fusion and ranking.",
+      description:
+        "Final number of chunks to return after RRF fusion and ranking.",
     }),
   ),
 });

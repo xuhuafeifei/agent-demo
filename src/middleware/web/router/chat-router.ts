@@ -10,7 +10,7 @@ import { approvalManager } from "../../../agent/approval-manager.js";
 import {
   toolReturnedFailure,
   toolUserRejected,
-} from "../../../agent/tool/tool-result-ui.js";
+} from "../../../agent/tool/utils/tool-result-ui.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -118,8 +118,7 @@ export function createChatRouter() {
             const elapsedMs =
               typeof startedAt === "number" ? Date.now() - startedAt : 0;
             const displayName = getToolDisplayName(event.toolName, event.alias);
-            const failed =
-              event.isError || toolReturnedFailure(event.result);
+            const failed = event.isError || toolReturnedFailure(event.result);
             const rejected = toolUserRejected(event.result);
 
             let title: string;

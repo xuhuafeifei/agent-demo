@@ -6,7 +6,11 @@ import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { resolveUserMemoryDir } from "../../memory/utils/path.js";
 import { resolveWorkspaceDir } from "../../utils/app-path.js";
 import { getSkillManager } from "../skill/skill-manager.js";
-import { exists, atomicWriteText, enforceTextSizeLimit } from "./file-utils.js";
+import {
+  exists,
+  atomicWriteText,
+  enforceTextSizeLimit,
+} from "./utils/file-utils.js";
 import { errResult, okResult, type ToolDetails } from "./types.js";
 
 const toolLogger = getSubsystemConsoleLogger("persist-knowledge-tool");
@@ -195,11 +199,14 @@ export function createPersistKnowledgeTool(
             toolLogger.info(
               `tool=persistKnowledge type=memory path=${filePath} action=appended bytes=${bytesWritten} durationMs=${Date.now() - started}`,
             );
-            return okResult(`已追加 ${bytesWritten} 字节到用户记忆 ${fileName}`, {
-              path: filePath,
-              action: "appended",
-              bytesWritten,
-            });
+            return okResult(
+              `已追加 ${bytesWritten} 字节到用户记忆 ${fileName}`,
+              {
+                path: filePath,
+                action: "appended",
+                bytesWritten,
+              },
+            );
           }
           await atomicWriteText(filePath, params.content);
           const bytesWritten = Buffer.byteLength(params.content, "utf8");
@@ -212,7 +219,8 @@ export function createPersistKnowledgeTool(
             bytesWritten,
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           toolLogger.warn(
             `tool=persistKnowledge type=memory path=${filePath} error=${message}`,
           );
@@ -256,7 +264,8 @@ export function createPersistKnowledgeTool(
             bytesWritten,
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           toolLogger.warn(
             `tool=persistKnowledge type=userinfo path=${filePath} error=${message}`,
           );
@@ -288,16 +297,17 @@ export function createPersistKnowledgeTool(
         null,
         2,
       )}\n`;
-      if (
-        !enforceTextSizeLimit(fullSkill) ||
-        !enforceTextSizeLimit(metaJson)
-      ) {
+      if (!enforceTextSizeLimit(fullSkill) || !enforceTextSizeLimit(metaJson)) {
         return errResult("内容超过 1MB 限制", {
           code: "INVALID_ARGUMENT",
           message: "超过 1MB",
         });
       }
-      const skillRoot = path.join(resolveWorkspaceDir(), "skills", safeSkillPath);
+      const skillRoot = path.join(
+        resolveWorkspaceDir(),
+        "skills",
+        safeSkillPath,
+      );
       const skillPath = path.join(skillRoot, "SKILL.md");
       const metaPath = path.join(skillRoot, "meta.json");
       try {
@@ -311,11 +321,14 @@ export function createPersistKnowledgeTool(
         toolLogger.info(
           `tool=persistKnowledge type=skill path=${skillPath} action=overwritten bytes=${bytesWritten} durationMs=${Date.now() - started}`,
         );
-        return okResult(`已写入 skills/${safeSkillPath}/SKILL.md 与 meta.json`, {
-          path: skillPath,
-          action: "overwritten",
-          bytesWritten,
-        });
+        return okResult(
+          `已写入 skills/${safeSkillPath}/SKILL.md 与 meta.json`,
+          {
+            path: skillPath,
+            action: "overwritten",
+            bytesWritten,
+          },
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         toolLogger.warn(

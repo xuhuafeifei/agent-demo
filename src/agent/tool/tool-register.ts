@@ -1,10 +1,9 @@
-import { createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
 import type { ToolRegisterConfig } from "../../types.js";
-import { createAppendTool } from "./append.js";
+import { createReadTool } from "./read.js";
+import { createWriteTool } from "./write.js";
 import { createLoadSkillTool } from "./load-skill.js";
 import { createMemorySearchTool } from "./memory-search.js";
 import { createPersistKnowledgeTool } from "./persist-knowledge.js";
-import { createUpdateTool } from "./update.js";
 import { createCompactContextTool } from "./compact-context.js";
 import {
   createAgentTaskTool,
@@ -22,8 +21,8 @@ import { readFgbgUserConfig } from "../../config/index.js";
 const eventBus = getEventBus();
 
 export const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
-  // tools: 通用基础工具（偏“常用能力”）
-  tools: ["read", "write", "append", "update", "getNow", "shiftTime"],
+  // tools: 通用基础工具（偏"常用能力"）
+  tools: ["read", "write", "getNow", "shiftTime"],
   // customTools: 业务工具（偏“让模型主动使用的能力”）
   customTools: [
     "memorySearch",
@@ -51,16 +50,6 @@ const TOOL_REGISTRY: Record<
   write: {
     factory: (cwd) => createWriteTool(cwd),
     description: "write(path, content) - write file content",
-  },
-  append: {
-    factory: (cwd) => createAppendTool(cwd),
-    description:
-      "append(path, content, ensureTrailingNewline?, createIfNotExists?) - append text to file tail",
-  },
-  update: {
-    factory: (cwd) => createUpdateTool(cwd),
-    description:
-      "update(path, find, replace, all?, expectedCount?) - literal text replace in file",
   },
   memorySearch: {
     factory: () => createMemorySearchTool(),
