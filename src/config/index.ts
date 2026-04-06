@@ -1,5 +1,8 @@
 import path from "node:path";
-import { DEFAULT_TOOL_REGISTER } from "../agent/tool/tool-register.js";
+import {
+  DEFAULT_TOOL_SECURITY_CONFIG,
+  resolveToolSecurityConfig,
+} from "../agent/tool/security/types.js";
 import type {
   FgbgUserConfig,
   FgbgUserRawConfig,
@@ -9,7 +12,7 @@ import {
   resolveGlobalConfigPath,
   resolveWorkspaceDir,
 } from "../utils/app-path.js";
-import fs, { read } from "node:fs";
+import fs from "node:fs";
 import {
   buildImplicitProviderTemplates,
   parseModelRef,
@@ -22,7 +25,7 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
       lastTouchedVersion: raw.meta?.lastTouchedVersion ?? "1.0.0",
       lastTouchedAt: raw.meta?.lastTouchedAt ?? new Date().toISOString(),
     },
-    toolRegister: raw.toolRegister ?? DEFAULT_TOOL_REGISTER,
+    toolSecurity: resolveToolSecurityConfig(raw.toolSecurity),
     models: {
       mode: modelsMode,
       providers: (() => {

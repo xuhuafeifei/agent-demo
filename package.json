@@ -9,6 +9,8 @@
     "generate-js-dts": "node scripts/generate-js-dts.js",
     "qwen-auth": "tsc && node dist/scripts/qwen-oauth-login.js",
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
+    "test:path-checker": "tsc && node --test test/path-checker.test.mjs",
+    "test:read-tool": "tsc && node --test test/read-tool.test.mjs",
     "build": "npm run web:build && tsc",
     "dev:debug": "npm run web:build && NODE_DEBUG=memory,agent tsc && node scripts/require-runtime.mjs && node dist/server.js",
     "dev:inspect": "npm run web:build && NODE_DEBUG=memory,agent tsc && node --inspect scripts/require-runtime.mjs && node --inspect dist/server.js",

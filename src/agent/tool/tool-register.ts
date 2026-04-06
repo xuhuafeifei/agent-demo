@@ -1,4 +1,3 @@
-import type { ToolRegisterConfig } from "../../types.js";
 import { createReadTool } from "./read.js";
 import { createWriteTool } from "./write.js";
 import { createLoadSkillTool } from "./load-skill.js";
@@ -17,40 +16,32 @@ import {
 import { createShellExecuteTool } from "./shell-execute.js";
 import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
 import { readFgbgUserConfig } from "../../config/index.js";
+import { resolveToolSecurityConfig, type ToolMode } from "./security/types.js";
 
 const eventBus = getEventBus();
 
-export const DEFAULT_TOOL_REGISTER: ToolRegisterConfig = {
-  // tools: 通用基础工具（偏"常用能力"）
-  tools: ["read", "write", "getNow", "shiftTime"],
-  // customTools: 业务工具（偏“让模型主动使用的能力”）
-  customTools: [
-    "memorySearch",
-    "persistKnowledge",
-    "loadSkill",
-    "createReminderTask",
-    "createAgentTask",
-    "compactContext",
-    "shellExecute",
-  ],
-  // innerTools: 运维/调试工具（偏“人类/系统调试入口”）
-  innerTools: ["listTaskSchedules", "runTaskByName", "deleteTaskByName"],
-};
-
 type ToolFactory = (cwd: string) => unknown;
 
-const TOOL_REGISTRY: Record<
-  string,
-  { factory: ToolFactory; description: string }
-> = {
-  read: {
-    factory: (cwd) => createReadTool(cwd),
-    description: "read(path, offset?, limit?) - read text from file",
-  },
-  write: {
-    factory: (cwd) => createWriteTool(cwd),
-    description: "write(path, content) - write file content",
-  },
+type ToolEntry = { factory: ToolFactory; description: string };
+
+/** 与 ToolDefinition.name / enabledTools 中 read、write 对齐；readFile、writeFile 为兼容别名 */
+const readToolEntry: ToolEntry = {
+  factory: () => createReadTool(),
+  description:
+    "readFile(path, offset?, limit?) - read text from file (safe, text-only)",
+};
+const writeToolEntry: ToolEntry = {
+  factory: (cwd) => createWriteTool(cwd),
+  description:
+    "writeFile(path, content) - write file content (safe, text-only)",
+};
+
+/** 工具注册表：名称 → 工厂函数 + 描述 */
+const TOOL_REGISTRY: Record<string, ToolEntry> = {
+  read: readToolEntry,
+  readFile: readToolEntry,
+  write: writeToolEntry,
+  writeFile: writeToolEntry,
   memorySearch: {
     factory: () => createMemorySearchTool(),
     description:
@@ -107,36 +98,22 @@ const TOOL_REGISTRY: Record<
   shellExecute: {
     factory: () => createShellExecuteTool(),
     description:
-      "shellExecute(command) - execute any shell command on macOS system",
+      "shellExecute(command) - execute whitelisted shell command securely",
   },
 };
 
-function parseToolList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .filter((s): s is string => typeof s === "string")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
 export type ToolBundle = {
+  /** 工具实例列表 */
   tools: unknown[];
-  customTools: unknown[];
-  innerTools: unknown[];
+  /** 工具说明文案列表（用于 system prompt） */
   toolings: string[];
+  /** 当前预设模式 */
+  preset: ToolMode;
 };
 
 /**
- * 工具注册表单例：从 fgbg.json 的 toolRegister 读取配置，按名称解析并装载工具实例。
- * 配置项可为数组或逗号分隔字符串，不支持通配符。
+ * 工具注册表单例：从 fgbg.json 的 toolSecurity 读取配置，按名称解析并装载工具实例。
+ * 完全由 ToolSecurityConfig 管理，不再区分 tools/customTools/innerTools。
  */
 export class ToolRegister {
   private static instance: ToolRegister;
@@ -150,17 +127,9 @@ export class ToolRegister {
     return ToolRegister.instance;
   }
 
-  /** 解析后的工具名列表（不含未注册名称） */
-  private resolveNames(list: unknown[]): string[] {
-    return list.filter(
-      (name): name is string =>
-        typeof name === "string" && name in TOOL_REGISTRY,
-    );
-  }
-
   /**
    * 返回需要从 session 历史对话记录（context）中过滤掉的工具名列表。
-   * 下述工具的返回值本就会成为系统提示词的一部分，因此不应该出现在 历史对话信息 中
+   * 下述工具的返回值本就会成为系统提示词的一部分，因此不应该出现在历史对话信息中
    */
   getFilterContextToolNames(): string[] {
     return [
@@ -174,34 +143,37 @@ export class ToolRegister {
 
   /**
    * 根据当前配置为给定 cwd 生成工具实例与说明文案。
+   * 工具列表完全由 toolSecurity.enabledTools 决定。
    */
   getToolBundle(cwd: string): ToolBundle {
-    const config = readFgbgUserConfig().toolRegister;
-    const toolsNames = this.resolveNames(parseToolList(config.tools));
-    const customNames = this.resolveNames(parseToolList(config.customTools));
-    const innerNames = this.resolveNames(parseToolList(config.innerTools));
+    const config = readFgbgUserConfig();
+    const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
 
-    const tools = toolsNames.map((name) => TOOL_REGISTRY[name].factory(cwd));
-    const customTools = customNames.map((name) =>
-      TOOL_REGISTRY[name].factory(cwd),
-    );
-    const innerTools = innerNames.map((name) =>
-      TOOL_REGISTRY[name].factory(cwd),
+    // 从 enabledTools 过滤出已注册的工具
+    const enabledToolNames = securityConfig.enabledTools.filter(
+      (name): name is string =>
+        typeof name === "string" && name in TOOL_REGISTRY,
     );
 
-    const allNames = [
-      ...new Set([...toolsNames, ...customNames, ...innerNames]),
-    ];
-    const toolings = allNames.map((name) => TOOL_REGISTRY[name].description);
+    const tools = enabledToolNames.map((name) =>
+      TOOL_REGISTRY[name].factory(cwd),
+    );
+    const toolings = enabledToolNames.map(
+      (name) => TOOL_REGISTRY[name].description,
+    );
 
     // 动态工具注入：其他模块可在此时通过 event-bus 同步追加工具
-    const dynamicCustomTools: unknown[] = [];
-    eventBus.emitSync(TOPIC_TOOL_BEFORE_BUILD, dynamicCustomTools);
-    if (dynamicCustomTools.length > 0) {
-      customTools.push(...dynamicCustomTools);
+    const dynamicTools: unknown[] = [];
+    eventBus.emitSync(TOPIC_TOOL_BEFORE_BUILD, dynamicTools);
+    if (dynamicTools.length > 0) {
+      tools.push(...dynamicTools);
     }
 
-    return { tools, customTools, innerTools, toolings };
+    return {
+      tools,
+      toolings,
+      preset: securityConfig.preset || "guard",
+    };
   }
 
   /** 返回当前配置下所有启用工具的说明文案（用于 system prompt）。 */
@@ -209,8 +181,24 @@ export class ToolRegister {
     return this.getToolBundle(cwd).toolings;
   }
 
-  /** 返回当前持久化的 toolRegister 配置（只读）。 */
-  getConfig(): Readonly<ToolRegisterConfig> {
-    return readFgbgUserConfig().toolRegister;
+  /** 返回当前安全配置的预设模式 */
+  getPreset(): ToolMode {
+    const config = readFgbgUserConfig();
+    const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
+    return securityConfig.preset || "guard";
+  }
+
+  /** 返回当前审批配置 */
+  getApprovalConfig() {
+    const config = readFgbgUserConfig();
+    const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
+    return securityConfig.approval;
+  }
+
+  /** 检查某个工具是否需要审批 */
+  requiresApproval(toolName: string): boolean {
+    const approvalConfig = this.getApprovalConfig();
+    if (!approvalConfig.enabled) return false;
+    return approvalConfig.requireApprovalFor?.includes(toolName) || false;
   }
 }

@@ -2,10 +2,10 @@
 .context-snapshot-dock {
   position: absolute;
   z-index: 45;
-  left: 20px;
-  bottom: 108px;
+  left: 16px;
+  top: 16px;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   align-items: flex-start;
   gap: 12px;
   pointer-events: none;
@@ -317,8 +317,8 @@
 
 @media (max-width: 767px) {
   .context-snapshot-dock {
-    right: 12px;
-    bottom: 92px;
+    left: 12px;
+    top: 12px;
   }
 
   .context-snapshot-dock--open {

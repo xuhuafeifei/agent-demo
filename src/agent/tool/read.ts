@@ -3,8 +3,16 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { exists } from "./utils/file-utils.js";
-import { resolvePathInWorkspace } from "./guards.js";
+import { checkPathSafety } from "./security/path-checker.js";
+import {
+  isTextFile,
+  getFileTypeRejectReason,
+} from "./security/file-type-checker.js";
 import { errResult, okResult, type ToolDetails } from "./types.js";
+import { readFgbgUserConfig } from "../../config/index.js";
+import { ToolRegister } from "./tool-register.js";
+import { requestApprovalWithDescription } from "./utils/approval-helpers.js";
+import { resolveWorkspaceDir } from "../../utils/app-path.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -23,27 +31,72 @@ type ReadOutput = {
 };
 
 /** 读取文件内容，支持按行分页 */
-export function createReadTool(
-  workspace: string,
-): ToolDefinition<typeof readParameters, ToolDetails<ReadOutput>> {
+export function createReadTool(): ToolDefinition<
+  typeof readParameters,
+  ToolDetails<ReadOutput>
+> {
   return {
     name: "read",
     label: "Read",
-    description: "read(path, offset?, limit?) - read text from file",
+    description:
+      "readFile(path, offset?, limit?) - read text from file (safe, text-only)",
     parameters: readParameters,
-    execute: async (_toolCallId, params: ReadInput, _signal, _onUpdate, _ctx) => {
+    execute: async (
+      _toolCallId,
+      params: ReadInput,
+      _signal,
+      _onUpdate,
+      _ctx,
+    ) => {
       const started = Date.now();
-      const resolved = resolvePathInWorkspace(workspace, params.path);
-      if (!resolved.ok) {
-        return errResult(resolved.error.message, resolved.error);
+
+      // 1. 路径安全检查
+      const config = readFgbgUserConfig().toolSecurity;
+      const workspace = resolveWorkspaceDir();
+      const pathCheck = await checkPathSafety(params.path, workspace, config);
+      if (!pathCheck.allowed) {
+        return errResult(pathCheck.reason || "路径不允许访问", {
+          code: "PATH_OUT_OF_WORKSPACE",
+          message: pathCheck.reason || "路径不允许访问",
+        });
       }
 
-      const filePath = resolved.value;
+      const filePath = pathCheck.realPath;
 
+      // 2. 审批检查（如果配置要求）
+      const requiresApproval =
+        ToolRegister.getInstance().requiresApproval("read");
+      if (requiresApproval) {
+        const approvalConfig = ToolRegister.getInstance().getApprovalConfig();
+        const approved = await requestApprovalWithDescription(
+          "read",
+          { path: params.path },
+          `读取文件: ${params.path}`,
+          { timeoutMs: approvalConfig.timeoutMs },
+        );
+        if (!approved) {
+          return errResult("用户拒绝或超时", {
+            code: "USER_REJECTED",
+            message: "用户拒绝或超时",
+          });
+        }
+      }
+
+      // 3. 文件存在性检查（read 特有：文件必须存在）
       if (!(await exists(filePath))) {
         return errResult(`文件不存在: ${params.path}`, {
           code: "NOT_FOUND",
           message: `文件不存在: ${params.path}`,
+        });
+      }
+
+      // 3. 文本文件门控：仅允许读取文本文件
+      const isText = await isTextFile(filePath);
+      if (!isText) {
+        const reason = getFileTypeRejectReason(filePath);
+        return errResult(reason, {
+          code: "INVALID_ARGUMENT",
+          message: reason,
         });
       }
 

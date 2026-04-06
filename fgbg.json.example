@@ -69,15 +69,24 @@
       "targetOpenid": ""
     }
   },
-  "toolRegister": {
-    "tools": ["read", "write", "append", "update", "getNow", "shiftTime"],
-    "customTools": [
-      "memorySearch",
-      "persistKnowledge",
-      "loadSkill",
-      "createReminderTask",
-      "createAgentTask"
+  "toolSecurity": {
+    "preset": "guard",
+    "enabledTools": [
+      "read", "write",
+      "memorySearch", "persistKnowledge", "loadSkill",
+      "createReminderTask", "createAgentTask", "compactContext",
+      "getNow", "shiftTime", "listTaskSchedules",
+      "runTaskByName", "deleteTaskByName"
     ],
-    "innerTools": ["listTaskSchedules", "runTaskByName", "deleteTaskByName"]
+    "access": {
+      "scope": "workspace",
+      "allowHiddenFiles": false,
+      "allowSymlinks": false
+    },
+    "approval": {
+      "enabled": true,
+      "requireApprovalFor": ["write"],
+      "timeoutMs": 300000
+    }
   }
 }

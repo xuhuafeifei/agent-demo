@@ -217,13 +217,19 @@ export async function createRuntimeAgentSession(params: {
     cwd,
     agentDir,
     thinkingLevel: thinkingLevel,
-    tools: toolBundle.tools as NonNullable<
-      Parameters<typeof createAgentSession>[0]
-    >["tools"],
-    customTools: toolBundle.customTools as unknown as NonNullable<
+    // 自定义工具通过 customTools 传入，框架会自动覆盖内置同名工具
+    customTools: toolBundle.tools as NonNullable<
       Parameters<typeof createAgentSession>[0]
     >["customTools"],
   });
+  
+  // 调试：打印会话中的工具名称
+  const sessionTools = (session as any).state?.tools || [];
+  if (Array.isArray(sessionTools)) {
+    const toolNames = sessionTools.map((t: any) => t.name || 'unknown');
+    attemptLogger.info(`session active tools: [${toolNames.join(', ')}]`);
+  }
+  
   return session;
 }
 

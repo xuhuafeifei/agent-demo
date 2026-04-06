@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AgentChannel } from "./agent/channel-policy.js";
+import type { ToolSecurityConfig } from "./agent/tool/security/types.js";
 
 export type ModelInputType = "text" | "image";
 
@@ -59,15 +60,6 @@ export type ModelConfigFile = {
   providers?: Record<string, Partial<ProviderConfig>>;
 };
 
-/** toolRegister 中每项可为字符串（逗号分隔）或字符串数组，不支持通配符 */
-export type ToolListConfig = string | string[];
-
-export type ToolRegisterConfig = {
-  tools?: ToolListConfig;
-  customTools?: ToolListConfig;
-  innerTools?: ToolListConfig;
-};
-
 export type FgbgUserMeta = {
   lastTouchedVersion: string;
   lastTouchedAt: string;
@@ -78,7 +70,7 @@ export type FgbgUserRawConfig = {
     lastTouchedVersion?: string;
     lastTouchedAt?: string;
   };
-  toolRegister?: ToolRegisterConfig;
+  toolSecurity?: ToolSecurityConfig;
   models?: {
     mode?: string;
     providers?: Record<string, ProviderConfig>;
@@ -161,7 +153,7 @@ export type FgbgUserConfig = {
     lastTouchedVersion: string;
     lastTouchedAt: string;
   };
-  toolRegister: ToolRegisterConfig;
+  toolSecurity: ToolSecurityConfig;
   models: {
     mode: string;
     providers: Record<string, ProviderConfig>;
