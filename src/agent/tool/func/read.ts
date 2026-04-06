@@ -14,6 +14,7 @@ import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js"
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
 import { resolveWorkspaceDir } from "../../../utils/app-path.js";
+import { getCurrentChannel } from "../../agent-state.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -75,7 +76,11 @@ export function createReadTool(): ToolDefinition<
           "read",
           { path: params.path },
           `读取文件: ${params.path}`,
-          { timeoutMs: securityConfig.approval.timeoutMs },
+          {
+            channel: getCurrentChannel(),
+            unapprovableStrategy: securityConfig.unapprovableStrategy,
+            timeoutMs: securityConfig.approval.timeoutMs,
+          },
         );
         if (!approved) {
           return errResult("用户拒绝或超时", {

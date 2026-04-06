@@ -205,8 +205,9 @@ async function deliverReminderByChannels(params: {
       if (ok) successCount++;
       else errors.push("qq send failed");
     } else if (ch === "web") {
-      // web 通知渠道暂未实现，当前按 no-op 成功处理（不阻塞任务）
-      successCount++;
+      // web 通知渠道暂未实现，记录警告但不阻塞任务
+      handlerLogger.warn("[deliver_reminder] web channel is not implemented yet, skipping");
+      errors.push("web channel not implemented");
     }
   }
 

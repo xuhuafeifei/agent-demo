@@ -21,7 +21,6 @@ import {
 import { resolveSessionDir } from "../agent/session/session-path.js";
 import { ensureAgentWorkspace } from "../agent/workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
-import { deprecate } from "node:util";
 
 const DEBOUNCE_MS = 1500;
 const memoryLogger = getSubsystemConsoleLogger("memory");

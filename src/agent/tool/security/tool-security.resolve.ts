@@ -48,7 +48,7 @@ export function resolveToolSecurityConfig(
   // 用用户配置覆盖默认值（仅覆盖非 undefined 的字段）
   return {
     preset,
-    enabledTools: raw.enabledTools || baseConfig.enabledTools,
+    enabledTools: raw.enabledTools ?? baseConfig.enabledTools,
     denyPaths: raw.denyPaths ?? baseConfig.denyPaths,
     access: raw.access
       ? { ...baseConfig.access, ...raw.access }
@@ -56,5 +56,7 @@ export function resolveToolSecurityConfig(
     approval: raw.approval
       ? { ...baseConfig.approval, ...raw.approval }
       : baseConfig.approval,
+    unapprovableStrategy:
+      raw.unapprovableStrategy ?? baseConfig.unapprovableStrategy ?? "reject",
   };
 }

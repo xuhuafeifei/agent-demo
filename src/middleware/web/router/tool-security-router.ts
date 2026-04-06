@@ -95,6 +95,14 @@ function validateToolSecurityConfig(
     }
   }
 
+  // 校验 unapprovableStrategy
+  if (
+    config.unapprovableStrategy !== undefined &&
+    !["skip", "reject"].includes(config.unapprovableStrategy)
+  ) {
+    return "unapprovableStrategy 必须是 skip 或 reject 之一";
+  }
+
   return null;
 }
 
@@ -139,6 +147,7 @@ export function createToolSecurityRouter(): Router {
             requireApprovalFor: [],
             timeoutMs: 300000,
           },
+          unapprovableStrategy: resolved.unapprovableStrategy || "reject",
         };
       } else {
         // 内置模式：返回对应模式的默认配置
@@ -151,6 +160,7 @@ export function createToolSecurityRouter(): Router {
             : "",
           access: presetConfig.access,
           approval: presetConfig.approval,
+          unapprovableStrategy: presetConfig.unapprovableStrategy || "reject",
         };
       }
 
@@ -241,6 +251,7 @@ export function createToolSecurityRouter(): Router {
             requireApprovalFor: [],
             timeoutMs: 300000,
           },
+          unapprovableStrategy: resolved.unapprovableStrategy || "reject",
         },
         availableTools,
       });
@@ -284,6 +295,7 @@ export function createToolSecurityRouter(): Router {
             requireApprovalFor: [],
             timeoutMs: 300000,
           },
+          unapprovableStrategy: resolved.unapprovableStrategy || "reject",
         },
         availableTools,
       });
@@ -321,6 +333,7 @@ export function createToolSecurityRouter(): Router {
             : "",
           access: presetConfig.access,
           approval: presetConfig.approval,
+          unapprovableStrategy: presetConfig.unapprovableStrategy || "reject",
         },
       });
     } catch (error: any) {

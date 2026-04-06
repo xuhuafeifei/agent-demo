@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   runWithSingleFlight,
   ModelUnavailableError,
+  DEFAULT_SESSION_KEY,
 } from "../../../agent/run.js";
 import type { RuntimeStreamEvent } from "../../../agent/utils/events.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
@@ -169,6 +170,8 @@ export function createChatRouter() {
         onBusy: () => {
           writeSse(res, { type: "error", error: "指令正在运行中，请稍后" });
         },
+        // agentId 与 sessionKey 一致，避免并发读写文件问题
+        agentId: DEFAULT_SESSION_KEY,
       });
     } catch (error) {
       const runtimeError =

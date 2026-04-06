@@ -1,6 +1,6 @@
 import WebSocket, { type RawData } from "ws";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { runWithSingleFlight } from "../../agent/run.js";
+import { DEFAULT_SESSION_KEY, runWithSingleFlight } from "../../agent/run.js";
 import { resolveQQAccountFromConfig } from "./qq-config.js";
 import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
 import { writeFgbgUserConfig } from "../../config/index.js";
@@ -231,6 +231,9 @@ export async function startQQLayer(): Promise<void> {
               replyToMessageId: inboundMessageId,
             });
           },
+          // agentId 与 sessionKey 一致，避免多个端（web/qq）并发读写session文件问题
+          // 保证同一时间只有一个端在读写session文件
+          agentId: DEFAULT_SESSION_KEY,
         }).then(async (result) => {
           // 处理指令执行结果
           if (result.status !== "completed") return;

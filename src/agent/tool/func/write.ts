@@ -10,6 +10,7 @@ import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
+import { getCurrentChannel } from "../../agent-state.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -67,7 +68,11 @@ export function createWriteTool(
           "write",
           { path: params.path, contentLength: params.content.length },
           `写入文件: ${params.path} (${params.content.length} 字符)`,
-          { timeoutMs: securityConfig.approval.timeoutMs },
+          {
+            channel: getCurrentChannel(),
+            unapprovableStrategy: securityConfig.unapprovableStrategy,
+            timeoutMs: securityConfig.approval.timeoutMs,
+          },
         );
         if (!approved) {
           return errResult("用户拒绝或超时", {

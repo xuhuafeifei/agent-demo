@@ -32,6 +32,7 @@ export const DEFAULT_GUARD_CONFIG: ToolSecurityConfig = {
     requireApprovalFor: ["read", "write", "shellExecute"],
     timeoutMs: 5 * 60 * 1000, // 5 分钟
   },
+  unapprovableStrategy: "skip",
 } satisfies ToolSecurityConfig;
 
 /** 默认 safety 模式的完整配置 */
@@ -58,6 +59,7 @@ export const DEFAULT_SAFETY_CONFIG: ToolSecurityConfig = {
     requireApprovalFor: ["read", "write"],
     timeoutMs: 5 * 60 * 1000,
   },
+  unapprovableStrategy: "reject",
 } satisfies ToolSecurityConfig;
 
 /** 默认 yolo 模式的完整配置 */
@@ -89,6 +91,7 @@ export const DEFAULT_YOLO_CONFIG: ToolSecurityConfig = {
     requireApprovalFor: [],
     timeoutMs: 5 * 60 * 1000,
   },
+  unapprovableStrategy: "skip",
 } satisfies ToolSecurityConfig;
 
 /** 默认配置（guard 模式） */

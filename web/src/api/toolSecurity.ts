@@ -14,12 +14,15 @@ export interface ApprovalConfig {
   timeoutMs: number;
 }
 
+export type UnapprovableStrategy = "skip" | "reject";
+
 export interface ToolSecurityConfig {
   preset: ToolMode;
   enabledTools: string[];
   denyPaths: string | string[];
   access: AccessConfig;
   approval: ApprovalConfig;
+  unapprovableStrategy: UnapprovableStrategy;
 }
 
 export interface ToolSecurityResponse {

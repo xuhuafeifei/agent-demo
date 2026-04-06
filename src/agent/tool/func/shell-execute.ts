@@ -11,6 +11,7 @@ import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
+import { getCurrentChannel } from "../../agent-state.js";
 
 const toolLogger = getSubsystemConsoleLogger("shell-execute");
 const promisifiedExecFile = promisify(execFile);
@@ -151,7 +152,11 @@ export function createShellExecuteTool(): ToolDefinition<
             "shellExecute",
             { command },
             `执行命令: ${command}`,
-            { timeoutMs: securityConfig.approval.timeoutMs },
+            {
+              channel: getCurrentChannel(),
+              unapprovableStrategy: securityConfig.unapprovableStrategy,
+              timeoutMs: securityConfig.approval.timeoutMs,
+            },
           );
           if (!approved) {
             return errResult("用户拒绝或超时", {

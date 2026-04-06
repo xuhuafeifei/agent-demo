@@ -21,6 +21,7 @@ export const watchDogLogger = logger;
 
 let ticking = false;
 let timer: NodeJS.Timeout | null = null;
+let loopRunning = false;
 
 function shouldAdvanceNextRun(
   triggerBy?: "heartbeat" | "functionTool",
@@ -64,14 +65,12 @@ function toDetailStatus(result: HandlerResult): TaskDetailStatus {
 async function runSingleTask(
   task: TaskScheduleRow,
   handler: TaskHandler,
-  nowMs: number,
   opts?: { triggerBy?: "heartbeat" | "functionTool" },
 ): Promise<void> {
   const payload = parsePayload(task.payload_text);
   const config = getHeartbeatConfig();
   const startedAt = nowChinaIso();
-  // 状态切到 running，累计 attempts
-  // await markTaskRunning(task.id, startedAt);
+  // 注：状态切到 running 和 attempts 累计已由 listDueTasks 的 UPDATE ... RETURNING 完成
 
   let result: HandlerResult;
   try {
@@ -160,7 +159,7 @@ async function processTasks(
       logger.error("no handler for task_type=%s", task.task_type);
       return;
     }
-    await runSingleTask(task, handler, Date.now(), { triggerBy: "heartbeat" });
+    await runSingleTask(task, handler, { triggerBy: "heartbeat" });
     await next();
   };
 
@@ -183,7 +182,7 @@ export async function runTaskByNameNow(taskName: string): Promise<boolean> {
     return false;
   }
   // 手动执行：不更新 next_run_time，保持原始节拍
-  await runSingleTask(task, handler, Date.now(), { triggerBy: "functionTool" });
+  await runSingleTask(task, handler, { triggerBy: "functionTool" });
   return true;
 }
 
@@ -253,9 +252,12 @@ async function ensureSystemTasks(): Promise<void> {
  * 初始化系统任务，执行一次心跳检查，然后开始周期调度
  */
 export async function startWatchDog(): Promise<void> {
-  if (timer) return;
+  if (loopRunning) return;
+  loopRunning = true;
   await ensureSystemTasks();
-  tickLoop();
+  tickLoop().finally(() => {
+    loopRunning = false;
+  });
   logger.info("started");
 }
 
@@ -263,14 +265,16 @@ export async function startWatchDog(): Promise<void> {
  * 核心 tick 循环. 用于触发调度事件. 方法异步操作. 不会阻塞主线程
  */
 async function tickLoop(): Promise<void> {
-  while (true) {
+  while (loopRunning) {
     try {
       await tickOnce();
     } catch (err) {
       logger.error("tick exception: %s", err);
     }
     const cfg = getHeartbeatConfig();
-    await new Promise((res) => setTimeout(res, cfg.intervalMs));
+    await new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, cfg.intervalMs);
+    });
   }
 }
 
@@ -279,9 +283,10 @@ async function tickLoop(): Promise<void> {
  * 取消定时器，停止周期调度
  */
 export function stopWatchDog(): void {
+  loopRunning = false;
   if (timer) {
     clearTimeout(timer);
     timer = null;
-    logger.info("stopped");
   }
+  logger.info("stopped");
 }

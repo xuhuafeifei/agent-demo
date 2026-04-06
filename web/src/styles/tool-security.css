@@ -446,6 +446,13 @@
   box-shadow: 0 0 0 3px rgba(120, 195, 132, 0.15);
 }
 
+.tool-security-form-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-placeholder);
+  line-height: 1.5;
+}
+
 .tool-security-form-row {
   display: flex;
   gap: 20px;

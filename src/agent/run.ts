@@ -30,13 +30,13 @@ import {
   getAgentRuntimeState,
   tryAcquireAgent,
   releaseAgent,
+  setCurrentChannel,
 } from "./agent-state.js";
 import { formatChinaIso } from "../watch-dog/time.js";
 import { getFilterContextToolNames } from "./tool/tool-bundle.js";
 import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
 import { refreshFgbgUserConfigCache } from "../config/index.js";
 import { areTextsOverTokenThreshold } from "./utils/token-counter.js";
-import { AgentMessage } from "@mariozechner/pi-agent-core";
 
 export const DEFAULT_SESSION_KEY = "agent:main:main";
 
@@ -191,11 +191,18 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
 }
 
 /**
- * message: 用户输入信息
- * onEvent: layer中间层回调
- * channel: 通信渠道, 目前支持 web 和 qq
- * sessionKey: 如果上游不传，默认"agent:main:main". 在当前设计下，所有通过 layer层传递的信息
- * 都是默认sessionKey. 如果是通过watch-dog触发，则需要新建 sessionKey，避免并发问题.
+ * 向 Agent 拉取一次回复；流式进度通过 `onEvent` 交给中间层（layer）。
+ *
+ * @param params.message - 用户输入
+ * @param params.onEvent - layer 流式事件回调
+ * @param params.channel - 渠道：`web` | `qq`
+ * @param params.sessionKey - 会话键；省略时使用 {@link DEFAULT_SESSION_KEY}
+ *
+ * **Session 并发策略（核心设计）**
+ *
+ * - **agentId === sessionKey**：运行时通过 `runWithSingleFlight` 确保 agentId 唯一，而 agentId 与 sessionKey 保持一致
+ * - 因此 agentId 锁定 = session 文件独占锁，避免多路并（web/qq/watch-dog）发写坏 session
+ * - watch-dog 后台任务使用独立 sessionKey（`watchdog:task:${id}`），与主链路 session 隔离
  */
 export async function getReplyFromAgent(params: {
   message: string;
@@ -207,6 +214,9 @@ export async function getReplyFromAgent(params: {
   refreshFgbgUserConfigCache();
 
   const { message, onEvent, channel, sessionKey } = params;
+
+  // 设置当前渠道上下文（供工具审批使用）
+  setCurrentChannel(channel);
 
   // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
   const prepared = await prepareBeforeGetReply({
@@ -366,7 +376,7 @@ export async function runWithSingleFlight(params: {
   onEvent: (event: RuntimeStreamEvent) => void;
   onBusy?: () => void | Promise<void>;
   onAccepted?: () => void | Promise<void>;
-  agentId?: string;
+  agentId: string;
   channel: AgentChannel;
 }): Promise<{ status: "busy" | "completed"; finalText: string }> {
   const {
@@ -375,7 +385,7 @@ export async function runWithSingleFlight(params: {
     onBusy,
     onAccepted,
     channel,
-    agentId = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    agentId,
   } = params;
 
   if (!tryAcquireAgent(agentId)) {
@@ -385,7 +395,7 @@ export async function runWithSingleFlight(params: {
 
   await onAccepted?.();
   try {
-    const result = await getReplyFromAgent({ message, onEvent, channel });
+    const result = await getReplyFromAgent({ message, onEvent, channel, sessionKey: agentId });
     return { status: "completed", finalText: result.finalText };
   } finally {
     releaseAgent(agentId);

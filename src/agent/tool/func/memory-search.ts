@@ -3,7 +3,6 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getMemoryIndexManager } from "../../../memory/index.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
-import { requestApproval } from "../utils/approval-helpers.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 

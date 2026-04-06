@@ -23,6 +23,9 @@ export interface ApprovalConfig {
   timeoutMs?: number;
 }
 
+/** 不可审批时的策略（用于 QQ 等无法交互的渠道） */
+export type UnapprovableStrategy = "skip" | "reject";
+
 /** 访问范围配置 */
 export interface AccessConfig {
   /**
@@ -56,4 +59,7 @@ export interface ToolSecurityConfig {
 
   /** 审批确认配置 */
   approval: ApprovalConfig;
+
+  /** 不可审批时的策略（QQ 等无法交互的渠道）：skip=跳过审批直接执行，reject=拒绝执行 */
+  unapprovableStrategy?: UnapprovableStrategy;
 }

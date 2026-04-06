@@ -14,9 +14,17 @@ const root = path.dirname(__dirname);
 
 const tmpConfigDir = fs.mkdtempSync(path.join(os.homedir(), ".fgbg"));
 const cfgPath = path.join(tmpConfigDir, "fgbg.json");
+
+const workspace = fs.mkdtempSync(path.join(os.homedir(), ".fgbg-workspace"));
+
+// 设置配置路径和 workspace 环境变量
+process.env.FGBG_CONFIG_PATH = cfgPath;
+process.env.FGBG_WORKSPACE_DIR = workspace;
+
 fs.writeFileSync(
   cfgPath,
   JSON.stringify({
+    workspaceDir: workspace,
     toolSecurity: {
       preset: "guard",
       approval: { enabled: false },
@@ -30,18 +38,15 @@ fs.writeFileSync(
   "utf8",
 );
 
-process.env.FGBG_CONFIG_PATH = cfgPath;
-
 const { evicateFgbgUserConfigCache } = await import(
   path.join(root, "dist/config/index.js")
 );
 evicateFgbgUserConfigCache();
 
 const { createReadTool } = await import(
-  path.join(root, "dist/agent/tool/read.js")
+  path.join(root, "dist/agent/tool/func/read.js")
 );
 
-const workspace = fs.mkdtempSync(path.join(os.homedir(), ".fgbg"));
 const tool = createReadTool(workspace);
 
 async function runRead(params) {

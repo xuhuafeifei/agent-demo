@@ -519,6 +519,28 @@ export default function ToolSecurityPage() {
             disabled={isReadOnly}
           />
         </div>
+        <div className="tool-security-form-group">
+          <label className="tool-security-form-label">
+            不可审批时的策略（QQ 等无法交互的渠道）
+          </label>
+          <select
+            className="tool-security-form-select"
+            value={config.unapprovableStrategy || "reject"}
+            onChange={(e) =>
+              setConfig({
+                ...config,
+                unapprovableStrategy: e.target.value as any,
+              })
+            }
+            disabled={isReadOnly}
+          >
+            <option value="reject">拒绝执行（默认）</option>
+            <option value="skip">跳过审批直接执行</option>
+          </select>
+          <p className="tool-security-form-hint">
+            当通过 QQ 等无法交互的渠道触发工具时，若工具需要审批但无法交互，按此策略处理。
+          </p>
+        </div>
       </div>
 
       {/* Deny Paths */}

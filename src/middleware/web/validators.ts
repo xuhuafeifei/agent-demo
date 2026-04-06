@@ -125,9 +125,11 @@ export const testConnectionRequestSchema = z.object({
   apiKey: z.string().optional(),
   model: z.string().min(1, { message: "模型名称不能为空" }),
   providerId: z.string().optional(),
-  qwenCredentialType: z.enum(["oauth", "api_key"], {
-    message: "qwenCredentialType不能为空",
-  }).optional(),
+  qwenCredentialType: z
+    .enum(["oauth", "api_key"], {
+      message: "qwenCredentialType不能为空",
+    })
+    .optional(),
 });
 
 /**

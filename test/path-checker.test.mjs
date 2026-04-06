@@ -15,7 +15,7 @@ const { checkPathSafety } = await import(
   path.join(root, "dist/agent/tool/security/path-checker.js")
 );
 const { DEFAULT_GUARD_CONFIG } = await import(
-  path.join(root, "dist/agent/tool/security/types.js")
+  path.join(root, "dist/agent/tool/security/tool-security.defaults.js")
 );
 
 function userHomeConfig() {
