@@ -3,12 +3,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { errResult, okResult, type ToolDetails } from "./types.js";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { preExecuteCheck } from "./security/shell-precheck.js";
-import { SENSITIVE_ENV_PATTERNS } from "./security/constants.js";
-import { ToolRegister } from "./tool-register.js";
-import { requestApprovalWithDescription } from "./utils/approval-helpers.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { preExecuteCheck } from "../security/shell-precheck.js";
+import { SENSITIVE_ENV_PATTERNS } from "../security/constants.js";
+import { readFgbgUserConfig } from "../../../config/index.js";
+import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
+import { requiresApproval } from "../tool-approval.js";
+import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
 
 const toolLogger = getSubsystemConsoleLogger("shell-execute");
 const promisifiedExecFile = promisify(execFile);
@@ -20,54 +22,54 @@ const promisifiedExecFile = promisify(execFile);
 function parseCommand(command: string): { file: string; args: string[] } {
   // 简单解析：第一个 token 是命令，其余是参数
   const parts: string[] = [];
-  let current = '';
+  let current = "";
   let inSingleQuote = false;
   let inDoubleQuote = false;
-  
+
   for (let i = 0; i < command.length; i++) {
     const char = command[i];
-    
+
     if (char === "'" && !inDoubleQuote) {
       inSingleQuote = !inSingleQuote;
     } else if (char === '"' && !inSingleQuote) {
       inDoubleQuote = !inDoubleQuote;
-    } else if (char === ' ' && !inSingleQuote && !inDoubleQuote) {
+    } else if (char === " " && !inSingleQuote && !inDoubleQuote) {
       if (current) {
         parts.push(current);
-        current = '';
+        current = "";
       }
     } else {
       current += char;
     }
   }
-  
+
   if (current) {
     parts.push(current);
   }
-  
+
   return {
-    file: parts[0] || '',
+    file: parts[0] || "",
     args: parts.slice(1),
   };
 }
 
 /** 脱敏环境变量输出（过滤敏感键） */
 function sanitizeEnvOutput(envStr: string): string {
-  const lines = envStr.split('\n');
+  const lines = envStr.split("\n");
   return lines
-    .map(line => {
-      const eqIndex = line.indexOf('=');
+    .map((line) => {
+      const eqIndex = line.indexOf("=");
       if (eqIndex === -1) return line;
       const key = line.substring(0, eqIndex);
-      const shouldHide = SENSITIVE_ENV_PATTERNS.some(pattern =>
-        key.toUpperCase().includes(pattern)
+      const shouldHide = SENSITIVE_ENV_PATTERNS.some((pattern) =>
+        key.toUpperCase().includes(pattern),
       );
       if (shouldHide) {
         return `${key}=<REDACTED>`;
       }
       return line;
     })
-    .join('\n');
+    .join("\n");
 }
 
 /** Node `execFile` 失败时的错误格式化 */
@@ -116,11 +118,15 @@ type ShellExecuteOutput = {
  * - 超时限制（默认 30 秒）
  * - 环境变量脱敏
  */
-export function createShellExecuteTool(): ToolDefinition<typeof shellExecuteParameters, ToolDetails<ShellExecuteOutput>> {
+export function createShellExecuteTool(): ToolDefinition<
+  typeof shellExecuteParameters,
+  ToolDetails<ShellExecuteOutput>
+> {
   return {
     name: "shellExecute",
     label: "Shell Execute",
-    description: "shellExecute(command) - execute whitelisted shell command securely",
+    description:
+      "shellExecute(command) - execute whitelisted shell command securely",
     parameters: shellExecuteParameters,
     execute: async (
       _toolCallId,
@@ -138,14 +144,14 @@ export function createShellExecuteTool(): ToolDefinition<typeof shellExecutePara
         await preExecuteCheck(command, { network: false });
 
         // 2. 审批检查（如果配置要求）
-        const requiresApproval = ToolRegister.getInstance().requiresApproval("shellExecute");
-        if (requiresApproval) {
-          const approvalConfig = ToolRegister.getInstance().getApprovalConfig();
+        const config = readFgbgUserConfig();
+        const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
+        if (requiresApproval("shellExecute", securityConfig.approval)) {
           const approved = await requestApprovalWithDescription(
             "shellExecute",
             { command },
             `执行命令: ${command}`,
-            { timeoutMs: approvalConfig.timeoutMs },
+            { timeoutMs: securityConfig.approval.timeoutMs },
           );
           if (!approved) {
             return errResult("用户拒绝或超时", {
@@ -157,35 +163,28 @@ export function createShellExecuteTool(): ToolDefinition<typeof shellExecutePara
 
         // 3. 解析命令
         const { file, args } = parseCommand(command);
-        
-        toolLogger.debug(`Executing: ${file} ${args.join(' ')}`);
+
+        toolLogger.debug(`Executing: ${file} ${args.join(" ")}`);
 
         // 4. 执行（使用 execFile 避免 shell 注入）
-        const { stdout, stderr } = await promisifiedExecFile(
-          file,
-          args,
-          {
-            timeout: 30000, // 30 秒超时
-            signal,
-            env: process.env, // 继承当前环境变量
-          }
-        );
+        const { stdout, stderr } = await promisifiedExecFile(file, args, {
+          timeout: 30000, // 30 秒超时
+          signal,
+          env: process.env, // 继承当前环境变量
+        });
 
         // 5. 脱敏输出
         const sanitizedStdout = sanitizeEnvOutput(stdout.trim());
         const sanitizedStderr = sanitizeEnvOutput(stderr.trim());
 
-        return okResult(
-          `Command executed successfully`,
-          {
-            stdout: sanitizedStdout,
-            stderr: sanitizedStderr,
-          }
-        );
+        return okResult(`Command executed successfully`, {
+          stdout: sanitizedStdout,
+          stderr: sanitizedStderr,
+        });
       } catch (error: unknown) {
         // 超时错误特殊处理
-        if (error instanceof Error && error.message.includes('timeout')) {
-          const msg = '命令执行超时（30 秒）';
+        if (error instanceof Error && error.message.includes("timeout")) {
+          const msg = "命令执行超时（30 秒）";
           toolLogger.warn(`shellExecute timeout: ${params.command}`);
           return errResult(msg, {
             code: "INTERNAL_ERROR",

@@ -1,6 +1,6 @@
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { prepareBeforeGetReply } from "../pre-run.js";
-import { createRuntimeAgentSession } from "../pi-embedded-runner/attempt.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { prepareBeforeGetReply } from "../../pre-run.js";
+import { createRuntimeAgentSession } from "../../pi-embedded-runner/attempt.js";
 
 const logger = getSubsystemConsoleLogger("compact-tool");
 

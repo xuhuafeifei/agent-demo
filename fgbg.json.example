@@ -75,7 +75,7 @@
       "read", "write",
       "memorySearch", "persistKnowledge", "loadSkill",
       "createReminderTask", "createAgentTask", "compactContext",
-      "getNow", "shiftTime", "listTaskSchedules",
+      "getNow", "listTaskSchedules",
       "runTaskByName", "deleteTaskByName"
     ],
     "access": {

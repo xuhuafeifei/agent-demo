@@ -1,15 +1,15 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Copy, Check, ChevronUp, ChevronDown } from 'lucide-react';
-import { renderMarkdown, copyText } from '../utils/markdown';
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { Copy, Check, ChevronUp, ChevronDown } from "lucide-react";
+import { renderMarkdown, copyText } from "../utils/markdown";
 import type {
   Message,
   ToolCall,
   WrappedMessage,
   PermissionTimelineItem,
-} from '@/types';
-import type { RefObject } from 'react';
-import { useChatStore } from '../store/chatStore';
-import { api } from '../api/client';
+} from "@/types";
+import type { RefObject } from "react";
+import { useChatStore } from "../store/chatStore";
+import { api } from "../api/client";
 
 export type { WrappedMessage };
 
@@ -42,12 +42,12 @@ function AssistantMessage({
     <article className="message assistant">
       <div className="llm-response">
         <div
-          className={`llm-content ${streaming ? 'streaming' : ''}`}
+          className={`llm-content ${streaming ? "streaming" : ""}`}
           dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
         />
         <div className="copy-wrap">
           <button
-            className={`copy-btn ${copied ? 'copied' : ''}`}
+            className={`copy-btn ${copied ? "copied" : ""}`}
             type="button"
             aria-label="复制内容"
             onClick={async () => {
@@ -80,7 +80,7 @@ function ThinkingMessage({
   const [expanded, setExpanded] = useState(false);
 
   const displayContent =
-    typeof content === 'string' ? content.replace(/\n{3,}/g, '\n\n') : content;
+    typeof content === "string" ? content.replace(/\n{3,}/g, "\n\n") : content;
 
   return (
     <section className="thinking-item" key={id}>
@@ -115,10 +115,17 @@ function ThinkingMessage({
  */
 function ToolCallCard({ toolCall }: { toolCall: ToolCall }) {
   const [expanded, setExpanded] = useState(false);
+  const [showInput, setShowInput] = useState(true);
+  const [showResult, setShowResult] = useState(true);
+
+  const hasResult =
+    toolCall.result &&
+    toolCall.result !== "-" &&
+    toolCall.result !== "undefined";
 
   return (
     <section
-      className={`tool-card status-${toolCall.status || 'running'} ${expanded ? 'expanded' : 'collapsed'}`}
+      className={`tool-card status-${toolCall.status || "running"} ${expanded ? "expanded" : "collapsed"}`}
     >
       <button
         className="tool-toggle"
@@ -128,14 +135,49 @@ function ToolCallCard({ toolCall }: { toolCall: ToolCall }) {
         onClick={() => setExpanded((prev) => !prev)}
       >
         <div className="tool-header">
-          <span className="tool-title">{toolCall.title || '工具调用'}</span>
-          <span className="tool-status">{toolCall.detail || '进行中...'}</span>
+          <span className="tool-title">{toolCall.title || "工具调用"}</span>
+          <span className="tool-status">{toolCall.detail || "进行中..."}</span>
         </div>
         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
       {expanded ? (
         <div id={`tool-${toolCall.id}`} className="tool-content">
-          <div className="tool-path">{toolCall.content || '-'}</div>
+          <div className="tool-section">
+            <button
+              className="tool-section-toggle"
+              type="button"
+              onClick={() => setShowInput((prev) => !prev)}
+            >
+              <span>📥 输入</span>
+              {showInput ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            {showInput ? (
+              <pre className="tool-path tool-call-input" tabIndex={0}>
+                {toolCall.input || "-"}
+              </pre>
+            ) : null}
+          </div>
+          {hasResult ? (
+            <div className="tool-section">
+              <button
+                className="tool-section-toggle"
+                type="button"
+                onClick={() => setShowResult((prev) => !prev)}
+              >
+                <span>📤 输出</span>
+                {showResult ? (
+                  <ChevronUp size={12} />
+                ) : (
+                  <ChevronDown size={12} />
+                )}
+              </button>
+              {showResult ? (
+                <pre className="tool-path tool-call-result" tabIndex={0}>
+                  {toolCall.result}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -146,16 +188,33 @@ function ToolCallCard({ toolCall }: { toolCall: ToolCall }) {
  * 用户消息组件
  */
 function UserMessage({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+
   return (
     <article className="message user">
       <div className="user-bubble">{content}</div>
+      <div className="copy-wrap">
+        <button
+          className={`copy-btn ${copied ? "copied" : ""}`}
+          type="button"
+          aria-label="复制内容"
+          onClick={async () => {
+            const ok = await copyText(content);
+            if (!ok) return;
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 2000);
+          }}
+        >
+          {copied ? <Check size={16} /> : <Copy size={16} />}
+        </button>
+      </div>
     </article>
   );
 }
 
 function PermissionRequestCard({ item }: { item: PermissionTimelineItem }) {
   const updatePermissionRequestStatus = useChatStore(
-    (s) => s.updatePermissionRequestStatus
+    (s) => s.updatePermissionRequestStatus,
   );
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -163,35 +222,36 @@ function PermissionRequestCard({ item }: { item: PermissionTimelineItem }) {
 
   const respond = useCallback(
     async (approved: boolean) => {
-      if (item.status !== 'pending') return;
+      if (item.status !== "pending") return;
       setLoading(true);
       setError(null);
       const res = await api.approval.respond(item.toolUseId, approved);
       setLoading(false);
       if (!res.success) {
-        setError(res.error || '操作失败');
+        const errorMsg = "error" in res ? res.error : "操作失败";
+        setError(errorMsg);
         return;
       }
       updatePermissionRequestStatus(
         item.toolUseId,
-        approved ? 'approved' : 'denied'
+        approved ? "approved" : "denied",
       );
     },
-    [item.status, item.toolUseId, updatePermissionRequestStatus]
+    [item.status, item.toolUseId, updatePermissionRequestStatus],
   );
 
   const statusLabel =
-    item.status === 'pending'
-      ? '等待确认'
-      : item.status === 'approved'
-        ? '已允许'
-        : item.status === 'denied'
-          ? '已拒绝'
-          : '已过期（未操作或会话已结束）';
+    item.status === "pending"
+      ? "等待确认"
+      : item.status === "approved"
+        ? "已允许"
+        : item.status === "denied"
+          ? "已拒绝"
+          : "已过期（未操作或会话已结束）";
 
   return (
     <section
-      className={`permission-card status-${item.status} ${expanded ? 'expanded' : 'collapsed'}`}
+      className={`permission-card status-${item.status} ${expanded ? "expanded" : "collapsed"}`}
     >
       <button
         className="permission-toggle"
@@ -214,7 +274,7 @@ function PermissionRequestCard({ item }: { item: PermissionTimelineItem }) {
           </pre>
         </div>
       ) : null}
-      {item.status === 'pending' ? (
+      {item.status === "pending" ? (
         <div className="permission-actions">
           <button
             type="button"
@@ -222,7 +282,7 @@ function PermissionRequestCard({ item }: { item: PermissionTimelineItem }) {
             disabled={loading}
             onClick={() => respond(true)}
           >
-            {loading ? '处理中…' : '允许'}
+            {loading ? "处理中…" : "允许"}
           </button>
           <button
             type="button"
@@ -230,12 +290,12 @@ function PermissionRequestCard({ item }: { item: PermissionTimelineItem }) {
             disabled={loading}
             onClick={() => respond(false)}
           >
-            {loading ? '处理中…' : '拒绝'}
+            {loading ? "处理中…" : "拒绝"}
           </button>
         </div>
       ) : null}
       {error ? <p className="permission-error">{error}</p> : null}
-      {item.status === 'pending' ? (
+      {item.status === "pending" ? (
         <p className="permission-hint">5 分钟内未操作将自动拒绝</p>
       ) : null}
     </section>
@@ -258,9 +318,9 @@ function MessageList({
   const lastThinkingId = useMemo(() => {
     for (let i = allMessages.length - 1; i >= 0; i -= 1) {
       const item = allMessages[i];
-      if (item.type !== 'message') continue;
+      if (item.type !== "message") continue;
       const msg = item.data as Message;
-      if (msg.role === 'thinking') return msg.id;
+      if (msg.role === "thinking") return msg.id;
     }
     return null;
   }, [allMessages]);
@@ -299,8 +359,8 @@ function MessageList({
       }
     };
 
-    el.addEventListener('scroll', handleScroll);
-    return () => el.removeEventListener('scroll', handleScroll);
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
   }, [scrollRef, onScrollChange]);
 
   return (
@@ -316,16 +376,13 @@ function MessageList({
         ) : null}
 
         {allMessages.map((item, idx) => {
-          if (item.type === 'permission_request') {
+          if (item.type === "permission_request") {
             return (
-              <PermissionRequestCard
-                key={item.data.id}
-                item={item.data}
-              />
+              <PermissionRequestCard key={item.data.id} item={item.data} />
             );
           }
 
-          if (item.type === 'tool_call') {
+          if (item.type === "tool_call") {
             return (
               <ToolCallCard
                 key={(item.data as ToolCall).id}
@@ -334,42 +391,44 @@ function MessageList({
             );
           }
 
-          if (item.type === 'message') {
+          if (item.type === "message") {
             const msg = item.data as Message;
 
-            if (msg.content === '' || msg.content === undefined) {
+            if (msg.content === "" || msg.content === undefined) {
               return null;
             }
 
-            if (msg.role === 'user') {
+            if (msg.role === "user") {
               const content =
-                typeof msg.content === 'string'
+                typeof msg.content === "string"
                   ? msg.content
-                  : JSON.stringify(msg.content || '');
+                  : JSON.stringify(msg.content || "");
               return <UserMessage key={msg.id} content={content} />;
             }
 
-            if (msg.role === 'thinking') {
+            if (msg.role === "thinking") {
               const content =
-                typeof msg.content === 'string'
+                typeof msg.content === "string"
                   ? msg.content
-                  : JSON.stringify(msg.content || '');
+                  : JSON.stringify(msg.content || "");
               return (
                 <ThinkingMessage
                   key={msg.id}
                   id={msg.id}
                   content={content}
-                  isStreaming={isStreaming && isThinking && msg.id === lastThinkingId}
+                  isStreaming={
+                    isStreaming && isThinking && msg.id === lastThinkingId
+                  }
                 />
               );
             }
 
-            if (msg.role === 'assistant') {
+            if (msg.role === "assistant") {
               const isLast = idx === allMessages.length - 1;
               const content =
-                typeof msg.content === 'string'
+                typeof msg.content === "string"
                   ? msg.content
-                  : JSON.stringify(msg.content || '');
+                  : JSON.stringify(msg.content || "");
               return (
                 <AssistantMessage
                   key={msg.id}

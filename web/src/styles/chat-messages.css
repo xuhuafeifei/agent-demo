@@ -98,8 +98,10 @@
 }
 
 .message.user {
+  position: relative;
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .user-bubble {
@@ -113,6 +115,36 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 用户消息下方的复制按钮 */
+.message.user .copy-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  margin-right: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message.user:hover .copy-wrap {
+  opacity: 1;
+}
+
+.message.user .copy-wrap .copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-placeholder);
+}
+
+.message.user .copy-wrap .copy-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.message.user .copy-wrap .copy-btn.copied {
+  color: var(--primary-green);
+  border-color: var(--primary-green);
 }
 
 .message.assistant {
@@ -450,6 +482,61 @@
   min-width: 20px;
 }
 
+/* Tool Section (input/result subsections) */
+.tool-section {
+  margin-bottom: 12px;
+}
+
+.tool-section:last-child {
+  margin-bottom: 0;
+}
+
+.tool-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color 0.15s ease;
+}
+
+.tool-section-toggle:hover {
+  color: var(--text-primary);
+}
+
+.tool-path {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.tool-call-input {
+  background: #f0f7ff;
+  border-left: 3px solid #3b82f6;
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.tool-call-result {
+  background: #f0fdf4;
+  border-left: 3px solid #22c55e;
+  padding: 12px;
+  border-radius: 6px;
+}
+
 .tool-content::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #b8b8b8, #909090);
 }
@@ -461,6 +548,10 @@
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.6;
+}
+
+.tool-content .tool-call-input {
+  margin: 0;
 }
 
 /* Permission request (inline timeline) */

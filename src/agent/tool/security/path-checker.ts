@@ -10,13 +10,13 @@
 
 import os from "node:os";
 import path from "node:path";
-import type { ToolError } from "../types.js";
+import type { ToolError } from "../tool-result.js";
 import {
   GLOBAL_DENY_PATHS_POSIX,
   GLOBAL_DENY_PATHS_WIN,
   TEMP_PATH_WHITELIST,
 } from "./constants.js";
-import type { ToolSecurityConfig } from "./types.js";
+import type { ToolSecurityConfig } from "./tool-security.model.js";
 
 export interface PathCheckResult {
   allowed: boolean;

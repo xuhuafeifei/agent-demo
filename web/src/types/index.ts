@@ -1,10 +1,10 @@
 /**
  * 共享类型定义
- * 
+ *
  * 此文件包含整个前端项目使用的核心类型
  */
 
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 // ============================================================================
 // 核心消息类型
@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 
 export interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'thinking';
+  role: "user" | "assistant" | "thinking";
   content: string;
   timestamp: number;
 }
@@ -22,7 +22,8 @@ export interface ToolCall {
   toolCallId: string;
   kind: string;
   title: string;
-  content: string;
+  input: string;
+  result?: string;
   status: string;
   detail: string;
   timestamp: number;
@@ -30,10 +31,11 @@ export interface ToolCall {
 
 export interface ContextEvent {
   id: string;
-  kind: 'snapshot' | 'used';
+  kind: "snapshot" | "used";
   reason?: string;
   contextText?: string;
   contextWindow?: number;
+  totalTokens?: number;
   model?: string;
   timestamp: number;
 }
@@ -43,17 +45,17 @@ export interface ContextEvent {
 // ============================================================================
 
 export type SSEEventType =
-  | 'streamStart'
-  | 'agent_message_chunk'
-  | 'agent_thought_chunk'
-  | 'tool_call'
-  | 'tool_call_update'
-  | 'assistant_break'
-  | 'context_snapshot'
-  | 'context_used'
-  | 'error'
-  | 'streamEnd'
-  | 'permission_request';
+  | "streamStart"
+  | "agent_message_chunk"
+  | "agent_thought_chunk"
+  | "tool_call"
+  | "tool_call_update"
+  | "assistant_break"
+  | "context_snapshot"
+  | "context_used"
+  | "error"
+  | "streamEnd"
+  | "permission_request";
 
 /**
  * 工具审批请求（SSE payload / 与后端字段对齐）
@@ -66,10 +68,10 @@ export interface PermissionRequest {
 }
 
 export type PermissionRequestStatus =
-  | 'pending'
-  | 'approved'
-  | 'denied'
-  | 'expired';
+  | "pending"
+  | "approved"
+  | "denied"
+  | "expired";
 
 /**
  * 对话时间线中的审批条目（含 UI 状态）
@@ -87,10 +89,10 @@ export interface PermissionTimelineItem {
  * 消息列表合并项（消息 / 工具调用 / 审批）
  */
 export type WrappedMessage =
-  | { type: 'message'; data: Message; timestamp: number }
-  | { type: 'tool_call'; data: ToolCall; timestamp: number }
+  | { type: "message"; data: Message; timestamp: number }
+  | { type: "tool_call"; data: ToolCall; timestamp: number }
   | {
-      type: 'permission_request';
+      type: "permission_request";
       data: PermissionTimelineItem;
       timestamp: number;
     };
@@ -125,7 +127,7 @@ export interface ModelOption {
 
 export interface ToastMessage {
   id: number;
-  type: 'success' | 'error' | 'warning' | 'info';
+  type: "success" | "error" | "warning" | "info";
   content: string;
   duration?: number;
 }
@@ -160,7 +162,7 @@ export interface ChannelsFormState {
 }
 
 export interface MemoryHeartbeatFormState {
-  mode: 'local' | 'remote';
+  mode: "local" | "remote";
   model: string;
   endpoint: string;
   apiKey: string;
@@ -210,7 +212,7 @@ export interface ProviderListItemProps {
 // ============================================================================
 
 export interface DiffLine {
-  type: 'add' | 'del' | 'same';
+  type: "add" | "del" | "same";
   line: string;
 }
 
@@ -218,7 +220,15 @@ export interface DiffLine {
 // Schema 配置类型
 // ============================================================================
 
-export type SchemaFieldType = 'text' | 'number' | 'boolean' | 'select' | 'array' | 'url' | 'sensitive' | 'json';
+export type SchemaFieldType =
+  | "text"
+  | "number"
+  | "boolean"
+  | "select"
+  | "array"
+  | "url"
+  | "sensitive"
+  | "json";
 
 export interface SchemaField {
   path: string;

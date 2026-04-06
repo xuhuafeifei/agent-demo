@@ -13,6 +13,7 @@ import { useChatStore } from '../store/chatStore';
 import { getFgbgConfig, setPrimaryModel } from '../api/configApi';
 import { getProviderIcon, getProviderName } from './settings/settingsUtils';
 import type { ComponentType } from 'react';
+import ContextUsageIndicator from './ContextUsageIndicator';
 
 /**
  * 模型选项
@@ -200,6 +201,9 @@ export default function InputArea({
             </button>
           </div>
           <div className="right-tools">
+            {/* 上下文使用占比指示器 */}
+            <ContextUsageIndicator />
+
             {/* 模型选择下拉框 */}
             <div className="model-selector" ref={dropdownRef}>
               <button

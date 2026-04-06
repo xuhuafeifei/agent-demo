@@ -2,7 +2,7 @@ import path from "node:path";
 import {
   DEFAULT_TOOL_SECURITY_CONFIG,
   resolveToolSecurityConfig,
-} from "../agent/tool/security/types.js";
+} from "../agent/tool/security/index.js";
 import type {
   FgbgUserConfig,
   FgbgUserRawConfig,

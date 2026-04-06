@@ -82,7 +82,7 @@ export interface MemorySearchTestResult {
 /**
  * HTTP request helper with error handling.
  */
-async function request<T>(
+export async function request<T>(
   url: string,
   options?: RequestInit
 ): Promise<ApiResponse<T>> {
@@ -122,7 +122,7 @@ async function request<T>(
  * API Client class for structured access to all endpoints.
  */
 export class ApiClient {
-  private baseURL: string;
+  readonly baseURL: string;
 
   constructor(options?: ApiClientOptions) {
     this.baseURL = options?.baseURL || '/api/v1';

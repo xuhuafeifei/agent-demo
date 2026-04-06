@@ -1,9 +1,9 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { getMemoryIndexManager } from "../../memory/index.js";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { errResult, okResult, type ToolDetails } from "./types.js";
-import { requestApproval } from "./utils/approval-helpers.js";
+import { getMemoryIndexManager } from "../../../memory/index.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
+import { requestApproval } from "../utils/approval-helpers.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -68,20 +68,6 @@ export function createMemorySearchTool(): ToolDefinition<
         return errResult("query 不能为空", {
           code: "INVALID_ARGUMENT",
           message: "query 不能为空",
-        });
-      }
-
-      // 请求审批（挂起等待用户在前端点击允许/拒绝）
-      const approved = await requestApproval("memorySearch", {
-        query: params.query,
-        topKFts: params.topKFts,
-        topKVector: params.topKVector,
-        topN: params.topN,
-      });
-      if (!approved) {
-        return errResult("用户拒绝了 memorySearch 执行请求", {
-          code: "USER_REJECTED",
-          message: "用户拒绝了 memorySearch 执行请求",
         });
       }
 

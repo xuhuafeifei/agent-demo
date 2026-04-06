@@ -1,7 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { errResult, okResult, type ToolDetails } from "./types.js";
-import { readFgbgUserConfig } from "../../config/index.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
+import { readFgbgUserConfig } from "../../../config/index.js";
 
 const qqSendParameters = Type.Object({
   content: Type.String({

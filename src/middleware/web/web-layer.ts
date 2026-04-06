@@ -8,6 +8,7 @@ import { createProvidersRouter } from "./router/providers-router.js";
 import { createLoggingRouter } from "./router/logging-router.js";
 import { createOAuthRouter } from "./router/oauth-router.js";
 import { createApprovalRouter } from "./router/approval-router.js";
+import { createToolSecurityRouter } from "./router/tool-security-router.js";
 
 /**
  * Create the web layer router.
@@ -29,6 +30,7 @@ export function createWebLayer() {
   router.use("/config", createProvidersRouter());
   router.use("/config/logging", createLoggingRouter());
   router.use("/config/qwen-portal/oauth", createOAuthRouter());
+  router.use("/config/tool-security", createToolSecurityRouter());
 
   return router;
 }

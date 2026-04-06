@@ -9,7 +9,6 @@ import type { RuntimeStreamEvent } from "./utils/events.js";
 import {
   loadSessionIndexEntry,
   resolveSessionIndexPath,
-  type SessionMessage,
   resolveSessionDir,
 } from "./session/index.js";
 import {
@@ -25,7 +24,7 @@ import {
 } from "./workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { resolveWorkspaceDir } from "../utils/app-path.js";
-import { getAgentToolings } from "./tool/index.js";
+import { createToolBundle } from "./tool/tool-bundle.js";
 import { getSkillManager } from "./skill/skill-manager.js";
 import {
   getAgentRuntimeState,
@@ -33,7 +32,7 @@ import {
   releaseAgent,
 } from "./agent-state.js";
 import { formatChinaIso } from "../watch-dog/time.js";
-import { ToolRegister } from "./tool/tool-register.js";
+import { getFilterContextToolNames } from "./tool/tool-bundle.js";
 import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
 import { refreshFgbgUserConfigCache } from "../config/index.js";
 import { areTextsOverTokenThreshold } from "./utils/token-counter.js";
@@ -159,6 +158,7 @@ export function clearHistory(): void {
  */
 function pruneSessionChat(messages: SessionMessageEntry[]): string {
   const selected: string[] = [];
+  const filterToolNames = getFilterContextToolNames();
   for (let i = 0; i < messages.length; i += 1) {
     const msg = messages[i];
     const raw = msg.message as {
@@ -168,9 +168,7 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
     };
     const role = raw.role ?? "unknown";
     const toolName = raw.toolName ?? "";
-    if (
-      ToolRegister.getInstance().getFilterContextToolNames().includes(toolName)
-    ) {
+    if (filterToolNames.includes(toolName)) {
       continue;
     }
 
@@ -277,7 +275,7 @@ export async function getReplyFromAgent(params: {
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
     chatHistory: chatHistoryText,
     workspace: resolveWorkspaceDir(),
-    toolings: getAgentToolings(prepared.cwd),
+    toolings: createToolBundle(prepared.cwd).toolings,
     skillsMeta: getSkillManager().getMetaPromptText(),
     channel: channel,
   });

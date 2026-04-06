@@ -8,7 +8,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Message } from "@mariozechner/pi-ai";
 import { resolveSessionDir, resolveSessionIndexPath } from "./session-path.js";
 import type { SessionIndex, SessionIndexEntry } from "./types.js";
-import { ToolRegister } from "../tool/tool-register.js";
+import { getFilterContextToolNames } from "../tool/tool-bundle.js";
 
 // 512 KB
 const MAX_SESSION_FILE_SIZE = 512 * 1024;
@@ -27,13 +27,14 @@ function isUserOrAssistantMessage(
  * 过滤规则：
  * 1. 只要 role 为 user 和 assistant 的消息
  * 2. 只要 text 内容（忽略 toolResult 等）
- * 3. 过滤掉 toolRegister 中 getFilterContextToolNames() 返回的工具相关消息
+ * 3. 过滤掉 getFilterContextToolNames() 返回的工具相关消息
  */
 function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
   const entries = oldSessionManager.getEntries();
 
   // 从后向前收集最多 10 条符合条件的消息
   const messagesToPreserve: Message[] = [];
+  const filterToolNames = getFilterContextToolNames();
 
   for (
     let i = entries.length - 1;
@@ -51,15 +52,13 @@ function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
     if (!isUserOrAssistantMessage(message)) {
       continue;
     }
-    // 过滤掉 toolRegister 中 getFilterContextToolNames() 返回的工具相关消息
+    // 过滤掉 getFilterContextToolNames() 返回的工具相关消息
     const toolName =
       "toolName" in message &&
       typeof (message as { toolName?: string }).toolName === "string"
         ? (message as { toolName: string }).toolName
         : "";
-    if (
-      ToolRegister.getInstance().getFilterContextToolNames().includes(toolName)
-    ) {
+    if (filterToolNames.includes(toolName)) {
       continue;
     }
 

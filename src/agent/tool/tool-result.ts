@@ -1,3 +1,10 @@
+/**
+ * 工具执行结果协议（与 Pi 对齐）
+ *
+ * 定义工具返回值的统一形状，与「安全策略」「工具清单」零耦合。
+ * 所有 read/write/... 工具文件只 import 这里。
+ */
+
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 
 export type ToolErrorCode =

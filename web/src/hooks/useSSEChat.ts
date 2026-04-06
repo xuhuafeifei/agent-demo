@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { useChatStore } from '../store/chatStore';
+import { useCallback } from "react";
+import { useChatStore } from "../store/chatStore";
 
 /**
  * SSE 事件负载
@@ -20,6 +20,7 @@ interface SSEPayload {
   detail?: string;
   error?: string;
   contextWindow?: number;
+  totalTokens?: number;
   model?: string;
   reason?: string;
   contextText?: string;
@@ -32,22 +33,22 @@ interface SSEPayload {
  */
 function parseSseBlocks(
   rawBuffer: string,
-  onEvent: (type: string, payload: SSEPayload) => void
+  onEvent: (type: string, payload: SSEPayload) => void,
 ): string {
-  const blocks = rawBuffer.split('\n\n');
-  const rest = blocks.pop() || '';
+  const blocks = rawBuffer.split("\n\n");
+  const rest = blocks.pop() || "";
 
   blocks.forEach((block) => {
     if (!block.trim()) return;
-    const lines = block.split('\n');
-    let eventType = '';
+    const lines = block.split("\n");
+    let eventType = "";
     const dataLines: string[] = [];
 
     lines.forEach((line) => {
-      if (line.startsWith('event:')) {
+      if (line.startsWith("event:")) {
         eventType = line.slice(6).trim();
       }
-      if (line.startsWith('data:')) {
+      if (line.startsWith("data:")) {
         dataLines.push(line.slice(5).trimStart());
       }
     });
@@ -55,7 +56,8 @@ function parseSseBlocks(
     if (!dataLines.length) return;
 
     try {
-      const payload = JSON.parse(dataLines.join('\n'));
+      const payload = JSON.parse(dataLines.join("\n"));
+      console.log("[SSE] Parsed event:", eventType, "payload:", payload);
       onEvent(eventType || payload.type, payload);
     } catch {
       // keep stream alive even with malformed blocks
@@ -84,76 +86,84 @@ export function useSSEChat() {
 
   const handleEvent = useCallback(
     (type: string, payload: SSEPayload) => {
+      console.log(
+        "[SSE] Event received - type:",
+        type,
+        "payload.type:",
+        payload?.type,
+      );
       switch (type || payload?.type) {
-        case 'streamStart':
+        case "streamStart":
           startStreaming(payload?.timestamp);
           break;
 
-        case 'agent_message_chunk':
+        case "agent_message_chunk":
           appendStreamChunk(
-            payload?.content || payload?.delta || '',
-            payload?.timestamp
+            payload?.content || payload?.delta || "",
+            payload?.timestamp,
           );
           break;
 
-        case 'agent_thought_chunk':
+        case "agent_thought_chunk":
           appendThinkingChunk(
-            payload?.content || payload?.thinkingDelta || '',
-            payload?.timestamp
+            payload?.content || payload?.thinkingDelta || "",
+            payload?.timestamp,
           );
           break;
 
-        case 'tool_call':
+        case "tool_call":
+          console.log("[SSE] tool_call event received:", payload);
           addToolCall({
-            toolCallId: payload.toolCallId || payload.id || '',
-            kind: payload.kind || payload.toolName || '',
-            title: payload.title || `正在执行 ${payload.toolName || '工具'}`,
-            content:
-              payload.content ||
-              (payload.args ? JSON.stringify(payload.args) : '-'),
-            status: payload.status || 'running',
-            detail: payload.detail || '进行中...',
+            toolCallId: payload.toolCallId || payload.id || "",
+            kind: payload.kind || payload.toolName || "",
+            title: payload.title || `正在执行 ${payload.toolName || "工具"}`,
+            input:
+              payload.input ||
+              (payload.args ? JSON.stringify(payload.args, null, 2) : "-"),
+            status: payload.status || "running",
+            detail: payload.detail || "进行中...",
             timestamp: payload.timestamp ?? Date.now(),
           });
           break;
 
-        case 'tool_call_update': {
-          const id = payload.toolCallId || payload.id || '';
+        case "tool_call_update": {
+          const id = payload.toolCallId || payload.id || "";
+          console.log("[SSE] tool_call_update received:", payload);
           updateToolCall(id, {
             status: payload.status,
             detail: payload.detail,
-            content: payload.content,
-            ...(typeof payload.title === 'string' ? { title: payload.title } : {}),
+            result: payload.content,
+            ...(typeof payload.title === "string"
+              ? { title: payload.title }
+              : {}),
           });
           break;
         }
 
-        case 'assistant_break':
+        case "assistant_break":
           breakAssistantSegment();
           break;
 
-        case 'context_snapshot':
+        case "context_snapshot":
           addContextSnapshot(payload);
           break;
 
-        case 'context_used':
+        case "context_used":
           addContextUsed(payload);
           break;
 
-        case 'error':
-          appendStreamChunk(
-            `\n\n**错误**: ${payload?.error || '未知错误'}`
-          );
+        case "error":
+          appendStreamChunk(`\n\n**错误**: ${payload?.error || "未知错误"}`);
           break;
 
-        case 'streamEnd':
+        case "streamEnd":
           endStreaming();
           break;
 
-        case 'permission_request':
+        case "permission_request":
           addPermissionRequest({
-            toolUseId: payload.toolUseId || '',
-            toolName: (payload.toolName as string) || '未知工具',
+            toolUseId: payload.toolUseId || "",
+            toolName: (payload.toolName as string) || "未知工具",
             args: (payload.args as Record<string, unknown>) || {},
             timestamp: payload.timestamp ?? Date.now(),
           });
@@ -174,14 +184,14 @@ export function useSSEChat() {
       addContextUsed,
       breakAssistantSegment,
       addPermissionRequest,
-    ]
+    ],
   );
 
   const sendMessage = useCallback(
     async (message: string) => {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
       });
 
@@ -191,7 +201,7 @@ export function useSSEChat() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -204,7 +214,7 @@ export function useSSEChat() {
         parseSseBlocks(`${buffer}\n\n`, handleEvent);
       }
     },
-    [handleEvent]
+    [handleEvent],
   );
 
   return { sendMessage, handleEvent };

@@ -4,7 +4,7 @@ import { runWithSingleFlight } from "../../agent/run.js";
 import { resolveQQAccountFromConfig } from "./qq-config.js";
 import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
 import { writeFgbgUserConfig } from "../../config/index.js";
-import { createQQSendTool } from "../../agent/tool/qq-send.js";
+import { createQQSendTool } from "../../agent/tool/func/qq-send.js";
 import { getAccessToken, getGatewayUrl, sendC2CMessage } from "./qq-api.js";
 import { parseC2CEvent, type QQWSPayload } from "./qq-utils.js";
 import { readFgbgUserConfig } from "../../config/index.js";

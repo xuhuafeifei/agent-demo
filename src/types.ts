@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AgentChannel } from "./agent/channel-policy.js";
-import type { ToolSecurityConfig } from "./agent/tool/security/types.js";
+import type { ToolSecurityConfig } from "./agent/tool/security/index.js";
 
 export type ModelInputType = "text" | "image";
 

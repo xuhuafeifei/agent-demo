@@ -1,17 +1,17 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import {
   deleteTaskByName,
   listAllTasks,
   type TaskScheduleRow,
-} from "../../watch-dog/store.js";
-import { runTaskByNameNow } from "../../watch-dog/watch-dog.js";
-import { upsertTaskSchedule } from "../../watch-dog/store.js";
-import { errResult, okResult, type ToolDetails } from "./types.js";
-import { formatChinaIso } from "../../watch-dog/time.js";
-import { computeNextRunFromCron } from "../../watch-dog/cron.js";
-import { formatBlacklistPresetLines } from "../../watch-dog/blacklist-presets.js";
+} from "../../../watch-dog/store.js";
+import { runTaskByNameNow } from "../../../watch-dog/watch-dog.js";
+import { upsertTaskSchedule } from "../../../watch-dog/store.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
+import { formatChinaIso } from "../../../watch-dog/time.js";
+import { computeNextRunFromCron } from "../../../watch-dog/cron.js";
+import { formatBlacklistPresetLines } from "../../../watch-dog/blacklist-presets.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -93,37 +93,6 @@ type GetNowOutput = {
   now_ms: number;
   timezone: string;
 };
-
-const shiftTimeParams = Type.Object({
-  time: Type.String({
-    minLength: 1,
-    description: "Time in HH:mm format.",
-  }),
-  offset_seconds: Type.Number({
-    description: "Seconds offset, can be negative.",
-  }),
-});
-type ShiftTimeInput = Static<typeof shiftTimeParams>;
-
-type ShiftTimeOutput = {
-  input_time: string;
-  offset_seconds: number;
-  result_time: string;
-};
-
-const validateCronParams = Type.Object({
-  cron: Type.String({
-    minLength: 1,
-    description:
-      "5-field cron (min hour dom mon dow). The system will prepend second=0.",
-  }),
-  timezone: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Timezone. Defaults to Asia/Shanghai.",
-    }),
-  ),
-});
 
 const createReminderTaskParams = Type.Object({
   content: Type.String({
@@ -387,50 +356,6 @@ export function createGetNowTool(): ToolDefinition<
       const nowMs = Date.now();
       const nowIso = formatChinaIso(new Date(nowMs));
       return okResult(nowIso, { now_iso: nowIso, now_ms: nowMs, timezone });
-    },
-  };
-}
-
-function isValidHHmm(value: string): boolean {
-  return /^([01]\\d|2[0-3]):([0-5]\\d)$/.test(value);
-}
-
-export function createShiftTimeTool(): ToolDefinition<
-  typeof shiftTimeParams,
-  ToolDetails<ShiftTimeOutput>
-> {
-  return {
-    name: "shiftTime",
-    label: "Shift Time",
-    description: "Shift a HH:mm time by offset_seconds (wraps around 24h).",
-    parameters: shiftTimeParams,
-    execute: async (_id, params: ShiftTimeInput) => {
-      const time = params.time.trim();
-      if (!isValidHHmm(time)) {
-        return errResult("time 需要合法 HH:mm", {
-          code: "INVALID_ARGUMENT",
-          message: "invalid time",
-        });
-      }
-      const offsetSeconds = Math.trunc(params.offset_seconds);
-      if (!Number.isFinite(offsetSeconds)) {
-        return errResult("offset_seconds 需要是数字", {
-          code: "INVALID_ARGUMENT",
-          message: "invalid offset_seconds",
-        });
-      }
-      const [hh, mm] = time.split(":").map((v) => parseInt(v, 10));
-      const base = (hh! * 60 + mm!) * 60;
-      const day = 24 * 3600;
-      const shifted = (((base + offsetSeconds) % day) + day) % day;
-      const outH = String(Math.floor(shifted / 3600)).padStart(2, "0");
-      const outM = String(Math.floor((shifted % 3600) / 60)).padStart(2, "0");
-      const resultTime = `${outH}:${outM}`;
-      return okResult(resultTime, {
-        input_time: time,
-        offset_seconds: offsetSeconds,
-        result_time: resultTime,
-      });
     },
   };
 }

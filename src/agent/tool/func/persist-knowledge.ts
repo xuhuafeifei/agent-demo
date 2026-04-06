@@ -2,92 +2,77 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { resolveUserMemoryDir } from "../../memory/utils/path.js";
-import { resolveWorkspaceDir } from "../../utils/app-path.js";
-import { getSkillManager } from "../skill/skill-manager.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { resolveUserMemoryDir } from "../../../memory/utils/path.js";
+import { resolveWorkspaceDir } from "../../../utils/app-path.js";
+import { getSkillManager } from "../../skill/skill-manager.js";
 import {
   exists,
   atomicWriteText,
   enforceTextSizeLimit,
-} from "./utils/file-utils.js";
-import { errResult, okResult, type ToolDetails } from "./types.js";
+} from "../utils/file-utils.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 
 const toolLogger = getSubsystemConsoleLogger("persist-knowledge-tool");
 
-const persistKnowledgeMemory = Type.Object({
-  type: Type.Literal("memory", {
-    description:
-      "User-wide topic notes under ~/.fgbg/memory/. Append if the file exists, else create. Plain Markdown only (no YAML header).",
-  }),
-  fileName: Type.String({
-    minLength: 1,
-    description:
-      "Basename only; must end with .md (e.g. notes.md). No slashes or ..; allowed: letters, digits, _, ., -",
-  }),
-  content: Type.String({
-    description:
-      "Markdown body to write or append (the tool does not add frontmatter for this type).",
-  }),
-});
-
-const persistKnowledgeUserinfo = Type.Object({
-  type: Type.Literal("userinfo", {
-    description:
-      "User preferences and collaboration habits under workspace/userinfo/. Overwrites the whole file; tool writes YAML frontmatter; indexed for memorySearch.",
-  }),
-  fileName: Type.String({
-    minLength: 1,
-    description:
-      "Basename only; must end with .md. Same rules as type=memory fileName.",
-  }),
-  name: Type.String({
-    minLength: 1,
-    description:
-      "Short title for this file; written to frontmatter and summarized in the system prompt User section.",
-  }),
-  description: Type.String({
-    minLength: 1,
-    description:
-      "One-line summary for prompts and discovery; written to frontmatter (not the same field as the Markdown body in content).",
-  }),
-  content: Type.String({
-    description:
-      "Markdown body after frontmatter (detailed preferences, habits, constraints).",
-  }),
-});
-
-const persistKnowledgeSkill = Type.Object({
-  type: Type.Literal("skill", {
-    description:
-      "Reusable workflow: writes workspace/skills/<skillDir>/SKILL.md and meta.json (overwrite). Load full steps with loadSkill; do not use memorySearch for skill bodies.",
-  }),
-  skillDir: Type.String({
-    minLength: 1,
-    description:
-      "Directory under skills/ (e.g. my-workflow). Relative segments only; no .. or absolute paths.",
-  }),
-  name: Type.String({
-    minLength: 1,
-    description:
-      "Skill display name; written to frontmatter and meta.json for the Skills list in the system prompt.",
-  }),
-  description: Type.String({
-    minLength: 1,
-    description:
-      "When to use this skill; written to meta.json and frontmatter for the Skills section.",
-  }),
-  content: Type.String({
-    description:
-      "SKILL.md body after frontmatter (steps, rules, tool usage); overwrites existing SKILL.md.",
-  }),
-});
-
-const persistKnowledgeParameters = Type.Union(
-  [persistKnowledgeMemory, persistKnowledgeUserinfo, persistKnowledgeSkill],
+const persistKnowledgeParameters = Type.Object(
+  {
+    type: Type.Union(
+      [
+        Type.Literal("memory", {
+          description:
+            "User-wide topic notes under ~/.fgbg/memory/. Append if the file exists, else create. Plain Markdown only (no YAML header).",
+        }),
+        Type.Literal("userinfo", {
+          description:
+            "User preferences and collaboration habits under workspace/userinfo/. Overwrites the whole file; tool writes YAML frontmatter; indexed for memorySearch.",
+        }),
+        Type.Literal("skill", {
+          description:
+            "Reusable workflow: writes workspace/skills/<skillDir>/SKILL.md and meta.json (overwrite). Load full steps with loadSkill; do not use memorySearch for skill bodies.",
+        }),
+      ],
+      {
+        description:
+          "Type of knowledge to persist: memory (append user memory file), userinfo (overwrite indexed preferences), skill (overwrite skill dir + meta).",
+      },
+    ),
+    // memory 类型所需字段
+    fileName: Type.Optional(
+      Type.String({
+        description:
+          "Basename only; must end with .md (e.g. notes.md). No slashes or ..; allowed: letters, digits, _, ., -",
+      }),
+    ),
+    // userinfo 类型所需字段
+    name: Type.Optional(
+      Type.String({
+        description:
+          "Short title for this file; written to frontmatter and summarized in the system prompt User section.",
+      }),
+    ),
+    description: Type.Optional(
+      Type.String({
+        description:
+          "One-line summary for prompts and discovery; written to frontmatter (not the same field as the Markdown body in content).",
+      }),
+    ),
+    // skill 类型所需字段
+    skillDir: Type.Optional(
+      Type.String({
+        description:
+          "Directory under skills/ (e.g. my-workflow). Relative segments only; no .. or absolute paths.",
+      }),
+    ),
+    // 通用字段
+    content: Type.String({
+      description:
+        "Markdown body to write or append. For memory: plain Markdown to append/create. For userinfo: body after frontmatter. For skill: SKILL.md body after frontmatter.",
+    }),
+  },
   {
     description:
-      "Discriminated union by type: memory (append user memory file), userinfo (overwrite indexed preferences), skill (overwrite skill dir + meta). Required fields depend on type; see each variant.",
+      "Discriminated by type: memory (append user memory file), userinfo (overwrite indexed preferences), skill (overwrite skill dir + meta). Required fields depend on type; see each variant.",
   },
 );
 
@@ -169,6 +154,12 @@ export function createPersistKnowledgeTool(
       const started = Date.now();
 
       if (params.type === "memory") {
+        if (!params.fileName) {
+          return errResult("memory 类型需要提供 fileName", {
+            code: "INVALID_ARGUMENT",
+            message: "missing fileName",
+          });
+        }
         const fileName = safeMarkdownBasename(params.fileName);
         if (!fileName) {
           return errResult("fileName 非法：仅允许单层 *.md 且字母数字 _ . -", {
@@ -232,6 +223,24 @@ export function createPersistKnowledgeTool(
       }
 
       if (params.type === "userinfo") {
+        if (!params.fileName) {
+          return errResult("userinfo 类型需要提供 fileName", {
+            code: "INVALID_ARGUMENT",
+            message: "missing fileName",
+          });
+        }
+        if (!params.name) {
+          return errResult("userinfo 类型需要提供 name", {
+            code: "INVALID_ARGUMENT",
+            message: "missing name",
+          });
+        }
+        if (!params.description) {
+          return errResult("userinfo 类型需要提供 description", {
+            code: "INVALID_ARGUMENT",
+            message: "missing description",
+          });
+        }
         const fileName = safeMarkdownBasename(params.fileName);
         if (!fileName) {
           return errResult("fileName 非法：仅允许单层 *.md 且字母数字 _ . -", {
@@ -276,8 +285,27 @@ export function createPersistKnowledgeTool(
         }
       }
 
-      const safeSkillPath = sanitizeSkillDir(params.skillDir);
-      if (!safeSkillPath) {
+      // skill 类型
+      if (!params.skillDir) {
+        return errResult("skill 类型需要提供 skillDir", {
+          code: "INVALID_ARGUMENT",
+          message: "missing skillDir",
+        });
+      }
+      if (!params.name) {
+        return errResult("skill 类型需要提供 name", {
+          code: "INVALID_ARGUMENT",
+          message: "missing name",
+        });
+      }
+      if (!params.description) {
+        return errResult("skill 类型需要提供 description", {
+          code: "INVALID_ARGUMENT",
+          message: "missing description",
+        });
+      }
+      const safeSkillDir = sanitizeSkillDir(params.skillDir);
+      if (!safeSkillDir) {
         return errResult("skillDir 非法，仅支持 skills 下相对路径段", {
           code: "INVALID_ARGUMENT",
           message: "skillDir 非法",
@@ -292,7 +320,7 @@ export function createPersistKnowledgeTool(
         {
           name: params.name,
           description: params.description,
-          path: safeSkillPath,
+          path: safeSkillDir,
         },
         null,
         2,
@@ -306,7 +334,7 @@ export function createPersistKnowledgeTool(
       const skillRoot = path.join(
         resolveWorkspaceDir(),
         "skills",
-        safeSkillPath,
+        safeSkillDir,
       );
       const skillPath = path.join(skillRoot, "SKILL.md");
       const metaPath = path.join(skillRoot, "meta.json");
@@ -322,7 +350,7 @@ export function createPersistKnowledgeTool(
           `tool=persistKnowledge type=skill path=${skillPath} action=overwritten bytes=${bytesWritten} durationMs=${Date.now() - started}`,
         );
         return okResult(
-          `已写入 skills/${safeSkillPath}/SKILL.md 与 meta.json`,
+          `已写入 skills/${safeSkillDir}/SKILL.md 与 meta.json`,
           {
             path: skillPath,
             action: "overwritten",

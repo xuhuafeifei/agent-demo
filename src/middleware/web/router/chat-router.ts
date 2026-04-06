@@ -11,6 +11,7 @@ import {
   toolReturnedFailure,
   toolUserRejected,
 } from "../../../agent/tool/utils/tool-result-ui.js";
+import { sanitizeToolArgs } from "../../../agent/tool/security/param-sanitizer.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -24,6 +25,18 @@ function stringifySafe(value: unknown): string {
     return JSON.stringify(value);
   } catch {
     return String(value);
+  }
+}
+
+/** 与模型 tool_call 对齐的原始入参，用于前端展示（不脱敏） */
+function formatToolInputForDisplay(args: unknown): string {
+  if (args === undefined || args === null) {
+    return "-";
+  }
+  try {
+    return JSON.stringify(args, null, 2);
+  } catch {
+    return String(args);
   }
 }
 
@@ -93,12 +106,15 @@ export function createChatRouter() {
           if (event.type === "tool_execution_start") {
             toolStartedAt.set(event.toolCallId, Date.now());
             const displayName = getToolDisplayName(event.toolName, event.alias);
+            const sanitizedArgs = sanitizeToolArgs(event.args);
+            const inputDisplay = formatToolInputForDisplay(sanitizedArgs);
             writeNamedSse(res, "tool_call", {
               id: event.toolCallId,
               toolCallId: event.toolCallId,
               toolName: event.toolName,
               title: `正在执行 ${displayName}`,
-              content: stringifySafe(event.args),
+              input: inputDisplay,
+              args: sanitizedArgs,
             });
           }
 

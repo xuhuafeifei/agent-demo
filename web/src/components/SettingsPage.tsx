@@ -38,6 +38,7 @@ import SetModelPage from "./settings/SetModelPage";
 import SetMemoryAndHeartPage from "./settings/SetMemoryAndHeartPage";
 import SetLoggingPage from "./settings/SetLoggingPage";
 import SetChannelsPage from "./settings/SetChannelsPage";
+import ToolSecurityPage from "./ToolSecurityPage";
 import ProviderSelectorModal from "./settings/ProviderSelectorModal";
 
 // ─── Main SettingsPage ──────────────────────────────────────────────
@@ -1265,7 +1266,7 @@ export default function SettingsPage() {
             handleSaveLogging,
           }}
         />
-      ) : (
+      ) : activeTab === "channels" ? (
         <SetChannelsPage
           channelsTab={{
             channelsForm,
@@ -1278,7 +1279,9 @@ export default function SettingsPage() {
             handleSaveChannels,
           }}
         />
-      )}
+      ) : activeTab === "toolSecurity" ? (
+        <ToolSecurityPage />
+      ) : null}
 
       {message ? <div className="settings-message">{message}</div> : null}
 

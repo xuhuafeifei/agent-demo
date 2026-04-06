@@ -14,8 +14,9 @@ import type { RuntimeStreamEvent } from "../utils/events.js";
 import path from "node:path";
 import type { RuntimeModel } from "../../types.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { createAgentToolBundle } from "../tool/index.js";
-import { ToolRegister } from "../tool/tool-register.js";
+import { enrichProviderErrorMessage } from "../model-error-hints.js";
+import { createToolBundle } from "../tool/tool-bundle.js";
+import { getFilterContextToolNames } from "../tool/tool-bundle.js";
 import { toolReturnedFailure } from "../tool/utils/tool-result-ui.js";
 
 const attemptLogger = getSubsystemConsoleLogger("attempt");
@@ -61,7 +62,7 @@ function extractAssistantText(content: unknown[] | undefined): string {
 
 /**
  * 截断工具结果和 thinking 的内容，避免占用过多 token
- * 使用 toolRegister 中定义的 getFilterContextToolNames() 来决定截断哪些工具
+ * 使用 getFilterContextToolNames() 来决定截断哪些工具
  * @param messages - 原始消息列表
  * @param maxContentLength - 每个工具结果/思考保留的最大字符数（默认 500 字符）
  * @returns 截断后的消息列表
@@ -70,8 +71,7 @@ function truncateToolResults(
   messages: AgentMessage[],
   maxContentLength = 500,
 ): AgentMessage[] {
-  const filterToolNames =
-    ToolRegister.getInstance().getFilterContextToolNames();
+  const filterToolNames = getFilterContextToolNames();
 
   if (filterToolNames.length === 0) {
     return messages;
@@ -206,7 +206,7 @@ export async function createRuntimeAgentSession(params: {
     path.join(agentDir, "models.json"),
   );
   modelRegistry.refresh();
-  const toolBundle = createAgentToolBundle(cwd);
+  const toolBundle = createToolBundle(cwd);
 
   const { session } = await createAgentSession({
     model,
@@ -373,17 +373,18 @@ export async function runEmbeddedPiAgent(params: {
       messageWithStopReason?.stopReason === "error" &&
       messageWithStopReason.errorMessage
     ) {
-      // 打印错误日志
+      const detail = enrichProviderErrorMessage(
+        messageWithStopReason.errorMessage,
+      );
       attemptLogger.error(
         `模型调用失败：provider=${messageWithStopReason.provider ?? "unknown"}, ` +
           `model=${messageWithStopReason.model ?? "unknown"}, ` +
           `api=${messageWithStopReason.api ?? "unknown"}, ` +
-          `error=${messageWithStopReason.errorMessage}`,
+          `error=${detail}`,
       );
-      // 发送 error 事件给前端
       wrappedOnEvent({
         type: "error",
-        error: messageWithStopReason.errorMessage,
+        error: detail,
       });
     }
 

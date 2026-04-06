@@ -307,6 +307,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
 
     addContextUsed: (payload?: {
       contextWindow?: number;
+      totalTokens?: number;
       model?: string;
       timestamp?: number;
     }) => {
@@ -317,6 +318,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
             id: uid(),
             kind: 'used' as const,
             contextWindow: payload?.contextWindow,
+            totalTokens: payload?.totalTokens,
             model: payload?.model || '',
             timestamp: payload?.timestamp ?? Date.now(),
           },

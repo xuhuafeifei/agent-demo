@@ -17,9 +17,22 @@ export {
 } from './constants.js';
 
 // 类型
-export type { ToolSecurityConfig } from './types.js';
-export { ToolMode } from './types.js';
-export { DEFAULT_TOOL_SECURITY_CONFIG, resolveToolSecurityConfig } from './types.js';
+export type { ToolSecurityConfig, ApprovalConfig, AccessConfig } from './tool-security.model.js';
+export { ToolMode } from './tool-security.model.js';
+
+// 默认常量
+export {
+  DEFAULT_GUARD_CONFIG,
+  DEFAULT_SAFETY_CONFIG,
+  DEFAULT_YOLO_CONFIG,
+  DEFAULT_TOOL_SECURITY_CONFIG,
+} from './tool-security.defaults.js';
+
+// 解析函数
+export {
+  getConfigByPreset,
+  resolveToolSecurityConfig,
+} from './tool-security.resolve.js';
 
 // 路径检查
 export { checkPathSafety, resolvePathInWorkspace } from './path-checker.js';
@@ -30,3 +43,6 @@ export { isTextFile, getFileTypeRejectReason } from './file-type-checker.js';
 
 // Shell 预检
 export { preExecuteCheck } from './shell-precheck.js';
+
+// 参数脱敏
+export { sanitizeToolArgs } from './param-sanitizer.js';

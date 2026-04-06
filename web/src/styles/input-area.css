@@ -270,3 +270,30 @@
 .scroll-to-bottom-btn:active {
   transform: translateX(-50%) scale(0.95);
 }
+
+/* ─── Context Usage Indicator ───────────────────────────────────── */
+.context-usage-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-right: 6px;
+  padding: 2px;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.context-usage-indicator:hover {
+  background: rgba(0, 0, 0, 0.04);
+  transform: scale(1.08);
+}
+
+.context-usage-indicator:active {
+  transform: scale(0.98);
+}
+
+.context-usage-svg {
+  display: block;
+  overflow: visible;
+}

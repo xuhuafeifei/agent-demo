@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { resolveWorkspaceDir } from "../../utils/app-path.js";
-import { errResult, okResult, type ToolDetails } from "./types.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { resolveWorkspaceDir } from "../../../utils/app-path.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 

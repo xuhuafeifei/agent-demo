@@ -5,6 +5,7 @@ import type { ModelOption, TabItem } from '@/types';
 export const TABS: TabItem[] = [
   { key: 'models', label: '模型配置', icon: null },
   { key: 'memoryHeartbeat', label: '记忆与心跳', icon: null },
+  { key: 'toolSecurity', label: '工具安全', icon: null },
   { key: 'logging', label: '日志配置', icon: null },
   { key: 'channels', label: '通道配置', icon: null },
 ];

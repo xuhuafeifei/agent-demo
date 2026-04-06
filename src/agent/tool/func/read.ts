@@ -1,18 +1,19 @@
 import fs from "node:fs/promises";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { exists } from "./utils/file-utils.js";
-import { checkPathSafety } from "./security/path-checker.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { exists } from "../utils/file-utils.js";
+import { checkPathSafety } from "../security/path-checker.js";
 import {
   isTextFile,
   getFileTypeRejectReason,
-} from "./security/file-type-checker.js";
-import { errResult, okResult, type ToolDetails } from "./types.js";
-import { readFgbgUserConfig } from "../../config/index.js";
-import { ToolRegister } from "./tool-register.js";
-import { requestApprovalWithDescription } from "./utils/approval-helpers.js";
-import { resolveWorkspaceDir } from "../../utils/app-path.js";
+} from "../security/file-type-checker.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
+import { readFgbgUserConfig } from "../../../config/index.js";
+import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
+import { requiresApproval } from "../tool-approval.js";
+import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
+import { resolveWorkspaceDir } from "../../../utils/app-path.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -51,9 +52,12 @@ export function createReadTool(): ToolDefinition<
       const started = Date.now();
 
       // 1. 路径安全检查
-      const config = readFgbgUserConfig().toolSecurity;
       const workspace = resolveWorkspaceDir();
-      const pathCheck = await checkPathSafety(params.path, workspace, config);
+      const pathCheck = await checkPathSafety(
+        params.path,
+        workspace,
+        readFgbgUserConfig().toolSecurity,
+      );
       if (!pathCheck.allowed) {
         return errResult(pathCheck.reason || "路径不允许访问", {
           code: "PATH_OUT_OF_WORKSPACE",
@@ -64,15 +68,14 @@ export function createReadTool(): ToolDefinition<
       const filePath = pathCheck.realPath;
 
       // 2. 审批检查（如果配置要求）
-      const requiresApproval =
-        ToolRegister.getInstance().requiresApproval("read");
-      if (requiresApproval) {
-        const approvalConfig = ToolRegister.getInstance().getApprovalConfig();
+      const config = readFgbgUserConfig();
+      const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
+      if (requiresApproval("read", securityConfig.approval)) {
         const approved = await requestApprovalWithDescription(
           "read",
           { path: params.path },
           `读取文件: ${params.path}`,
-          { timeoutMs: approvalConfig.timeoutMs },
+          { timeoutMs: securityConfig.approval.timeoutMs },
         );
         if (!approved) {
           return errResult("用户拒绝或超时", {
