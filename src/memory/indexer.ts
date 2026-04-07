@@ -13,9 +13,8 @@ import { extractSessionDialogueText } from "./utils/session-content.js";
 import { sha256 } from "./utils/hash.js";
 import {
   ensureDirSync,
-  resolveUserMemoryDir,
+  resolveWorkspaceMemoryDir,
   resolveWorkspaceMemoryPath,
-  resolveWorkspaceSkillsDir,
   resolveWorkspaceUserinfoDir,
 } from "./utils/path.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
@@ -66,10 +65,10 @@ function detectSourceByPath(filePath: string): MemorySource {
   const userinfoDir = path.resolve(resolveWorkspaceUserinfoDir());
   const userinfoPrefix = userinfoDir + path.sep;
   if (normalized.startsWith(userinfoPrefix)) return "userinfo";
-  const userMem = path.resolve(resolveUserMemoryDir());
+  const workspaceMem = path.resolve(resolveWorkspaceMemoryDir());
   if (
-    normalized.startsWith(userMem + path.sep) ||
-    normalized === userMem
+    normalized.startsWith(workspaceMem + path.sep) ||
+    normalized === workspaceMem
   ) {
     return "MEMORY.md";
   }
@@ -233,12 +232,12 @@ export async function syncAllMemorySources(
   sessionDir?: string,
 ): Promise<SyncSummary> {
   const started = Date.now();
-  ensureDirSync(resolveUserMemoryDir());
+  ensureDirSync(resolveWorkspaceMemoryDir());
   ensureDirSync(resolveWorkspaceUserinfoDir());
 
 
   const workspaceMemory = resolveWorkspaceMemoryPath();
-  const userMemoryFiles = listMarkdownFiles(resolveUserMemoryDir());
+  const userMemoryFiles = listMarkdownFiles(resolveWorkspaceMemoryDir());
   const userinfoFiles = listMarkdownFiles(resolveWorkspaceUserinfoDir());
   const sessionFiles = sessionDir ? listJsonlFiles(sessionDir) : [];
 

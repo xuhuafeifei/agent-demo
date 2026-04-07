@@ -14,7 +14,7 @@ import { createPrepareStrategy } from "./embedding/embedding-provider.js";
 import { readFgbgUserConfig } from "../config/index.js";
 import {
   ensureDirSync,
-  resolveUserMemoryDir,
+  resolveWorkspaceMemoryDir,
   resolveWorkspaceMemoryPath,
   resolveWorkspaceUserinfoDir,
 } from "./utils/path.js";
@@ -78,12 +78,12 @@ export class MemoryIndexManager {
     // watcher 启动前确保目录存在，避免监听初始化失败
     ensureAgentWorkspace();
     const workspaceMemory = resolveWorkspaceMemoryPath();
-    ensureDirSync(resolveUserMemoryDir());
+    ensureDirSync(resolveWorkspaceMemoryDir());
     ensureDirSync(resolveWorkspaceUserinfoDir());
 
-    // 监听：工作区 MEMORY.md、~/.fgbg/memory/*.md、workspace/userinfo/*.md
+    // 监听：工作区 MEMORY.md、~/.fgbg/workspace/memory/*.md、workspace/userinfo/*.md
     this.watchFile(workspaceMemory, "MEMORY.md");
-    this.watchDir(resolveUserMemoryDir(), "memory");
+    this.watchDir(resolveWorkspaceMemoryDir(), "memory");
     this.watchDir(resolveWorkspaceUserinfoDir(), "userinfo");
 
     // 获取配置并创建准备策略
