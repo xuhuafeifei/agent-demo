@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../../event-bus/index.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { resolveWorkspaceDir } from "../../utils/app-path.js";
+import { parseFrontmatterMeta } from "../workspace.js";
 
 /**
  * 技能元信息类型
@@ -18,15 +19,23 @@ export type SkillMetaInfo = {
 };
 
 /**
- * 技能元信息 JSON 文件类型
- * @property name - 技能名称（可选）
- * @property description - 技能描述（可选）
+ * 读取技能目录的 SKILL.md 并提取元信息
+ * @param skillDirPath - 技能目录路径
+ * @returns 元信息对象，如果读取失败则返回 null
  */
-type SkillMetaJson = {
-  name?: string;
-  description?: string;
-  path?: string;
-};
+function readSkillMetaFromMarkdown(skillDirPath: string): SkillMetaInfo | null {
+  const skillPath = path.join(skillDirPath, "SKILL.md");
+  
+  try {
+    const content = fs.readFileSync(skillPath, "utf8");
+    const frontmatter = parseFrontmatterMeta(content);
+    if (!frontmatter) return null;
+
+    return { name: frontmatter.name, description: frontmatter.description, skillDir: "" };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 技能管理器类型
@@ -54,27 +63,6 @@ function getSkillsDir(): string {
 }
 
 /**
- * 读取技能的元信息文件
- * @param metaPath - 元信息文件路径
- * @returns 解析后的元信息对象
- */
-function readSkillMeta(metaPath: string): SkillMetaJson {
-  try {
-    const raw = fs.readFileSync(metaPath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-
-    // 验证解析后的元信息格式
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {};
-    }
-
-    return parsed as SkillMetaJson;
-  } catch {
-    return {};
-  }
-}
-
-/**
  * 扫描技能目录并获取技能元信息
  * @param skillsDir - 技能目录路径
  * @returns 技能元信息列表
@@ -82,29 +70,30 @@ function readSkillMeta(metaPath: string): SkillMetaJson {
 function scanMetaInfos(skillsDir: string): SkillMetaInfo[] {
   if (!fs.existsSync(skillsDir)) return [];
   const result: SkillMetaInfo[] = [];
-  // 递归遍历目录
+  // 递归遍历目录，查找包含 SKILL.md 的目录
   const entries = fs.readdirSync(skillsDir, {
     recursive: true,
     withFileTypes: true,
   });
 
+  // 收集所有 SKILL.md 所在的目录
+  const skillDirs = new Set<string>();
   for (const entry of entries) {
-    if (!entry.isFile() || entry.name !== "meta.json") continue;
-
+    if (!entry.isFile() || entry.name !== "SKILL.md") continue;
+    
     const parentPath =
       (entry as fs.Dirent & { parentPath?: string }).parentPath ?? skillsDir;
-    const metaPath = path.join(parentPath, entry.name);
-    const meta = readSkillMeta(metaPath);
-    const name = (meta.name ?? "").trim();
-    const description = (meta.description ?? "").trim();
+    skillDirs.add(parentPath);
+  }
 
-    if (!name || !description) continue;
+  // 读取每个目录的元信息
+  for (const dirPath of skillDirs) {
+    const meta = readSkillMetaFromMarkdown(dirPath);
+    if (!meta) continue;
 
-    const relativeDir = path
-      .relative(skillsDir, parentPath)
-      .replace(/\\/g, "/");
-    const skillDir = (meta.path ?? "").trim() || relativeDir;
-    result.push({ skillDir, name, description });
+    const relativeDir = path.relative(skillsDir, dirPath).replace(/\\/g, "/");
+    meta.skillDir = relativeDir;
+    result.push(meta);
   }
 
   result.sort((a, b) => a.skillDir.localeCompare(b.skillDir));
@@ -130,7 +119,7 @@ function computeSkillsHash(skillsDir: string): string {
 
   for (const entry of entries) {
     if (!entry.isFile()) continue;
-    if (entry.name !== "meta.json" && entry.name !== "SKILL.md") continue;
+    if (entry.name !== "SKILL.md") continue;
 
     const parentPath =
       (entry as fs.Dirent & { parentPath?: string }).parentPath ?? skillsDir;

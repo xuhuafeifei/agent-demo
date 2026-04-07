@@ -41,7 +41,7 @@ function ensureFileWithContent(filePath: string, content: string): void {
 }
 
 /**
- * 写入内置的 skill 
+ * 写入内置的 skill
  */
 function ensureBuiltinSkill(
   workspaceDir: string,
@@ -55,15 +55,9 @@ function ensureBuiltinSkill(
     fs.mkdirSync(dstSkillDir, { recursive: true, mode: 0o700 });
   }
 
-  const srcMetaPath = path.join(srcSkillDir, "meta.json");
   const srcSkillPath = path.join(srcSkillDir, "SKILL.md");
-  const dstMetaPath = path.join(dstSkillDir, "meta.json");
   const dstSkillPath = path.join(dstSkillDir, "SKILL.md");
 
-  if (fs.existsSync(srcMetaPath) && !fs.existsSync(dstMetaPath)) {
-    fs.copyFileSync(srcMetaPath, dstMetaPath);
-    fs.chmodSync(dstMetaPath, 0o600);
-  }
   if (fs.existsSync(srcSkillPath) && !fs.existsSync(dstSkillPath)) {
     fs.copyFileSync(srcSkillPath, dstSkillPath);
     fs.chmodSync(dstSkillPath, 0o600);
@@ -115,31 +109,64 @@ export function readWorkspaceSoul(): string {
   }
 }
 
-/** userinfo/*.md 头部 YAML frontmatter 解析结果 */
-export type UserinfoFrontmatter = {
+/** 从 Markdown 文件中提取 YAML frontmatter 的 name/description */
+export type FrontmatterMeta = {
   name: string;
   description: string;
 };
 
+function yamlDoubleQuotedScalar(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r?\n/g, "\\n")}"`;
+}
+
+export function buildMarkdownWithFrontmatter(params: {
+  name: string;
+  description: string;
+  body: string;
+}): string {
+  const header = [
+    "---",
+    `name: ${yamlDoubleQuotedScalar(params.name)}`,
+    `description: ${yamlDoubleQuotedScalar(params.description)}`,
+    "---",
+    "",
+  ].join("\n");
+  const body = params.body.trimEnd();
+  return body ? `${header}${body}\n` : `${header}\n`;
+}
+
 /**
- * 从 Markdown 正文解析 `---` ... `---` YAML 风格 frontmatter 中的 name / description（单行值）。
+ * 从 Markdown 正文解析 `---` ... `---` YAML frontmatter 中的 name / description。
+ * 支持两种格式：
+ * - 无引号：`name: Some Name`
+ * - 双引号：`name: "Some Name"`
  */
-export function parseUserinfoFrontmatter(content: string): UserinfoFrontmatter | null {
-  const lines = content.split(/\r?\n/);
-  if (lines[0]?.trim() !== "---") return null;
-  const fields: Record<string, string> = {};
-  let i = 1;
-  for (; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.trim() === "---") break;
-    const m = /^([a-zA-Z_][\w]*)\s*:\s*(.*)$/.exec(line);
-    if (m) fields[m[1]] = m[2].trim();
-  }
-  if (i >= lines.length || lines[i].trim() !== "---") return null;
-  const name = (fields.name ?? "").trim();
-  const description = (fields.description ?? "").trim();
+export function parseFrontmatterMeta(content: string): FrontmatterMeta | null {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
+
+  const frontmatterText = match[1];
+  
+  // 支持无引号或双引号格式
+  const nameMatch = frontmatterText.match(/^name:\s*"(.+?)"\s*$/m) ?? frontmatterText.match(/^name:\s*(.+?)\s*$/m);
+  const descMatch = frontmatterText.match(/^description:\s*"(.+?)"\s*$/m) ?? frontmatterText.match(/^description:\s*(.+?)\s*$/m);
+
+  if (!nameMatch || !descMatch) return null;
+
+  const name = nameMatch[1].trim();
+  const description = descMatch[1].trim();
+
   if (!name || !description) return null;
+
   return { name, description };
+}
+
+/** @deprecated 使用 parseFrontmatterMeta 替代 */
+export type UserinfoFrontmatter = FrontmatterMeta;
+
+/** @deprecated 使用 parseFrontmatterMeta 替代 */
+export function parseUserinfoFrontmatter(content: string): UserinfoFrontmatter | null {
+  return parseFrontmatterMeta(content);
 }
 
 /**

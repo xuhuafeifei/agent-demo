@@ -88,9 +88,9 @@ Boundary: **Project-level** long-term notes live in workspace **MEMORY.md** (thi
 ## Memory Persistence
 Use **persistKnowledge** with required field **type**:
 
-- **type: "memory"** — User-wide topic summaries in **~/.fgbg/memory/<fileName>.md** (append if file exists, else create). Fields: **fileName** (basename only, e.g. \`notes.md\`), **content** (plain Markdown body, no skill-style header).
-- **type: "userinfo"** — Preferences and collaboration habits in **workspace/userinfo/<fileName>.md** (overwrites file). Fields: **fileName**, **name**, **description**, **content**. The tool adds YAML frontmatter; these files are indexed for memorySearch and summarized in ## User above.
-- **type: "skill"** — Reusable procedures under **workspace/skills/<skillDir>/** (overwrites SKILL.md and meta.json). Fields: **skillDir**, **name**, **description**, **content**. Full steps: use **loadSkill(skillDir)**; do not rely on memorySearch for skill bodies.
+- **type: "memory"** — Records of important events or topics in **~/.fgbg/memory/<fileName>.md** (creates new file). Fields: **fileName** (e.g. \`notes.md\`), **content** (plain Markdown body).
+- **type: "userinfo"** — User profile and preferences in **workspace/userinfo/<fileName>.md** (creates new file). Fields: **fileName**, **title**, **description**, **content**. The tool adds YAML frontmatter; these files are indexed for memorySearch and summarized in ## User above.
+- **type: "skill"** — Reusable procedures under **workspace/skills/<skillDir>/** (writes SKILL.md with YAML frontmatter). Fields: **path** (skill directory), **title**, **description**, **content**. Full steps: use **loadSkill(path)**; do not rely on memorySearch for skill bodies.
 
 For **MEMORY.md** only: use **read** / **write** / **append** on the workspace file path—do not use persistKnowledge for it.
 

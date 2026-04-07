@@ -53,7 +53,7 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   persistKnowledge: {
     factory: (cwd) => createPersistKnowledgeTool(cwd),
     description:
-      "persistKnowledge - discriminated by type (see JSON schema descriptions on each field): memory → ~/.fgbg/memory/*.md append/create; userinfo → workspace/userinfo/*.md overwrite+YAML frontmatter+indexed; skill → workspace/skills/<dir>/ SKILL.md+meta.json overwrite",
+      "persistKnowledge - discriminated by type (see JSON schema descriptions on each field): memory → ~/.fgbg/memory/*.md create; userinfo → workspace/userinfo/*.md create with YAML frontmatter and indexed; skill → workspace/skills/<dir>/ SKILL.md create with YAML frontmatter",
   },
   loadSkill: {
     factory: () => createLoadSkillTool(),
