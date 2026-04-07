@@ -5,19 +5,30 @@ import { resolveQQAccountFromConfig } from "./qq-config.js";
 import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
 import { writeFgbgUserConfig } from "../../config/index.js";
 import { createQQSendTool } from "../../agent/tool/func/qq-send.js";
-import { getAccessToken, getGatewayUrl, sendC2CMessage } from "./qq-api.js";
+import {
+  getGatewayUrl,
+  sendC2CMessage,
+} from "./qq-api.js";
+import {
+  clearQQAccessTokenStatus,
+  forceRefreshQQAccessToken,
+  getLastSeenQQOpenidStatus,
+  getQQAccessToken,
+  getQQReconnectStatus,
+  invalidateQQAccessTokenStatus,
+  isQQConnectingStatus,
+  isQQReadyStatus,
+  setLastSeenQQOpenidStatus,
+  setQQConnectingStatus,
+  setQQReadyStatus,
+  setQQReconnectStatus,
+} from "./qq-status.js";
 import { parseC2CEvent, type QQWSPayload } from "./qq-utils.js";
 import { readFgbgUserConfig } from "../../config/index.js";
 
 // 获取 QQ 层专用的日志记录器
 const qqLogger = getSubsystemConsoleLogger("qq-layer");
 const eventBus = getEventBus();
-
-let qqReady = false;
-let activeAccessToken = "";
-let lastSeenUserOpenid = "";
-let reconnectFn: (() => Promise<void>) | null = null;
-let isConnecting = false;
 
 /** 每次收到用户私聊事件时写入，覆盖原 `targetOpenid`（与旧「仅空时写入」不同） */
 function persistTargetOpenid(openid: string): void {
@@ -35,7 +46,7 @@ function persistTargetOpenid(openid: string): void {
 }
 
 eventBus.on<unknown[]>(TOPIC_TOOL_BEFORE_BUILD, (dynamicTools) => {
-  if (!Array.isArray(dynamicTools) || !qqReady) return;
+  if (!Array.isArray(dynamicTools) || !isQQReadyStatus()) return;
   qqLogger.info("qq dynamic tool created!");
   dynamicTools.push(
     createQQSendTool({
@@ -45,28 +56,39 @@ eventBus.on<unknown[]>(TOPIC_TOOL_BEFORE_BUILD, (dynamicTools) => {
 });
 
 export function isQQReady(): boolean {
-  return qqReady;
+  return isQQReadyStatus();
 }
 
 export function getLastSeenQQOpenid(): string {
-  return lastSeenUserOpenid;
+  return getLastSeenQQOpenidStatus();
 }
 
 async function ensureQQGatewayReady(
   timeoutMs: number = 7000,
 ): Promise<boolean> {
-  if (qqReady && activeAccessToken) return true;
+  const account = resolveQQAccountFromConfig();
+  if (!account) return false;
 
-  if (reconnectFn && !isConnecting) {
+  if (isQQReadyStatus() && (await getQQAccessToken(account.appId, account.clientSecret))) {
+    return true;
+  }
+
+  const reconnectFn = getQQReconnectStatus();
+  if (reconnectFn && !isQQConnectingStatus()) {
     void reconnectFn();
   }
 
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    if (qqReady && activeAccessToken) return true;
+    if (isQQReadyStatus() && (await getQQAccessToken(account.appId, account.clientSecret))) {
+      return true;
+    }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  return qqReady && activeAccessToken ? true : false;
+  return Boolean(
+    isQQReadyStatus() &&
+      (await getQQAccessToken(account.appId, account.clientSecret)),
+  );
 }
 
 /**
@@ -90,14 +112,48 @@ export async function sendQQDirectMessage(content: string): Promise<boolean> {
     return false;
   }
   try {
+    const account = resolveQQAccountFromConfig();
+    if (!account) {
+      qqLogger.error("sendQQDirectMessage failed: QQ 账号配置缺失或未启用");
+      return false;
+    }
+    // 发送前主动刷新 token（含缓存复用），避免使用过期的 activeAccessToken。
+    const accessToken = await getQQAccessToken(account.appId, account.clientSecret);
     await sendC2CMessage({
-      accessToken: activeAccessToken,
+      accessToken,
       openid,
       content,
     });
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // QQ 侧返回 11244：token not exist or expire，清缓存后重试一次。
+    if (message.includes("11244") || message.includes("token not exist or expire")) {
+      try {
+        const account = resolveQQAccountFromConfig();
+        if (!account) {
+          qqLogger.error("sendQQDirectMessage retry failed: QQ 账号配置缺失或未启用");
+          return false;
+        }
+        invalidateQQAccessTokenStatus("QQ API 返回 11244 / token expired");
+        const retryToken = await forceRefreshQQAccessToken(
+          account.appId,
+          account.clientSecret,
+        );
+        await sendC2CMessage({
+          accessToken: retryToken,
+          openid,
+          content,
+        });
+        qqLogger.warn("sendQQDirectMessage: token 失效，已刷新后重试成功");
+        return true;
+      } catch (retryError) {
+        const retryMessage =
+          retryError instanceof Error ? retryError.message : String(retryError);
+        qqLogger.error(`sendQQDirectMessage retry failed: ${retryMessage}`);
+        return false;
+      }
+    }
     qqLogger.error(`sendQQDirectMessage failed: ${message}`);
     return false;
   }
@@ -138,15 +194,14 @@ export async function startQQLayer(): Promise<void> {
    * @description 包含连接建立、消息处理、心跳保持和重连逻辑
    */
   const connect = async () => {
-    if (isConnecting) return;
-    isConnecting = true;
+    if (isQQConnectingStatus()) return;
+    setQQConnectingStatus(true);
     try {
-      const accessToken = await getAccessToken(appId, secret);
-      activeAccessToken = accessToken;
+      const accessToken = await getQQAccessToken(appId, secret);
       const gatewayUrl = await getGatewayUrl(accessToken);
       const ws = new WebSocket(gatewayUrl);
       qqLogger.info("qq-layer 已连接 QQ Gateway");
-      qqReady = true;
+      setQQReadyStatus(true);
       eventBus.emitSync("qq:ready", { accountId: account.accountId });
 
       // 处理 WebSocket 消息
@@ -188,7 +243,7 @@ export async function startQQLayer(): Promise<void> {
         if (!c2cEvent) return;
 
         const userOpenId = c2cEvent.author.user_openid;
-        lastSeenUserOpenid = userOpenId;
+        setLastSeenQQOpenidStatus(userOpenId);
         // 持久化目标 openid
         persistTargetOpenid(userOpenId);
         const inboundMessageId = c2cEvent.id;
@@ -196,7 +251,7 @@ export async function startQQLayer(): Promise<void> {
         if (!inboundText) return;
 
         // 处理接收到的消息
-        const currentToken = await getAccessToken(appId, secret);
+        const currentToken = await getQQAccessToken(appId, secret);
         // 核心请求
         await runWithSingleFlight({
           message: inboundText,
@@ -251,8 +306,8 @@ export async function startQQLayer(): Promise<void> {
       ws.on("close", () => {
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         heartbeatTimer = null;
-        qqReady = false;
-        activeAccessToken = "";
+        setQQReadyStatus(false);
+        clearQQAccessTokenStatus();
         eventBus.emitSync("qq:offline", { accountId: account.accountId });
         const waitSecond = 1;
         qqLogger.warn(`QQ Gateway 连接断开，${waitSecond} 秒后重连`);
@@ -267,17 +322,17 @@ export async function startQQLayer(): Promise<void> {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      qqReady = false;
-      activeAccessToken = "";
+      setQQReadyStatus(false);
+      clearQQAccessTokenStatus();
       qqLogger.error(`qq-layer 启动失败: ${message}`);
       setTimeout(() => {
         void connect();
       }, 5000);
     } finally {
-      isConnecting = false;
+      setQQConnectingStatus(false);
     }
   };
 
-  reconnectFn = connect;
+  setQQReconnectStatus(connect);
   await connect();
 }

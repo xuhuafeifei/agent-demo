@@ -6,26 +6,17 @@ import {
   type QQTokenResponse,
 } from "./qq-utils.js";
 
-// 访问令牌缓存
-let tokenCache: { token: string; expiresAt: number } | null = null;
-
 /**
  * 获取 QQ 机器人访问令牌
  * @param appId - 应用 ID
  * @param secret - 应用密钥
- * @returns 访问令牌字符串
- * @description 该函数会缓存令牌，避免频繁请求，在令牌过期前 60 秒会自动刷新
+ * @returns access_token 与 expires_in（秒）
+ * @description 纯 API 请求，不管理缓存与过期策略
  */
 export async function getAccessToken(
   appId: string,
   secret: string,
-): Promise<string> {
-  // 检查缓存的令牌是否有效（过期前 60 秒内刷新）
-  if (tokenCache && Date.now() < tokenCache.expiresAt - 60_000) {
-    return tokenCache.token;
-  }
-
-  // 发起请求获取新的访问令牌
+): Promise<{ accessToken: string; expiresIn: number }> {
   const response = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -38,14 +29,8 @@ export async function getAccessToken(
     throw new Error(`获取 QQ access_token 失败: ${JSON.stringify(data)}`);
   }
 
-  // 计算令牌过期时间并更新缓存
   const expiresIn = Number(data.expires_in ?? 7200);
-  tokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + expiresIn * 1000,
-  };
-
-  return data.access_token;
+  return { accessToken: data.access_token, expiresIn };
 }
 
 /**
