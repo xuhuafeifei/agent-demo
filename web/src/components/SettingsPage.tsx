@@ -100,6 +100,7 @@ export default function SettingsPage() {
   // Model config state
   const [providers, setProviders] = useState([]);
   const [selectedProviderId, setSelectedProviderId] = useState(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   /** model：与 ModelCombobox 绑定，保存/测试均只用此字段 → fgbg.json providers[].models[].id */
   const [detailForm, setDetailForm] = useState({
     apiKey: "",
@@ -794,6 +795,7 @@ export default function SettingsPage() {
         setMetadata(payload.metadata || {});
       }
       MessageManager.success("保存成功");
+      setHasUnsavedChanges(false);
     } catch (error) {
       MessageManager.error(`保存失败: ${error.message}`);
     } finally {
@@ -1077,6 +1079,7 @@ export default function SettingsPage() {
       setRawConfig(payload.config);
       setBaseConfig(payload.config);
       setMetadata(payload.metadata || {});
+      setHasUnsavedChanges(false);
     } catch (error) {
       MessageManager.error(`恢复默认失败: ${error.message}`);
     } finally {
@@ -1170,6 +1173,28 @@ export default function SettingsPage() {
     setShowProviderModal(false);
   };
 
+  // 切换供应商时检查未保存的更改
+  const handleProviderSelectWithCheck = (id) => {
+    if (hasUnsavedChanges && selectedProviderId) {
+      if (
+        window.confirm(
+          `当前"${selectedProviderId}"的配置尚未保存，切换将丢失编辑的信息。是否继续？`,
+        )
+      ) {
+        setSelectedProviderId(id);
+        setHasUnsavedChanges(false);
+      }
+    } else {
+      setSelectedProviderId(id);
+    }
+  };
+
+  // 包装 setDetailForm，标记有未保存的更改
+  const handleDetailChangeWithTrack = (field, value) => {
+    setHasUnsavedChanges(true);
+    handleDetailChange(field, value);
+  };
+
   if (loading) {
     return (
       <section className="settings-page">
@@ -1201,11 +1226,11 @@ export default function SettingsPage() {
             providers,
             selectedProviderId,
             selectedProvider,
-            setSelectedProviderId,
+            setSelectedProviderId: handleProviderSelectWithCheck,
             handleProviderToggle,
             handleAddProvider,
             detailForm,
-            handleDetailChange,
+            handleDetailChange: handleDetailChangeWithTrack,
             qwenCredentialMode,
             connectionResult,
             handleQwenPortalAuth,

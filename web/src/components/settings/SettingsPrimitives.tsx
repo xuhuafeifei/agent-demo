@@ -94,6 +94,32 @@ export function ModelCombobox({
     setFilter("");
   };
 
+  const handleBlur = () => {
+    // Delay to allow option click to fire first
+    setTimeout(() => {
+      if (filter) {
+        // If user typed something, use it as the value
+        onChange(filter);
+      }
+      setOpen(false);
+      setFilter("");
+    }, 150);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (filter) {
+        onChange(filter);
+        setOpen(false);
+        setFilter("");
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+      setFilter("");
+    }
+  };
+
   return (
     <div className="settings-combobox" ref={wrapperRef}>
       <div className="settings-combobox-input-row">
@@ -108,6 +134,8 @@ export function ModelCombobox({
             if (!open) setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
         />
         <button
           type="button"
@@ -123,7 +151,9 @@ export function ModelCombobox({
       {open && (
         <div className="settings-combobox-dropdown">
           {filtered.length === 0 ? (
-            <div className="settings-combobox-empty">无匹配模型</div>
+            <div className="settings-combobox-empty">
+              按 Enter 使用自定义模型: <strong>{filter}</strong>
+            </div>
           ) : (
             filtered.map((opt) => (
               <button
