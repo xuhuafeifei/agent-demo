@@ -18,6 +18,9 @@ import {
   saveWeixinAccount,
   type WeixinBoundAccount,
 } from "./weixin-account.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+
+const log = getSubsystemConsoleLogger("weixin-login");
 
 /** 二维码有效期：5分钟 */
 const QR_TTL_MS = 5 * 60_000;
@@ -76,9 +79,12 @@ export type PollResult =
  * @param sessionKey - 登录会话密钥
  * @returns 轮询结果
  */
-export async function pollWeixinQrSession(sessionKey: string): Promise<PollResult> {
+export async function pollWeixinQrSession(
+  sessionKey: string,
+): Promise<PollResult> {
   const login = sessions.get(sessionKey);
-  if (!login) return { phase: "error", message: "会话不存在或已结束，请重新获取二维码" };
+  if (!login)
+    return { phase: "error", message: "会话不存在或已结束，请重新获取二维码" };
 
   // 检查二维码是否过期
   if (Date.now() - login.startedAt > QR_TTL_MS) {
@@ -87,11 +93,18 @@ export async function pollWeixinQrSession(sessionKey: string): Promise<PollResul
   }
 
   // 查询二维码状态
-  const st = await fetchQrStatus(login.currentApiBase, login.qrcode, POLL_TIMEOUT_MS);
+  const st = await fetchQrStatus(
+    login.currentApiBase,
+    login.qrcode,
+    POLL_TIMEOUT_MS,
+  );
 
   // 处理等待状态
   if (st.status === "wait" || st.status === "scaned") {
-    return { phase: "pending", hint: st.status === "scaned" ? "已扫码，请在手机上确认" : undefined };
+    return {
+      phase: "pending",
+      hint: st.status === "scaned" ? "已扫码，请在手机上确认" : undefined,
+    };
   }
 
   // 处理重定向状态
@@ -129,13 +142,18 @@ export async function pollWeixinQrSession(sessionKey: string): Promise<PollResul
   }
 
   // 保存绑定账号信息
-  const baseUrl = (st.baseurl?.trim() || login.currentApiBase).replace(/\/$/, "");
+  const baseUrl = (st.baseurl?.trim() || login.currentApiBase).replace(
+    /\/$/,
+    "",
+  );
   const account: WeixinBoundAccount = {
     token: st.bot_token,
     baseUrl,
     botId: st.ilink_bot_id,
     linkedUserId: uid,
   };
+  log.debug(`weixin login success: ${JSON.stringify(account)}`);
+
   saveWeixinAccount(account);
   sessions.delete(sessionKey);
 
