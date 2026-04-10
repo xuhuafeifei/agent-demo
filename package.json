@@ -11,6 +11,7 @@
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
     "test:path-checker": "tsc && node --test test/path-checker.test.mjs",
     "test:read-tool": "tsc && node --test test/read-tool.test.mjs",
+    "test:workspace-frontmatter": "tsc && node --test test/workspace-frontmatter.test.mjs",
     "build": "npm run web:build && tsc",
     "dev:debug": "npm run web:build && NODE_DEBUG=memory,agent tsc && node scripts/require-runtime.mjs && node dist/server.js",
     "dev:inspect": "npm run web:build && NODE_DEBUG=memory,agent tsc && node --inspect scripts/require-runtime.mjs && node --inspect dist/server.js",
@@ -46,6 +47,7 @@
     "react-dom": "^19.2.4",
     "sqlite-vec": "^0.1.7-alpha.2",
     "ws": "^8.20.0",
+    "yaml": "^2.8.3",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

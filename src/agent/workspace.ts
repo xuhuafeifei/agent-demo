@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { resolveWorkspaceDir } from "../utils/app-path.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -115,47 +116,50 @@ export type FrontmatterMeta = {
   description: string;
 };
 
-function yamlDoubleQuotedScalar(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r?\n/g, "\\n")}"`;
-}
-
 export function buildMarkdownWithFrontmatter(params: {
   name: string;
   description: string;
   body: string;
 }): string {
-  const header = [
-    "---",
-    `name: ${yamlDoubleQuotedScalar(params.name)}`,
-    `description: ${yamlDoubleQuotedScalar(params.description)}`,
-    "---",
-    "",
-  ].join("\n");
+  // `yaml`（YAML 1.2）与 Java 侧 SnakeYAML 类似：多行会用 `|`/`>` 等块标量，特殊字符会自动加引号。
+  const yamlBlock = stringifyYaml(
+    { name: params.name, description: params.description },
+    { lineWidth: 0 },
+  ).trimEnd();
+  const header = `---\n${yamlBlock}\n---\n\n`;
   const body = params.body.trimEnd();
   return body ? `${header}${body}\n` : `${header}\n`;
 }
 
+function frontmatterScalarToTrimmedString(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "string") {
+    const s = v.trim();
+    return s.length ? s : null;
+  }
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return null;
+}
+
 /**
  * 从 Markdown 正文解析 `---` ... `---` YAML frontmatter 中的 name / description。
- * 支持两种格式：
- * - 无引号：`name: Some Name`
- * - 双引号：`name: "Some Name"`
+ * 使用 YAML 1.2 解析（多行块标量、引号转义等均按规范处理）。
  */
 export function parseFrontmatterMeta(content: string): FrontmatterMeta | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
 
-  const frontmatterText = match[1];
-  
-  // 支持无引号或双引号格式
-  const nameMatch = frontmatterText.match(/^name:\s*"(.+?)"\s*$/m) ?? frontmatterText.match(/^name:\s*(.+?)\s*$/m);
-  const descMatch = frontmatterText.match(/^description:\s*"(.+?)"\s*$/m) ?? frontmatterText.match(/^description:\s*(.+?)\s*$/m);
+  let data: unknown;
+  try {
+    data = parseYaml(match[1]);
+  } catch {
+    return null;
+  }
+  if (data == null || typeof data !== "object" || Array.isArray(data)) return null;
 
-  if (!nameMatch || !descMatch) return null;
-
-  const name = nameMatch[1].trim();
-  const description = descMatch[1].trim();
-
+  const rec = data as Record<string, unknown>;
+  const name = frontmatterScalarToTrimmedString(rec.name);
+  const description = frontmatterScalarToTrimmedString(rec.description);
   if (!name || !description) return null;
 
   return { name, description };
