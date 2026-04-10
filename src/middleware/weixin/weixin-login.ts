@@ -68,6 +68,10 @@ export type PollResult =
   | { phase: "done"; account: WeixinBoundAccount } // 登录成功
   | { phase: "error"; message: string }; // 登录失败
 
+function isAbortLikeError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 /**
  * 轮询微信二维码登录状态
  *
@@ -86,8 +90,20 @@ export async function pollWeixinQrSession(sessionKey: string): Promise<PollResul
     return { phase: "error", message: "二维码已过期，请重新获取" };
   }
 
-  // 查询二维码状态
-  const st = await fetchQrStatus(login.currentApiBase, login.qrcode, POLL_TIMEOUT_MS);
+  // 查询二维码状态。iLink 这里带长轮询语义，超时应视为“仍在等待”，不能当作失败。
+  let st: Awaited<ReturnType<typeof fetchQrStatus>>;
+  try {
+    st = await fetchQrStatus(
+      login.currentApiBase,
+      login.qrcode,
+      POLL_TIMEOUT_MS,
+    );
+  } catch (error) {
+    if (isAbortLikeError(error)) {
+      return { phase: "pending" };
+    }
+    throw error;
+  }
 
   // 处理等待状态
   if (st.status === "wait" || st.status === "scaned") {
