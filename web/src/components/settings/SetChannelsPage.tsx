@@ -76,10 +76,16 @@ export default function SetChannelsPage({ channelsTab }) {
     setWeixinBinding(true);
     setWeixinPopupLikelyBlocked(false);
 
-    /** 必须在首屏同步调用，否则弹窗易被拦截；拿到 URL 后再给 about:blank 赋址 */
+    /**
+     * 必须在点击事件里同步打开，否则弹窗易被拦截。
+     *
+     * 这里不能带 noopener/noreferrer：
+     * 在部分浏览器/运行环境里会实际打开 about:blank，
+     * 但返回给脚本的窗口句柄是 null，导致后续无法把二维码 URL 写进去。
+     */
     let qrTab = null;
     try {
-      qrTab = window.open("about:blank", "_blank", "noopener,noreferrer");
+      qrTab = window.open("about:blank", "_blank");
     } catch {
       /* ignore */
     }
@@ -95,13 +101,14 @@ export default function SetChannelsPage({ channelsTab }) {
       const url = normalizeWeixinQrSrc(start.qrcodeUrl);
       if (qrTab && !qrTab.closed && url) {
         try {
-          qrTab.location.href = url;
+          qrTab.location.replace(url);
         } catch {
           try {
             qrTab.close();
           } catch {
             /* ignore */
           }
+          window.open(url, "_blank");
         }
       } else if (qrTab && !qrTab.closed) {
         try {
