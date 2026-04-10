@@ -137,6 +137,26 @@ export async function pollQwenPortalOAuth(oauthSessionId) {
   return payload;
 }
 
+export async function weixinLoginStart() {
+  return requestJson("/api/v1/weixin/login/start", { method: "POST" });
+}
+
+export async function weixinLoginPoll(sessionKey) {
+  return requestJson("/api/v1/weixin/login/poll", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionKey }),
+  });
+}
+
+export async function weixinStatus() {
+  return requestJson("/api/v1/weixin/status");
+}
+
+export async function weixinUnbind() {
+  return requestJson("/api/v1/weixin/account", { method: "DELETE" });
+}
+
 export async function getHistory() {
   return requestJson("/api/history");
 }

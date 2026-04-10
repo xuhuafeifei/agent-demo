@@ -21,6 +21,7 @@ import {
   createRunTaskTool,
 } from "./func/watch-dog.js";
 import { createShellExecuteTool } from "./func/shell-execute.js";
+import { createIMSendTool } from "./func/IM-send.js";
 
 type ToolFactory = (cwd: string) => unknown;
 
@@ -97,6 +98,11 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
     factory: () => createShellExecuteTool(),
     description:
       "shellExecute(command) - execute whitelisted shell command securely",
+  },
+  sendIMMessage: {
+    factory: () => createIMSendTool(),
+    description:
+      "sendIMMessage(channel, content) - send text to latest phone IM user (qq/weixin), target user id loaded internally",
   },
 };
 

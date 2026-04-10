@@ -9,6 +9,7 @@ import { createLoggingRouter } from "./router/logging-router.js";
 import { createOAuthRouter } from "./router/oauth-router.js";
 import { createApprovalRouter } from "./router/approval-router.js";
 import { createToolSecurityRouter } from "./router/tool-security-router.js";
+import { createWeixinRouter } from "./router/weixin-router.js";
 
 /**
  * Create the web layer router.
@@ -31,6 +32,7 @@ export function createWebLayer() {
   router.use("/config/logging", createLoggingRouter());
   router.use("/config/qwen-portal/oauth", createOAuthRouter());
   router.use("/config/tool-security", createToolSecurityRouter());
+  router.use("/weixin", createWeixinRouter());
 
   return router;
 }

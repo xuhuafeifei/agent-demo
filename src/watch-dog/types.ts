@@ -26,14 +26,14 @@ export type ScriptTaskPayload = BlacklistPayloadFields & {
 
 export type ReminderTaskPayload = BlacklistPayloadFields & {
   content: string;
-  channels: Array<"qq" | "web">;
+  channels: Array<"qq" | "weixin" | "web">;
   timezone?: string;
 };
 
 export type AgentTaskPayload = BlacklistPayloadFields & {
   goal: string;
   notify?: boolean;
-  channels?: Array<"qq" | "web">;
+  channels?: Array<"qq" | "weixin" | "web">;
   timezone?: string;
   mode?: "evolve" | "analyze_then_notify";
 };

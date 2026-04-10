@@ -125,11 +125,18 @@ const createReminderTaskParams = Type.Object({
     }),
   ),
   channels: Type.Optional(
-    Type.Array(Type.Union([Type.Literal("qq"), Type.Literal("web")]), {
+    Type.Array(
+      Type.Union([
+        Type.Literal("qq"),
+        Type.Literal("weixin"),
+        Type.Literal("web"),
+      ]),
+      {
       minItems: 1,
       description:
-        "Notification channels. Defaults to [qq]. Use System prompt's ## Channel context to choose the proper delivery channel.",
-    }),
+          "Notification channels. Defaults to [qq]. Prefer weixin when current channel is WeChat; web is kept for backward compatibility.",
+      },
+    ),
   ),
   taskName: Type.Optional(
     Type.String({
@@ -178,10 +185,18 @@ const createAgentTaskParams = Type.Object({
     }),
   ),
   channels: Type.Optional(
-    Type.Array(Type.Union([Type.Literal("qq"), Type.Literal("web")]), {
+    Type.Array(
+      Type.Union([
+        Type.Literal("qq"),
+        Type.Literal("weixin"),
+        Type.Literal("web"),
+      ]),
+      {
       minItems: 1,
-      description: "Effective when notify=true. Defaults to [qq].",
-    }),
+      description:
+          "Effective when notify=true. Defaults to [qq]. Prefer weixin for WeChat scenarios; web is kept for backward compatibility.",
+      },
+    ),
   ),
   mode: Type.Optional(
     Type.Union([Type.Literal("evolve"), Type.Literal("analyze_then_notify")], {
@@ -376,7 +391,7 @@ export function createReminderTaskTool(): ToolDefinition<
       const timezone = params.timezone?.trim() || "Asia/Shanghai";
       const channels = (
         params.channels && params.channels.length > 0 ? params.channels : ["qq"]
-      ) as Array<"qq" | "web">;
+      ) as Array<"qq" | "weixin" | "web">;
       const taskName = params.taskName?.trim() || makeTaskName("reminder");
       let nextRunTime: string;
       let scheduleKind: "once" | "cron";
@@ -478,7 +493,7 @@ export function createAgentTaskTool(): ToolDefinition<
       const notify = params.notify === true;
       const channels = (
         params.channels && params.channels.length > 0 ? params.channels : ["qq"]
-      ) as Array<"qq" | "web">;
+      ) as Array<"qq" | "weixin" | "web">;
       const mode = params.mode ?? "evolve";
       const taskName =
         params.taskName?.trim() ||

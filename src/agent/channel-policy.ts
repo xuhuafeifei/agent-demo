@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
-export const SUPPORTED_CHANNELS = ["web", "qq"] as const;
+export const SUPPORTED_CHANNELS = ["web", "qq", "weixin"] as const;
 
 export type AgentChannel = (typeof SUPPORTED_CHANNELS)[number];
 
@@ -17,6 +17,11 @@ export const CHANNEL_POLICY: Record<AgentChannel, ChannelPolicy> = {
     emitContextSnapshot: true,
   },
   qq: {
+    defaultThinkingLevel: "off" as ThinkingLevel,
+    allowMarkdown: false,
+    emitContextSnapshot: false,
+  },
+  weixin: {
     defaultThinkingLevel: "off" as ThinkingLevel,
     allowMarkdown: false,
     emitContextSnapshot: false,

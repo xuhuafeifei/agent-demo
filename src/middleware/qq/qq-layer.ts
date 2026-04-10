@@ -2,13 +2,9 @@ import WebSocket, { type RawData } from "ws";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { DEFAULT_SESSION_KEY, runWithSingleFlight } from "../../agent/run.js";
 import { resolveQQAccountFromConfig } from "./qq-config.js";
-import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
+import { getEventBus } from "../../event-bus/index.js";
 import { writeFgbgUserConfig } from "../../config/index.js";
-import { createQQSendTool } from "../../agent/tool/func/qq-send.js";
-import {
-  getGatewayUrl,
-  sendC2CMessage,
-} from "./qq-api.js";
+import { getGatewayUrl, sendC2CMessage } from "./qq-api.js";
 import {
   clearQQAccessTokenStatus,
   forceRefreshQQAccessToken,
@@ -25,6 +21,7 @@ import {
 } from "./qq-status.js";
 import { parseC2CEvent, type QQWSPayload } from "./qq-utils.js";
 import { readFgbgUserConfig } from "../../config/index.js";
+import { loadLastIMTarget, saveLastIMTarget } from "../im/im-target.js";
 
 // 获取 QQ 层专用的日志记录器
 const qqLogger = getSubsystemConsoleLogger("qq-layer");
@@ -34,6 +31,7 @@ const eventBus = getEventBus();
 function persistTargetOpenid(openid: string): void {
   const value = openid.trim();
   if (!value) return;
+  saveLastIMTarget("qq", value);
   const cfg = readFgbgUserConfig();
   if (cfg.channels.qqbot.enabled === false) return;
 
@@ -44,16 +42,6 @@ function persistTargetOpenid(openid: string): void {
   writeFgbgUserConfig(cfg);
   qqLogger.info("已更新 channels.qqbot.targetOpenid, 覆盖为当前私聊用户");
 }
-
-eventBus.on<unknown[]>(TOPIC_TOOL_BEFORE_BUILD, (dynamicTools) => {
-  if (!Array.isArray(dynamicTools) || !isQQReadyStatus()) return;
-  qqLogger.info("qq dynamic tool created!");
-  dynamicTools.push(
-    createQQSendTool({
-      sendQQDirectMessage,
-    }),
-  );
-});
 
 export function isQQReady(): boolean {
   return isQQReadyStatus();
@@ -69,7 +57,10 @@ async function ensureQQGatewayReady(
   const account = resolveQQAccountFromConfig();
   if (!account) return false;
 
-  if (isQQReadyStatus() && (await getQQAccessToken(account.appId, account.clientSecret))) {
+  if (
+    isQQReadyStatus() &&
+    (await getQQAccessToken(account.appId, account.clientSecret))
+  ) {
     return true;
   }
 
@@ -80,23 +71,29 @@ async function ensureQQGatewayReady(
 
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    if (isQQReadyStatus() && (await getQQAccessToken(account.appId, account.clientSecret))) {
+    if (
+      isQQReadyStatus() &&
+      (await getQQAccessToken(account.appId, account.clientSecret))
+    ) {
       return true;
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   return Boolean(
     isQQReadyStatus() &&
-      (await getQQAccessToken(account.appId, account.clientSecret)),
+    (await getQQAccessToken(account.appId, account.clientSecret)),
   );
 }
 
 /**
- * qq-gateway 准备好后，向 fgbg.json 中 `channels.qqbot.targetOpenid` 对应用户发送单向消息。
- * openid 仅从用户配置文件读取，不由调用方传入。
+ * qq-gateway 准备好后，向最近一次私聊用户发送单向消息。
+ * 目标 openid 优先从 ~/.fgbg/im/targets.json 读取，兼容回退到 fgbg.json。
  */
 export async function sendQQDirectMessage(content: string): Promise<boolean> {
-  const openid = readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
+  const openid =
+    loadLastIMTarget("qq") ||
+    readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() ||
+    "";
   if (!openid) {
     qqLogger.error(
       "sendQQDirectMessage failed: channels.qqbot.targetOpenid missing in fgbg.json",
@@ -118,7 +115,10 @@ export async function sendQQDirectMessage(content: string): Promise<boolean> {
       return false;
     }
     // 发送前主动刷新 token（含缓存复用），避免使用过期的 activeAccessToken。
-    const accessToken = await getQQAccessToken(account.appId, account.clientSecret);
+    const accessToken = await getQQAccessToken(
+      account.appId,
+      account.clientSecret,
+    );
     await sendC2CMessage({
       accessToken,
       openid,
@@ -128,11 +128,16 @@ export async function sendQQDirectMessage(content: string): Promise<boolean> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // QQ 侧返回 11244：token not exist or expire，清缓存后重试一次。
-    if (message.includes("11244") || message.includes("token not exist or expire")) {
+    if (
+      message.includes("11244") ||
+      message.includes("token not exist or expire")
+    ) {
       try {
         const account = resolveQQAccountFromConfig();
         if (!account) {
-          qqLogger.error("sendQQDirectMessage retry failed: QQ 账号配置缺失或未启用");
+          qqLogger.error(
+            "sendQQDirectMessage retry failed: QQ 账号配置缺失或未启用",
+          );
           return false;
         }
         invalidateQQAccessTokenStatus("QQ API 返回 11244 / token expired");
@@ -278,11 +283,10 @@ export async function startQQLayer(): Promise<void> {
             });
           },
           onAccepted: async () => {
-            // 当消息被接受时回复消息
             await sendC2CMessage({
               accessToken: currentToken,
               openid: userOpenId,
-              content: "收到，正在处理指令",
+              content: "收到指令",
               replyToMessageId: inboundMessageId,
             });
           },

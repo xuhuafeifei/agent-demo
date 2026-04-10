@@ -7,7 +7,12 @@ import {
   resetConfigSection,
   hasProtectedPath,
 } from "../services/service.js";
-import { validateRequest, qqbotChannelSchema, heartbeatConfigSchema } from "../validators.js";
+import {
+  validateRequest,
+  qqbotChannelSchema,
+  weixinChannelSchema,
+  heartbeatConfigSchema,
+} from "../utils/validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -21,7 +26,7 @@ export function createFgbgRouter() {
   router.get("/", (_req, res) => {
     try {
       const result = readConfigWithMetadata();
-      
+
       // 对 qqbot 配置进行脱敏，只返回 enabled、appId、clientSecret 三个字段
       const config = result.config;
       if (config.channels?.qqbot) {
@@ -32,7 +37,7 @@ export function createFgbgRouter() {
           clientSecret: qqbot.clientSecret,
         } as any;
       }
-      
+
       res.json({
         success: true,
         config: result.config,
@@ -63,7 +68,10 @@ export function createFgbgRouter() {
     try {
       // 校验特定字段
       if (patchRaw.channels?.qqbot) {
-        const qqbotValidation = validateRequest(qqbotChannelSchema, patchRaw.channels.qqbot);
+        const qqbotValidation = validateRequest(
+          qqbotChannelSchema,
+          patchRaw.channels.qqbot,
+        );
         if (!qqbotValidation.success) {
           return res.status(400).json({
             success: false,
@@ -72,8 +80,24 @@ export function createFgbgRouter() {
         }
       }
 
+      if (patchRaw.channels?.weixin) {
+        const wxVal = validateRequest(
+          weixinChannelSchema,
+          patchRaw.channels.weixin,
+        );
+        if (!wxVal.success) {
+          return res.status(400).json({
+            success: false,
+            error: `微信通道配置校验失败: ${wxVal.error}`,
+          });
+        }
+      }
+
       if (patchRaw.heartbeat) {
-        const heartbeatValidation = validateRequest(heartbeatConfigSchema, patchRaw.heartbeat);
+        const heartbeatValidation = validateRequest(
+          heartbeatConfigSchema,
+          patchRaw.heartbeat,
+        );
         if (!heartbeatValidation.success) {
           return res.status(400).json({
             success: false,
@@ -122,7 +146,7 @@ export function createFgbgRouter() {
   // POST /config/fgbg/reset/section - 恢复指定配置模块的默认值
   router.post("/reset/section", (req, res) => {
     const { section } = req.body || {};
-    if (!section || typeof section !== 'string') {
+    if (!section || typeof section !== "string") {
       return res.status(400).json({
         success: false,
         error: "缺少必要参数: section",
@@ -139,7 +163,11 @@ export function createFgbgRouter() {
     } catch (error: unknown) {
       const runtimeError =
         error instanceof Error ? error : new Error("服务器内部错误");
-      webLogger.error("[config/reset/section] %s", runtimeError.message, runtimeError);
+      webLogger.error(
+        "[config/reset/section] %s",
+        runtimeError.message,
+        runtimeError,
+      );
       res.status(500).json({
         success: false,
         error: runtimeError.message,

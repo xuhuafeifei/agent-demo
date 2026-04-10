@@ -15,6 +15,7 @@ import { watchDogLogger } from "./watch-dog.js";
 import { shouldSkipTaskForBlacklistNow } from "./blacklist-check.js";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../event-bus/index.js";
 import { sendQQDirectMessage } from "../middleware/qq/qq-layer.js";
+import { sendWeixinDirectMessage } from "../middleware/weixin/weixin-layer.js";
 import { formatChinaIso, nowChinaIso } from "./time.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { readFgbgUserConfig } from "../config/index.js";
@@ -176,9 +177,12 @@ export const cleanupLogsHandler: TaskHandler = async () => {
   return { status: "success" };
 };
 
-function toChannelList(value: unknown): Array<"qq" | "web"> {
+function toChannelList(value: unknown): Array<"qq" | "weixin" | "web"> {
   if (!Array.isArray(value)) return ["qq"];
-  const list = value.filter((v): v is "qq" | "web" => v === "qq" || v === "web");
+  const list = value.filter(
+    (v): v is "qq" | "weixin" | "web" =>
+      v === "qq" || v === "weixin" || v === "web",
+  );
   return list.length > 0 ? list : ["qq"];
 }
 
@@ -188,7 +192,7 @@ function qqTargetOpenidFromFgbg(): string {
 }
 
 async function deliverReminderByChannels(params: {
-  channels: Array<"qq" | "web">;
+  channels: Array<"qq" | "weixin" | "web">;
   text: string;
 }): Promise<HandlerResult> {
   const { channels, text } = params;
@@ -204,10 +208,26 @@ async function deliverReminderByChannels(params: {
       const ok = await sendQQDirectMessage(text);
       if (ok) successCount++;
       else errors.push("qq send failed");
+    } else if (ch === "weixin") {
+      const ok = await sendWeixinDirectMessage(text);
+      if (ok) successCount++;
+      else errors.push("weixin send failed");
     } else if (ch === "web") {
-      // web 通知渠道暂未实现，记录警告但不阻塞任务
-      handlerLogger.warn("[deliver_reminder] web channel is not implemented yet, skipping");
-      errors.push("web channel not implemented");
+      // 兼容历史任务：旧版本只支持 qq/web，模型常把“微信”落成 web。
+      if (readFgbgUserConfig().channels.weixin?.enabled) {
+        handlerLogger.warn(
+          "[deliver_reminder] web channel is deprecated, fallback to weixin",
+        );
+        const ok = await sendWeixinDirectMessage(text);
+        if (ok) successCount++;
+        else errors.push("web->weixin send failed");
+      } else {
+        // web 通知渠道暂未实现，记录警告但不阻塞任务
+        handlerLogger.warn(
+          "[deliver_reminder] web channel is not implemented yet, skipping",
+        );
+        errors.push("web channel not implemented");
+      }
     }
   }
 

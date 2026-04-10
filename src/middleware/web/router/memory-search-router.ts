@@ -8,7 +8,10 @@ import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import type { FgbgUserConfig } from "../../../types.js";
 import type { RecursivePartial } from "../services/service.js";
 import { mergeMemorySearchForTest } from "../services/service.js";
-import { validateRequest, memorySearchTestRequestSchema } from "../validators.js";
+import {
+  validateRequest,
+  memorySearchTestRequestSchema,
+} from "../utils/validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -22,7 +25,10 @@ export function createMemorySearchRouter() {
   router.post("/test", async (req, res) => {
     try {
       // 校验请求体
-      const validation = validateRequest(memorySearchTestRequestSchema, req.body);
+      const validation = validateRequest(
+        memorySearchTestRequestSchema,
+        req.body,
+      );
       if (!validation.success) {
         return res.status(400).json({
           success: false,
@@ -61,7 +67,10 @@ export function createMemorySearchRouter() {
   router.post("/repair-local", async (req, res) => {
     try {
       // 校验请求体
-      const validation = validateRequest(memorySearchTestRequestSchema, req.body);
+      const validation = validateRequest(
+        memorySearchTestRequestSchema,
+        req.body,
+      );
       if (!validation.success) {
         return res.status(400).json({
           success: false,

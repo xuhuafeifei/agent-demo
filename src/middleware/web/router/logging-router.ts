@@ -11,7 +11,7 @@ import {
   writeFgbgUserConfig,
   evicateFgbgUserConfigCache,
 } from "../../../config/index.js";
-import { validateRequest, loggingConfigSchema } from "../validators.js";
+import { validateRequest, loggingConfigSchema } from "../utils/validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 

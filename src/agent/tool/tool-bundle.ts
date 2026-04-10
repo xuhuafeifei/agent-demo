@@ -2,16 +2,12 @@
  * 工具装配（bundle）
  *
  * 读 readFgbgUserConfig() → resolveToolSecurityConfig → 按 enabledTools 过滤 tool-catalog → 生成 tools[] / toolings[]
- * 处理 TOPIC_TOOL_BEFORE_BUILD 动态注入。
  */
 
 import { readFgbgUserConfig } from "../../config/index.js";
 import { resolveToolSecurityConfig } from "./security/tool-security.resolve.js";
 import type { ToolMode } from "./security/constants.js";
 import { TOOL_CATALOG } from "./tool-catalog.js";
-import { getEventBus, TOPIC_TOOL_BEFORE_BUILD } from "../../event-bus/index.js";
-
-const eventBus = getEventBus();
 
 export type ToolBundle = {
   /** 工具实例列表 */
@@ -42,13 +38,6 @@ export function createToolBundle(cwd: string): ToolBundle {
   const toolings = enabledToolNames.map(
     (name) => TOOL_CATALOG[name].description,
   );
-
-  // 动态工具注入：其他模块可在此时通过 event-bus 同步追加工具
-  const dynamicTools: unknown[] = [];
-  eventBus.emitSync(TOPIC_TOOL_BEFORE_BUILD, dynamicTools);
-  if (dynamicTools.length > 0) {
-    tools.push(...dynamicTools);
-  }
 
   return {
     tools,

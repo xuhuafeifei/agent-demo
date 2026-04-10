@@ -70,6 +70,7 @@ export default function SettingsPage() {
     qqbotEnabled: false,
     qqbotAppId: "",
     qqbotClientSecret: "",
+    weixinEnabled: false,
   });
   const [showQqbotSecret, setShowQqbotSecret] = useState(false);
 
@@ -167,10 +168,12 @@ export default function SettingsPage() {
         // Sync channels form from config
         const channels = payload.config?.channels || {};
         const qqbot = channels.qqbot || {};
+        const weixin = channels.weixin || {};
         setChannelsForm({
           qqbotEnabled: qqbot.enabled ?? false,
           qqbotAppId: qqbot.appId ?? "",
           qqbotClientSecret: qqbot.clientSecret ?? "",
+          weixinEnabled: weixin.enabled ?? false,
         });
       } catch (error) {
         if (mounted) MessageManager.info(`加载配置失败: ${error.message}`);
@@ -868,6 +871,9 @@ export default function SettingsPage() {
         enabled: channelsForm.qqbotEnabled,
         appId: channelsForm.qqbotAppId.trim(),
         clientSecret: channelsForm.qqbotClientSecret,
+      };
+      draft.channels.weixin = {
+        enabled: channelsForm.weixinEnabled,
       };
 
       const patch = deepDiff(draft, baseConfig);

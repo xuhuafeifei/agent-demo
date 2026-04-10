@@ -9,7 +9,10 @@ import {
   buildQwenPortalProbeChatCompletionBody,
   normalizeQwenOAuthResourceBaseUrl,
 } from "../../../agent/qwen-dashscope.js";
-import { validateRequest, testConnectionRequestSchema } from "../validators.js";
+import {
+  validateRequest,
+  testConnectionRequestSchema,
+} from "../utils/validators.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 

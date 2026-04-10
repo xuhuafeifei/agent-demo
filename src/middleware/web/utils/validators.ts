@@ -117,6 +117,11 @@ export const qqbotChannelSchema = z.object({
   accounts: z.array(z.string()).optional().default([]),
 });
 
+/** 微信通道：仅开关写入 fgbg，凭证在 ~/.fgbg/weixin/ */
+export const weixinChannelSchema = z.object({
+  enabled: z.boolean().optional(),
+});
+
 /**
  * 测试连接请求校验 Schema
  */

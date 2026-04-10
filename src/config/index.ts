@@ -1,6 +1,5 @@
 import path from "node:path";
 import {
-  DEFAULT_TOOL_SECURITY_CONFIG,
   resolveToolSecurityConfig,
 } from "../agent/tool/security/index.js";
 import type {
@@ -122,6 +121,9 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
         clientSecret: raw.channels?.qqbot?.clientSecret ?? "",
         targetOpenid: raw.channels?.qqbot?.targetOpenid,
         accounts: raw.channels?.qqbot?.accounts,
+      },
+      weixin: {
+        enabled: raw.channels?.weixin?.enabled ?? false,
       },
     },
   };

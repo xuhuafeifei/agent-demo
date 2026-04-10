@@ -13,6 +13,7 @@ import {
 } from "./logger/logger.js";
 import { startWatchDog } from "./watch-dog/watch-dog.js";
 import { startQQLayer } from "./middleware/qq/qq-layer.js";
+import { startWeixinLayer } from "./middleware/weixin/weixin-layer.js";
 
 // 加载环境变量
 dotenv.config();
@@ -86,6 +87,12 @@ async function bootstrap() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     serverLogger.error("[qq-layer] failed to start: %s", message);
+  }
+  try {
+    startWeixinLayer();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    serverLogger.error("[weixin-layer] failed to start: %s", message);
   }
   // 之后在运行这些插件类内容
   try {

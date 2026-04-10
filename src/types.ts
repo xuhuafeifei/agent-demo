@@ -145,6 +145,10 @@ export type FgbgUserRawConfig = {
         }
       >;
     };
+    /** 微信 iLink：仅 enabled 入 fgbg，token 存 ~/.fgbg/weixin */
+    weixin?: {
+      enabled?: boolean;
+    };
   };
 };
 
@@ -227,6 +231,9 @@ export type FgbgUserConfig = {
           name?: string;
         }
       >;
+    };
+    weixin: {
+      enabled: boolean;
     };
   };
 };
