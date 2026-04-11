@@ -15,6 +15,7 @@ import { watchDogLogger } from "./watch-dog.js";
 import { shouldSkipTaskForBlacklistNow } from "./blacklist-check.js";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../event-bus/index.js";
 import { sendQQDirectMessage } from "../middleware/qq/qq-layer.js";
+import { QQ_DEFAULT_IDENTIFY } from "../middleware/qq/qq-account.js";
 import { sendWeixinDirectMessage } from "../middleware/weixin/weixin-layer.js";
 import { formatChinaIso, nowChinaIso } from "./time.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
@@ -74,13 +75,16 @@ async function runWithTimeout(
       if (resolved) return;
       resolved = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      resolve (result);
+      resolve(result);
     };
 
     child.on("exit", (code, signal) => {
       if (resolved) return;
       if (signal === "SIGTERM" || signal === "SIGKILL") {
-        cleanResolve({ status: "timeout", errorMessage: `killed by ${signal}` });
+        cleanResolve({
+          status: "timeout",
+          errorMessage: `killed by ${signal}`,
+        });
       } else if (code === 0) {
         cleanResolve({ status: "success" });
       } else {
@@ -122,7 +126,8 @@ export const executeScriptHandler: TaskHandler = async ({
   const workspaceDir = resolveWorkspaceDir();
   const scriptsDir = path.join(workspaceDir, "scripts");
   const payloadObj = (payload ?? {}) as ScriptTaskPayload;
-  const scriptName = typeof payloadObj.script === "string" ? payloadObj.script : "";
+  const scriptName =
+    typeof payloadObj.script === "string" ? payloadObj.script : "";
   const args = isStringArray(payloadObj.args) ? payloadObj.args : [];
   const timeoutMsRaw = payloadObj.timeoutMs;
   const timeoutMs =
@@ -135,31 +140,52 @@ export const executeScriptHandler: TaskHandler = async ({
     return { status: "failed", errorMessage: "script is required" };
   }
 
-  if (config.allowedScripts.length > 0 && !config.allowedScripts.includes(scriptName)) {
+  if (
+    config.allowedScripts.length > 0 &&
+    !config.allowedScripts.includes(scriptName)
+  ) {
     watchDogLogger.error("[execute_script] script not allowed: %s", scriptName);
-    return { status: "failed", errorMessage: `script not allowed: ${scriptName}` };
+    return {
+      status: "failed",
+      errorMessage: `script not allowed: ${scriptName}`,
+    };
   }
 
   const scriptPath = path.resolve(scriptsDir, scriptName);
   // 防穿越：必须留在 scripts/ 目录下
   if (!scriptPath.startsWith(path.resolve(scriptsDir) + path.sep)) {
-    watchDogLogger.error("[execute_script] script path outside scripts/ dir: %s", scriptName);
-    return { status: "failed", errorMessage: "script path outside scripts/ dir" };
+    watchDogLogger.error(
+      "[execute_script] script path outside scripts/ dir: %s",
+      scriptName,
+    );
+    return {
+      status: "failed",
+      errorMessage: "script path outside scripts/ dir",
+    };
   }
 
   if (!fs.existsSync(scriptPath)) {
     watchDogLogger.error("[execute_script] script not found: %s", scriptName);
-    return { status: "failed", errorMessage: `script not found: ${scriptName}` };
+    return {
+      status: "failed",
+      errorMessage: `script not found: ${scriptName}`,
+    };
   }
 
   try {
     fs.accessSync(scriptPath, fs.constants.X_OK);
   } catch {
-    watchDogLogger.error("[execute_script] script not executable: %s", scriptName);
+    watchDogLogger.error(
+      "[execute_script] script not executable: %s",
+      scriptName,
+    );
     return { status: "failed", errorMessage: "script not executable" };
   }
 
-  const result = await runWithTimeout(scriptPath, args, { cwd: scriptsDir, timeoutMs });
+  const result = await runWithTimeout(scriptPath, args, {
+    cwd: scriptsDir,
+    timeoutMs,
+  });
   watchDogLogger.info("[execute_script] completed: %s", scriptName);
   return result;
 };
@@ -186,26 +212,23 @@ function toChannelList(value: unknown): Array<"qq" | "weixin" | "web"> {
   return list.length > 0 ? list : ["qq"];
 }
 
-/** QQ 投递目标仅来自 fgbg.json `channels.qqbot.targetOpenid`，不接受任务 payload。 */
-function qqTargetOpenidFromFgbg(): string {
-  return readFgbgUserConfig().channels.qqbot.targetOpenid?.trim() || "";
-}
-
 async function deliverReminderByChannels(params: {
   channels: Array<"qq" | "weixin" | "web">;
   text: string;
+  identify: string;
 }): Promise<HandlerResult> {
-  const { channels, text } = params;
+  const { channels, text, identify } = params;
   let successCount = 0;
   const errors: string[] = [];
 
   for (const ch of channels) {
     if (ch === "qq") {
-      if (!qqTargetOpenidFromFgbg()) {
-        errors.push("qq target missing");
+      const id = identify.trim();
+      if (!id) {
+        errors.push("identify is required");
         continue;
       }
-      const ok = await sendQQDirectMessage(text);
+      const ok = await sendQQDirectMessage(text, id);
       if (ok) successCount++;
       else errors.push("qq send failed");
     } else if (ch === "weixin") {
@@ -213,6 +236,7 @@ async function deliverReminderByChannels(params: {
       if (ok) successCount++;
       else errors.push("weixin send failed");
     } else if (ch === "web") {
+      // todo: 未来把兼容内容给干掉。直接 web 推送
       // 兼容历史任务：旧版本只支持 qq/web，模型常把“微信”落成 web。
       if (readFgbgUserConfig().channels.weixin?.enabled) {
         handlerLogger.warn(
@@ -234,10 +258,16 @@ async function deliverReminderByChannels(params: {
   if (successCount > 0) {
     return { status: "success" };
   }
-  return { status: "failed", errorMessage: errors.join("; ") || "no channel delivered" };
+  return {
+    status: "failed",
+    errorMessage: errors.join("; ") || "no channel delivered",
+  };
 }
 
-export const executeReminderHandler: TaskHandler = async ({ task, payload }) => {
+export const executeReminderHandler: TaskHandler = async ({
+  task,
+  payload,
+}) => {
   handlerLogger.info("execute_reminder trigger! task_name=%s", task.task_name);
   if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
     handlerLogger.info(
@@ -249,13 +279,19 @@ export const executeReminderHandler: TaskHandler = async ({ task, payload }) => 
   const p = (payload ?? {}) as ReminderTaskPayload;
   const content = typeof p.content === "string" ? p.content.trim() : "";
   if (!content) {
-    handlerLogger.error("execute_reminder failed task_name=%s content is required", task.task_name);
+    handlerLogger.error(
+      "execute_reminder failed task_name=%s content is required",
+      task.task_name,
+    );
     return { status: "failed", errorMessage: "content is required" };
   }
   const channels = toChannelList(p.channels);
+  const identify = typeof p.identify === "string" ? p.identify.trim() : "";
+  // todo: 我怎么感觉这里的逻辑很乱啊. 到底谁负责规范化参数？
   const result = await deliverReminderByChannels({
     channels,
     text: content,
+    identify,
   });
   handlerLogger.info(
     "execute_reminder completed task_name=%s status=%s",
@@ -277,7 +313,10 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
   const p = (payload ?? {}) as AgentTaskPayload;
   const goal = typeof p.goal === "string" ? p.goal.trim() : "";
   if (!goal) {
-    handlerLogger.error("execute_agent failed task_name=%s goal is required", task.task_name);
+    handlerLogger.error(
+      "execute_agent failed task_name=%s goal is required",
+      task.task_name,
+    );
     return { status: "failed", errorMessage: "goal is required" };
   }
 
@@ -296,6 +335,7 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
       message: prompt,
       channel: "web",
       sessionKey: `watchdog:task:${task.id}`,
+      identify: p.identify?.trim() || undefined,
       onEvent: () => {
         // watch-dog 不透传流式事件
       },
@@ -303,7 +343,10 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
     const finalText = result.finalText?.trim() || "任务已执行完成。";
 
     if (p.notify !== true) {
-      handlerLogger.info("execute_agent completed task_name=%s status=success notify=false", task.task_name);
+      handlerLogger.info(
+        "execute_agent completed task_name=%s status=success notify=false",
+        task.task_name,
+      );
       return { status: "success" };
     }
 
@@ -311,6 +354,7 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
     const deliverResult = await deliverReminderByChannels({
       channels,
       text: finalText,
+      identify: p.identify?.trim() ?? "",
     });
     handlerLogger.info(
       "execute_agent completed task_name=%s status=%s notify=true",
@@ -320,7 +364,11 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
     return deliverResult;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    handlerLogger.error("execute_agent failed task_name=%s error=%s", task.task_name, message);
+    handlerLogger.error(
+      "execute_agent failed task_name=%s error=%s",
+      task.task_name,
+      message,
+    );
     return { status: "failed", errorMessage: message };
   }
 };
@@ -342,4 +390,3 @@ export const HANDLERS: Record<string, TaskHandler> = {
   cleanup_logs: cleanupLogsHandler,
   one_minute_heartbeat: oneMinuteHeartbeatHandler,
 };
-

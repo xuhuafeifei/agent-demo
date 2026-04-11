@@ -129,21 +129,9 @@ export type FgbgUserRawConfig = {
     allowedScripts?: string[];
   };
   channels?: {
+    /** QQ：fgbg 只存开关；账号见 ~/.fgbg/qq/accounts.json */
     qqbot?: {
       enabled?: boolean;
-      appId?: string;
-      clientSecret?: string;
-      targetOpenid?: string;
-      accounts?: Record<
-        string,
-        {
-          enabled?: boolean;
-          appId?: string;
-          clientSecret?: string;
-          targetOpenid?: string;
-          name?: string;
-        }
-      >;
     };
     /** 微信 iLink：仅 enabled 入 fgbg，token 存 ~/.fgbg/weixin */
     weixin?: {
@@ -216,26 +204,23 @@ export type FgbgUserConfig = {
     allowedScripts: string[];
   };
   channels: {
+    /** 落盘仅 `enabled`；appId/secret/target 由 accounts.json，GET 接口再拼成展示字段 */
     qqbot: {
       enabled: boolean;
-      appId: string;
-      clientSecret: string;
-      targetOpenid?: string;
-      accounts?: Record<
-        string,
-        {
-          enabled?: boolean;
-          appId?: string;
-          clientSecret?: string;
-          targetOpenid?: string;
-          name?: string;
-        }
-      >;
     };
     weixin: {
       enabled: boolean;
     };
   };
+};
+
+/** GET /config/fgbg 等处返回的 qqbot 展示结构（来自 accounts.json，不写回 fgbg） */
+export type QqbotChannelConfigView = {
+  enabled: boolean;
+  appId: string;
+  clientSecret: string;
+  hasCredentials?: boolean;
+  targetOpenid?: string;
 };
 
 export type RuntimeModel = {

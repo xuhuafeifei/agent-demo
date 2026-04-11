@@ -31,6 +31,7 @@ import {
   tryAcquireAgent,
   releaseAgent,
   setCurrentChannel,
+  setCurrentIdentify,
 } from "./agent-state.js";
 import { formatChinaIso } from "../watch-dog/time.js";
 import { getFilterContextToolNames } from "./tool/tool-bundle.js";
@@ -197,6 +198,7 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
  * @param params.onEvent - layer 流式事件回调
  * @param params.channel - 渠道：`web` | `qq`
  * @param params.sessionKey - 会话键；省略时使用 {@link DEFAULT_SESSION_KEY}
+ * @param params.identify - 当前会话绑定的 QQ/微信 bot identify，写入 system prompt 并供工具读取
  *
  * **Session 并发策略（核心设计）**
  *
@@ -209,14 +211,17 @@ export async function getReplyFromAgent(params: {
   onEvent: (event: RuntimeStreamEvent) => void;
   channel: AgentChannel;
   sessionKey?: string;
+  identify?: string;
 }): Promise<{ finalText: string }> {
   // 刷新本地fgbg.json配置缓存
   refreshFgbgUserConfigCache();
 
-  const { message, onEvent, channel, sessionKey } = params;
+  const { message, onEvent, channel, sessionKey, identify } = params;
 
   // 设置当前渠道上下文（供工具审批使用）
   setCurrentChannel(channel);
+  const identifyTrimmed = identify?.trim() ?? "";
+  setCurrentIdentify(identifyTrimmed || null);
 
   // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
   const prepared = await prepareBeforeGetReply({
@@ -288,6 +293,7 @@ export async function getReplyFromAgent(params: {
     toolings: createToolBundle(prepared.cwd).toolings,
     skillsMeta: getSkillManager().getMetaPromptText(),
     channel: channel,
+    identify: identifyTrimmed || undefined,
   });
   agentLogger.trace(`prompt: ${prompt}`);
 
@@ -378,15 +384,11 @@ export async function runWithSingleFlight(params: {
   onAccepted?: () => void | Promise<void>;
   agentId: string;
   channel: AgentChannel;
+  /** 与本次会话绑定的 QQ/微信 bot identify，透传至 agent 与 system prompt */
+  identify?: string;
 }): Promise<{ status: "busy" | "completed"; finalText: string }> {
-  const {
-    message,
-    onEvent,
-    onBusy,
-    onAccepted,
-    channel,
-    agentId,
-  } = params;
+  const { message, onEvent, onBusy, onAccepted, channel, agentId, identify } =
+    params;
 
   if (!tryAcquireAgent(agentId)) {
     await onBusy?.();
@@ -395,7 +397,13 @@ export async function runWithSingleFlight(params: {
 
   await onAccepted?.();
   try {
-    const result = await getReplyFromAgent({ message, onEvent, channel, sessionKey: agentId });
+    const result = await getReplyFromAgent({
+      message,
+      onEvent,
+      channel,
+      sessionKey: agentId,
+      identify,
+    });
     return { status: "completed", finalText: result.finalText };
   } finally {
     releaseAgent(agentId);

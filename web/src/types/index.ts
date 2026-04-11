@@ -157,6 +157,8 @@ export interface ChannelsFormState {
   qqbotEnabled: boolean;
   qqbotAppId: string;
   qqbotClientSecret: string;
+  /** 与 GET /config/fgbg 的 hasCredentials 对齐：磁盘上是否已有 QQ 密钥 */
+  qqbotHasCredentials: boolean;
   qqbotTargetOpenid: string;
   qqbotAccounts: string;
 }

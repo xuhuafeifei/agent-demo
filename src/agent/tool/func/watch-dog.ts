@@ -132,11 +132,18 @@ const createReminderTaskParams = Type.Object({
         Type.Literal("web"),
       ]),
       {
-      minItems: 1,
-      description:
+        minItems: 1,
+        description:
           "Notification channels. Defaults to [qq]. Prefer weixin when current channel is WeChat; web is kept for backward compatibility.",
       },
     ),
+  ),
+  identify: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        'identify which user do you want to send message to. this message will be take from your system prompt "Channel" chapter',
+    }),
   ),
   taskName: Type.Optional(
     Type.String({
@@ -192,8 +199,8 @@ const createAgentTaskParams = Type.Object({
         Type.Literal("web"),
       ]),
       {
-      minItems: 1,
-      description:
+        minItems: 1,
+        description:
           "Effective when notify=true. Defaults to [qq]. Prefer weixin for WeChat scenarios; web is kept for backward compatibility.",
       },
     ),
@@ -445,6 +452,18 @@ export function createReminderTaskTool(): ToolDefinition<
         channels,
         timezone,
       };
+      // 必须设置 identify, 否则无法发送消息
+      const id = params.identify?.trim();
+      if (!id) {
+        return errResult(
+          '必须提供 identify, identify 来自你的 system prompt "Channel" 章节. 如果找不到，填写默认的 default',
+          {
+            code: "INVALID_ARGUMENT",
+            message: "identify required, identify from your system prompt 'Channel' chapter. if not found, fill in default",
+          },
+        );
+      }
+      payload.identify = id;
       if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
         payload.blacklistPeriods = params.blacklistPeriods;
       }

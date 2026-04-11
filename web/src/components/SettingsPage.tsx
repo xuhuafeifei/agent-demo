@@ -70,6 +70,7 @@ export default function SettingsPage() {
     qqbotEnabled: false,
     qqbotAppId: "",
     qqbotClientSecret: "",
+    qqbotHasCredentials: false,
     weixinEnabled: false,
   });
   const [showQqbotSecret, setShowQqbotSecret] = useState(false);
@@ -173,6 +174,7 @@ export default function SettingsPage() {
           qqbotEnabled: qqbot.enabled ?? false,
           qqbotAppId: qqbot.appId ?? "",
           qqbotClientSecret: qqbot.clientSecret ?? "",
+          qqbotHasCredentials: qqbot.hasCredentials ?? false,
           weixinEnabled: weixin.enabled ?? false,
         });
       } catch (error) {
@@ -854,8 +856,13 @@ export default function SettingsPage() {
         MessageManager.info("开启 QQBot 通道时，AppId 不能为空。");
         return;
       }
-      if (!channelsForm.qqbotClientSecret.trim()) {
-        MessageManager.info("开启 QQBot 通道时，Client Secret 不能为空。");
+      if (
+        !channelsForm.qqbotClientSecret.trim() &&
+        !channelsForm.qqbotHasCredentials
+      ) {
+        MessageManager.info(
+          "开启 QQBot 通道时，Client Secret 不能为空（若此前已保存过密钥，可留空不修改）。",
+        );
         return;
       }
     }
@@ -870,8 +877,11 @@ export default function SettingsPage() {
       draft.channels.qqbot = {
         enabled: channelsForm.qqbotEnabled,
         appId: channelsForm.qqbotAppId.trim(),
-        clientSecret: channelsForm.qqbotClientSecret,
       };
+      if (channelsForm.qqbotClientSecret.trim()) {
+        draft.channels.qqbot.clientSecret =
+          channelsForm.qqbotClientSecret.trim();
+      }
       draft.channels.weixin = {
         enabled: channelsForm.weixinEnabled,
       };
@@ -882,6 +892,10 @@ export default function SettingsPage() {
         setRawConfig(payload.config);
         setBaseConfig(payload.config);
         setMetadata(payload.metadata || {});
+        const hc = payload.config?.channels?.qqbot?.hasCredentials;
+        if (typeof hc === "boolean") {
+          setChannelsForm((prev) => ({ ...prev, qqbotHasCredentials: hc }));
+        }
       }
       MessageManager.success("保存成功");
     } catch (error) {

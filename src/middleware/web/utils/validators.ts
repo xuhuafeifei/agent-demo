@@ -109,11 +109,13 @@ export const heartbeatConfigSchema = z.object({
 /**
  * QQBot 渠道配置校验 Schema
  */
+/** PATCH：appId/clientSecret 允许空字符串，表示不修改（密钥在 ~/.fgbg/qq/） */
 export const qqbotChannelSchema = z.object({
   enabled: z.boolean().optional(),
-  appId: z.string().min(1, { message: "QQBot AppId 不能为空" }).optional(),
+  appId: z.string().optional(),
   clientSecret: z.string().optional(),
-  targetOpenid: z.string().optional(),
+  /** 运行时由 ~/.fgbg/qq/accounts.json 维护；前端可能回传 null，不参与业务校验 */
+  targetOpenid: z.string().nullish(),
   accounts: z.array(z.string()).optional().default([]),
 });
 

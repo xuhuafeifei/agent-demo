@@ -79,7 +79,7 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   createReminderTask: {
     factory: () => createReminderTaskTool(),
     description:
-      "createReminderTask(content, scheduleType, runAt?, cron?, timezone?, channels?, taskName?) - create execute_reminder scheduled task",
+      "createReminderTask(content, scheduleType, runAt?, cron?, timezone?, channels?, identify?, taskName?) - create execute_reminder. identify is required"
   },
   createAgentTask: {
     factory: () => createAgentTaskTool(),

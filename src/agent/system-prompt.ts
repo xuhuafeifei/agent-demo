@@ -1,8 +1,4 @@
-import {
-  getChannelFormattingInstruction,
-  normalizeChannel,
-  type AgentChannel,
-} from "./channel-policy.js";
+import { normalizeChannel, type AgentChannel } from "./channel-policy.js";
 
 export type BuildSystemPromptInput = {
   soul: string;
@@ -14,6 +10,8 @@ export type BuildSystemPromptInput = {
   toolings?: string[];
   skillsMeta?: string;
   channel?: AgentChannel;
+  /** 当前会话绑定的 bot identify（QQ/微信多账号路由；供 sendIMMessage 等工具对齐） */
+  identify?: string;
 };
 
 function nonEmptyOrFallback(
@@ -49,6 +47,9 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const toolings = nonEmptyListOrFallback(input.toolings, ["N/A"]);
   const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
   const channel = normalizeChannel(input.channel);
+  const identifyLine = (input.identify ?? "").trim()
+    ? `\nCurrent bot identify (for IM routing, sendIMMessage): ${(input.identify ?? "").trim()}.\nYou can use ${input.identify} as identify parameter in sendIMMessage tool.`
+    : "";
   return `## who you are
 ${soul}
 
@@ -77,7 +78,7 @@ If the user does not request it, reply in ${language}.
 Your working directory is: ${workspace}
 
 ## Channel
-${channel}
+${channel}${identifyLine}
 
 ## Memory Recall
 Do not assume memory is preloaded in this prompt.

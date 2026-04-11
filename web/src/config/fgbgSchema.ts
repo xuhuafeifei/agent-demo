@@ -84,7 +84,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     key: 'qqbot',
-    title: '通道配置（QQBot）',
+    title: '通道配置（QQBot，账号在 ~/.fgbg/qq/accounts.json）',
     fields: [
       { path: 'channels.qqbot.enabled', label: '启用 QQBot', type: 'boolean' },
       { path: 'channels.qqbot.appId', label: 'QQ AppId', type: 'text' },

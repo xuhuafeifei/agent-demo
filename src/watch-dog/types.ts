@@ -27,6 +27,8 @@ export type ScriptTaskPayload = BlacklistPayloadFields & {
 export type ReminderTaskPayload = BlacklistPayloadFields & {
   content: string;
   channels: Array<"qq" | "weixin" | "web">;
+  /** channels 含 qq 时应在创建任务时写入，对应 ~/.fgbg/qq/accounts.json 中 bot 的 identify */
+  identify?: string;
   timezone?: string;
 };
 
@@ -34,6 +36,7 @@ export type AgentTaskPayload = BlacklistPayloadFields & {
   goal: string;
   notify?: boolean;
   channels?: Array<"qq" | "weixin" | "web">;
+  identify?: string;
   timezone?: string;
   mode?: "evolve" | "analyze_then_notify";
 };

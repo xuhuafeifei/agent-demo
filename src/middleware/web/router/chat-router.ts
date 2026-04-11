@@ -13,6 +13,7 @@ import {
   toolUserRejected,
 } from "../../../agent/tool/utils/tool-result-ui.js";
 import { sanitizeToolArgs } from "../../../agent/tool/security/param-sanitizer.js";
+import { QQ_DEFAULT_IDENTIFY } from "../../../middleware/qq/qq-account.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -73,6 +74,7 @@ export function createChatRouter() {
       await runWithSingleFlight({
         message,
         channel: "web",
+        identify: QQ_DEFAULT_IDENTIFY,
         onEvent: (event: RuntimeStreamEvent) => {
           if (event.type === "message_update") {
             const delta =

@@ -137,8 +137,12 @@ export async function pollQwenPortalOAuth(oauthSessionId) {
   return payload;
 }
 
-export async function weixinLoginStart() {
-  return requestJson("/api/v1/weixin/login/start", { method: "POST" });
+export async function weixinLoginStart(identify) {
+  return requestJson("/api/v1/weixin/login/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identify }),
+  });
 }
 
 export async function weixinLoginPoll(sessionKey) {
@@ -153,8 +157,18 @@ export async function weixinStatus() {
   return requestJson("/api/v1/weixin/status");
 }
 
-export async function weixinUnbind() {
-  return requestJson("/api/v1/weixin/account", { method: "DELETE" });
+export async function weixinSetPrimary(identify) {
+  return requestJson("/api/v1/weixin/primary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identify }),
+  });
+}
+
+export async function weixinUnbind(identify) {
+  return requestJson(`/api/v1/weixin/account/${encodeURIComponent(identify)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function getHistory() {

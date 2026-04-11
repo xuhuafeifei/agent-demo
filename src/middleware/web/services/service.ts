@@ -5,6 +5,12 @@ import {
   readFgbgUserConfig,
   writeFgbgUserConfig,
 } from "../../../config/index.js";
+import {
+  clearQQAccounts,
+  getPrimaryQQBot,
+  mergePrimaryQQBotCredentials,
+  setQQBotTargetOpenIdByAppId,
+} from "../../qq/qq-account.js";
 
 /**
  * Utility type for partial config patches.
@@ -102,6 +108,26 @@ export function cloneConfig(config: FgbgUserConfig): FgbgUserConfig {
 /**
  * Apply a patch to a config object (mutates target).
  */
+/**
+ * PATCH 中空字符串的 qqbot appId/clientSecret 表示「不修改」，不参与 apply。
+ */
+function omitEmptyQQCredentialFields(
+  patch: RecursivePartial<FgbgUserConfig>,
+): RecursivePartial<FgbgUserConfig> {
+  if (!patch.channels?.qqbot) return patch;
+  const qq = { ...(patch.channels.qqbot as Record<string, unknown>) };
+  if (qq.appId === "") delete qq.appId;
+  if (qq.clientSecret === "") delete qq.clientSecret;
+  if (qq.targetOpenid === "" || qq.targetOpenid == null) delete qq.targetOpenid;
+  return {
+    ...patch,
+    channels: {
+      ...patch.channels,
+      qqbot: qq as FgbgUserConfig["channels"]["qqbot"],
+    },
+  };
+}
+
 export function applyConfigPatch(
   target: Record<string, unknown>,
   patch: Record<string, unknown>,
@@ -168,12 +194,50 @@ export function patchConfig(patch: RecursivePartial<FgbgUserConfig>): {
     throw new Error("尝试修改受保护字段（例如 qwen API Key），操作被拒绝。");
   }
 
+  const qqPatch = patch.channels?.qqbot as Record<string, unknown> | undefined;
+  if (qqPatch && typeof qqPatch === "object") {
+    const cred: { appId?: string; clientSecret?: string } = {};
+    if (typeof qqPatch.appId === "string" && qqPatch.appId.trim() !== "") {
+      cred.appId = qqPatch.appId.trim();
+    }
+    if (
+      typeof qqPatch.clientSecret === "string" &&
+      qqPatch.clientSecret.trim() !== ""
+    ) {
+      cred.clientSecret = qqPatch.clientSecret.trim();
+    }
+    if (Object.keys(cred).length > 0) {
+      mergePrimaryQQBotCredentials(cred);
+    }
+    if (
+      typeof qqPatch.targetOpenid === "string" &&
+      qqPatch.targetOpenid.trim() !== ""
+    ) {
+      const appIdForTarget =
+        typeof qqPatch.appId === "string" && qqPatch.appId.trim() !== ""
+          ? qqPatch.appId.trim()
+          : getPrimaryQQBot()?.appId?.trim() ?? "";
+      if (appIdForTarget) {
+        setQQBotTargetOpenIdByAppId(
+          appIdForTarget,
+          qqPatch.targetOpenid.trim(),
+        );
+      }
+    }
+  }
+
+  const patchForApply = omitEmptyQQCredentialFields(patch);
+
   const current = readFgbgUserConfig();
   const updated = cloneConfig(current);
   applyConfigPatch(
     updated as Record<string, unknown>,
-    patch as Record<string, unknown>,
+    patchForApply as Record<string, unknown>,
   );
+
+  updated.channels.qqbot = {
+    enabled: updated.channels.qqbot.enabled,
+  };
 
   // 校验：保护 qwen-portal 不被删除
   if (current.models?.providers?.["qwen-portal"]) {
@@ -198,6 +262,7 @@ export function resetConfig(): {
   config: FgbgUserConfig;
   metadata: ReturnType<typeof buildConfigMetadata>;
 } {
+  clearQQAccounts();
   const defaults = getDefaultFgbgUserConfig();
   writeFgbgUserConfig(defaults);
   evicateFgbgUserConfigCache();
@@ -257,6 +322,10 @@ export function resetConfigSection(sectionPath: string): {
   // 将最后一级的值替换为默认值
   const lastPart = pathParts[pathParts.length - 1];
   (targetSection as Record<string, unknown>)[lastPart] = defaultSection;
+
+  if (sectionPath === "channels.qqbot") {
+    clearQQAccounts();
+  }
 
   // 写入磁盘并清除缓存
   writeFgbgUserConfig(updated);

@@ -14,9 +14,9 @@ import {
   fetchQrStatus,
 } from "./weixin-ilink.js";
 import {
-  loadWeixinAccount,
-  saveWeixinAccount,
-  type WeixinBoundAccount,
+  isValidIdentify,
+  type WeixinBoundBot,
+  upsertWeixinBot,
 } from "./weixin-account.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
@@ -29,6 +29,7 @@ const POLL_TIMEOUT_MS = 12_000;
 
 /** 登录会话信息类型 */
 type Login = {
+  identify: string;
   qrcode: string; // 二维码内容
   qrcodeUrl: string; // 二维码图片地址（data URL 格式）
   currentApiBase: string; // 当前 API 基础地址
@@ -49,10 +50,23 @@ const sessions = new Map<string, Login>();
 export async function startWeixinQrSessionAsync(): Promise<{
   sessionKey: string;
   qrcodeUrl: string;
+}>;
+export async function startWeixinQrSessionAsync(identify: string): Promise<{
+  sessionKey: string;
+  qrcodeUrl: string;
+}>;
+export async function startWeixinQrSessionAsync(identify?: string): Promise<{
+  sessionKey: string;
+  qrcodeUrl: string;
 }> {
+  const id = String(identify ?? "").trim();
+  if (!isValidIdentify(id)) {
+    throw new Error("identify 仅允许英文、数字、下划线，且不能为空");
+  }
   const sessionKey = randomUUID();
   const qr = await fetchBotQrCode(ILINK_FIXED_ORIGIN);
   sessions.set(sessionKey, {
+    identify: id,
     qrcode: qr.qrcode,
     qrcodeUrl: qr.qrcode_img_content,
     currentApiBase: ILINK_FIXED_ORIGIN,
@@ -68,7 +82,7 @@ export async function startWeixinQrSessionAsync(): Promise<{
 /** 轮询登录状态的结果类型 */
 export type PollResult =
   | { phase: "pending"; hint?: string; qrcodeUrl?: string } // 等待中
-  | { phase: "done"; account: WeixinBoundAccount } // 登录成功
+  | { phase: "done"; account: WeixinBoundBot } // 登录成功
   | { phase: "error"; message: string }; // 登录失败
 
 function isAbortLikeError(error: unknown): boolean {
@@ -143,31 +157,25 @@ export async function pollWeixinQrSession(
     return { phase: "error", message: "未返回微信用户标识，绑定失败" };
   }
 
-  // 检查是否已绑定其他微信账号
-  const existing = loadWeixinAccount();
-  if (existing && existing.linkedUserId !== uid) {
-    sessions.delete(sessionKey);
-    return {
-      phase: "error",
-      message: "已绑定其他微信账号，请先解绑后再扫码",
-    };
-  }
-
-  // 保存绑定账号信息
   const baseUrl = (st.baseurl?.trim() || login.currentApiBase).replace(
     /\/$/,
     "",
   );
-  const account: WeixinBoundAccount = {
+  const saved = upsertWeixinBot({
+    identify: login.identify,
     token: st.bot_token,
     baseUrl,
     botId: st.ilink_bot_id,
     linkedUserId: uid,
-  };
-  log.debug(`weixin login success: ${JSON.stringify(account)}`);
-
-  saveWeixinAccount(account);
+  });
+  if (!saved.ok) {
+    sessions.delete(sessionKey);
+    return { phase: "error", message: saved.error };
+  }
+  log.debug(
+    `weixin login success identify=${login.identify} botId=${saved.bot.botId} linkedUserId=${saved.bot.linkedUserId}`,
+  );
   sessions.delete(sessionKey);
 
-  return { phase: "done", account };
+  return { phase: "done", account: saved.bot };
 }

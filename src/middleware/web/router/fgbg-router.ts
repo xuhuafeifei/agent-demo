@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { FgbgUserConfig, QqbotChannelConfigView } from "../../../types.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import {
   readConfigWithMetadata,
@@ -13,8 +14,19 @@ import {
   weixinChannelSchema,
   heartbeatConfigSchema,
 } from "../utils/validators.js";
+import { getQqbotChannelForApi } from "../../qq/qq-account.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
+
+/** fgbg 里 qqbot 只有 enabled；响应里替换为 accounts.json 拼出的展示字段 */
+function maskQqbotChannelForResponse(config: FgbgUserConfig): void {
+  const enabled = config.channels.qqbot.enabled;
+  (
+    config as unknown as {
+      channels: { qqbot: QqbotChannelConfigView };
+    }
+  ).channels.qqbot = getQqbotChannelForApi(enabled);
+}
 
 /**
  * Fgbg config router: /config/fgbg
@@ -26,17 +38,7 @@ export function createFgbgRouter() {
   router.get("/", (_req, res) => {
     try {
       const result = readConfigWithMetadata();
-
-      // 对 qqbot 配置进行脱敏，只返回 enabled、appId、clientSecret 三个字段
-      const config = result.config;
-      if (config.channels?.qqbot) {
-        const qqbot = config.channels.qqbot;
-        config.channels.qqbot = {
-          enabled: qqbot.enabled,
-          appId: qqbot.appId,
-          clientSecret: qqbot.clientSecret,
-        } as any;
-      }
+      maskQqbotChannelForResponse(result.config);
 
       res.json({
         success: true,
@@ -107,6 +109,7 @@ export function createFgbgRouter() {
       }
 
       const result = patchConfig(patchRaw);
+      maskQqbotChannelForResponse(result.config);
       res.json({
         success: true,
         config: result.config,
@@ -127,6 +130,7 @@ export function createFgbgRouter() {
   router.post("/reset", (_req, res) => {
     try {
       const result = resetConfig();
+      maskQqbotChannelForResponse(result.config);
       res.json({
         success: true,
         config: result.config,
@@ -155,6 +159,7 @@ export function createFgbgRouter() {
 
     try {
       const result = resetConfigSection(section);
+      maskQqbotChannelForResponse(result.config);
       res.json({
         success: true,
         config: result.config,

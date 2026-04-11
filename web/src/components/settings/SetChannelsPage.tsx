@@ -4,6 +4,7 @@ import { Eye, EyeOff, HelpCircle } from "lucide-react";
 import {
   weixinLoginStart,
   weixinLoginPoll,
+  weixinSetPrimary,
   weixinStatus,
   weixinUnbind,
 } from "../../api/configApi";
@@ -38,23 +39,45 @@ export default function SetChannelsPage({ channelsTab }) {
     handleSaveChannels,
   } = channelsTab;
 
-  const [weixinBound, setWeixinBound] = useState(false);
-  const [weixinMasked, setWeixinMasked] = useState(null);
-  /** 用户点击「扫码绑定」后同步 window.open；若为 null 多半被浏览器拦截弹窗 */
-  const [weixinPopupLikelyBlocked, setWeixinPopupLikelyBlocked] =
-    useState(false);
-  const [weixinBinding, setWeixinBinding] = useState(false);
-  /** 串行轮询代次：新一次「扫码绑定」或卸载时递增，旧循环自动退出 */
-  const weixinPollGenRef = useRef(0);
+  const [weixinBots, setWeixinBots] = useState([]);
+  const [weixinPrimary, setWeixinPrimaryLocal] = useState("");
+  const weixinPollGenRef = useRef({});
 
   const refreshWeixin = async () => {
     try {
       const r = await weixinStatus();
-      setWeixinBound(!!r.bound);
-      setWeixinMasked(r.linkedUserIdMasked ?? null);
+      const remoteBots = Array.isArray(r.bots) ? r.bots : [];
+      setWeixinPrimaryLocal(r.primary || "");
+      setWeixinBots((prev) => {
+        const byIdentify = new Map(prev.map((b) => [b.identify, b]));
+        const merged = remoteBots.map((rb) => {
+          const local = byIdentify.get(rb.identify) || {};
+          return {
+            identify: rb.identify || "",
+            bound: true,
+            linkedUserIdMasked: rb.linkedUserIdMasked || "",
+            botId: rb.botId || "",
+            binding: false,
+            popupLikelyBlocked: false,
+            ...local,
+            identify: rb.identify || "",
+            bound: true,
+            linkedUserIdMasked: rb.linkedUserIdMasked || "",
+            botId: rb.botId || "",
+            binding: false,
+          };
+        });
+        // 保留本地新增但未绑定的空行
+        for (const b of prev) {
+          if (!b.bound && !merged.some((x) => x.identify === b.identify && b.identify)) {
+            merged.push(b);
+          }
+        }
+        return merged;
+      });
     } catch {
-      setWeixinBound(false);
-      setWeixinMasked(null);
+      setWeixinBots([]);
+      setWeixinPrimaryLocal("");
     }
   };
 
@@ -64,17 +87,32 @@ export default function SetChannelsPage({ channelsTab }) {
 
   useEffect(() => {
     return () => {
-      weixinPollGenRef.current += 1;
+      weixinPollGenRef.current = {};
     };
   }, []);
 
-  const startWeixinBind = async () => {
+  const setBotPartial = (idx, patch) => {
+    setWeixinBots((prev) =>
+      prev.map((b, i) => (i === idx ? { ...b, ...patch } : b)),
+    );
+  };
+
+  const startWeixinBind = async (idx) => {
+    const item = weixinBots[idx];
+    const identify = String(item?.identify ?? "").trim();
+    if (!identify) {
+      MessageManager.info("请先填写 identify");
+      return;
+    }
+    if (!/^[A-Za-z0-9_]+$/.test(identify)) {
+      MessageManager.info("identify 仅允许英文、数字、下划线");
+      return;
+    }
     if (!channelsForm.weixinEnabled) {
       MessageManager.info("请先勾选启用微信通道并保存。");
       return;
     }
-    setWeixinBinding(true);
-    setWeixinPopupLikelyBlocked(false);
+    setBotPartial(idx, { binding: true, popupLikelyBlocked: false });
 
     /**
      * 必须在点击事件里同步打开，否则弹窗易被拦截。
@@ -90,11 +128,11 @@ export default function SetChannelsPage({ channelsTab }) {
       /* ignore */
     }
     if (!qrTab) {
-      setWeixinPopupLikelyBlocked(true);
+      setBotPartial(idx, { popupLikelyBlocked: true });
     }
 
     try {
-      const start = await weixinLoginStart();
+      const start = await weixinLoginStart(identify);
       if (!start.success || !start.sessionKey) {
         throw new Error(start.error || "无法获取二维码");
       }
@@ -119,28 +157,33 @@ export default function SetChannelsPage({ channelsTab }) {
       }
 
       const sk = start.sessionKey;
-      const myGen = ++weixinPollGenRef.current;
+      const myGen = Date.now();
+      weixinPollGenRef.current[identify] = myGen;
 
       /**
        * 必须串行：后端单次 poll 会 long-poll 微信最多约 12s。
        * 失败仅打服务端日志，前端不弹错（见 weixin-router）。
        */
       const pollLoop = async () => {
-        while (weixinPollGenRef.current === myGen) {
+        while (weixinPollGenRef.current[identify] === myGen) {
           try {
             const p = await weixinLoginPoll(sk);
-            if (weixinPollGenRef.current !== myGen) return;
+            if (weixinPollGenRef.current[identify] !== myGen) return;
 
             if (p.phase === "done") {
-              setWeixinBinding(false);
+              setBotPartial(idx, { binding: false, bound: true });
               await refreshWeixin();
               MessageManager.success("微信已绑定");
               return;
             }
+            if (p.phase === "error") {
+              setBotPartial(idx, { binding: false });
+              return;
+            }
             await new Promise((r) => setTimeout(r, 2000));
           } catch {
-            if (weixinPollGenRef.current !== myGen) return;
-            setWeixinBinding(false);
+            if (weixinPollGenRef.current[identify] !== myGen) return;
+            setBotPartial(idx, { binding: false });
             return;
           }
         }
@@ -155,19 +198,43 @@ export default function SetChannelsPage({ channelsTab }) {
           /* ignore */
         }
       }
-      setWeixinBinding(false);
+      setBotPartial(idx, { binding: false });
       MessageManager.error(e?.message || String(e));
     }
   };
 
-  const handleWeixinUnbind = async () => {
+  const handleWeixinUnbind = async (identify) => {
+    if (!identify) return;
     try {
-      await weixinUnbind();
+      await weixinUnbind(identify);
       await refreshWeixin();
       MessageManager.success("已解绑");
     } catch (e) {
       MessageManager.error(e?.message || String(e));
     }
+  };
+
+  const handleSetPrimary = async (identify) => {
+    try {
+      await weixinSetPrimary(identify);
+      setWeixinPrimaryLocal(identify);
+    } catch (e) {
+      MessageManager.error(e?.message || String(e));
+    }
+  };
+
+  const addWeixinBotRow = () => {
+    setWeixinBots((prev) => [
+      ...prev,
+      {
+        identify: "",
+        bound: false,
+        linkedUserIdMasked: "",
+        botId: "",
+        binding: false,
+        popupLikelyBlocked: false,
+      },
+    ]);
   };
 
   return (
@@ -253,7 +320,11 @@ export default function SetChannelsPage({ channelsTab }) {
                           qqbotClientSecret: e.target.value,
                         }))
                       }
-                      placeholder="请输入 Client Secret"
+                      placeholder={
+                        channelsForm.qqbotHasCredentials
+                          ? "已保存，留空则不修改"
+                          : "请输入 Client Secret"
+                      }
                     />
                     <button
                       type="button"
@@ -298,44 +369,80 @@ export default function SetChannelsPage({ channelsTab }) {
 
             <div className="settings-channel-fields">
               <p className="settings-channels-desc" style={{ marginBottom: 8 }}>
-                先保存「启用」再扫码。凭证仅存本机 ~/.fgbg/weixin。已绑定其他微信时换号需先解绑。
+                先保存「启用」再扫码。最多绑定 3 个 bot；每个 bot 需唯一 identify（英文/数字/下划线）。
               </p>
-              <div className="settings-form-group" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <div className="settings-form-group" style={{ marginBottom: 10 }}>
                 <button
                   type="button"
                   className="settings-save-btn"
-                  disabled={weixinBinding || saving}
-                  onClick={() => void startWeixinBind()}
+                  disabled={weixinBots.length >= 3 || saving}
+                  onClick={addWeixinBotRow}
                 >
-                  {weixinBinding ? "等待扫码…" : "扫码绑定"}
+                  + 新增微信 Bot
                 </button>
-                <button
-                  type="button"
-                  className="settings-reset-btn"
-                  disabled={!weixinBound || saving}
-                  onClick={() => void handleWeixinUnbind()}
-                >
-                  解绑
-                </button>
-                <span className="settings-form-label" style={{ margin: 0 }}>
-                  {weixinBound
-                    ? `已绑定 ${weixinMasked || ""}`
-                    : "未绑定"}
-                </span>
               </div>
-              {weixinBinding ? (
-                <div style={{ marginTop: 8 }}>
-                  <p className="settings-channels-desc">
-                    {weixinPopupLikelyBlocked
-                      ? "未检测到新标签页（可能被浏览器拦截弹窗）。请在地址栏允许本站弹窗后，再点一次「扫码绑定」。"
-                      : "已在新的浏览器标签页打开二维码；请用微信扫描或确认。等待手机确认时，每次查询可能需十余秒；二维码会话约 5 分钟内有效。"}
-                  </p>
-                  {/*
-                    未使用 iframe：微信/liteapp 页面普遍带 X-Frame-Options，内嵌多为白屏；
-                    采用点击瞬间同步 window.open(about:blank) 再赋 URL，免用户二次点击。
-                  */}
+              {weixinBots.map((bot, idx) => (
+                <div
+                  key={`${bot.identify || "draft"}-${idx}`}
+                  style={{
+                    border: "1px solid #2e2e2e",
+                    borderRadius: 8,
+                    padding: 10,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div className="settings-form-group" style={{ marginBottom: 8 }}>
+                    <label className="settings-form-label">identify（必填）</label>
+                    <input
+                      type="text"
+                      className="settings-form-input"
+                      value={bot.identify}
+                      disabled={bot.bound || bot.binding}
+                      onChange={(e) => setBotPartial(idx, { identify: e.target.value.trim() })}
+                      placeholder="例如: my_dad / my_mom / self_main"
+                    />
+                  </div>
+                  <div className="settings-form-group" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      type="button"
+                      className="settings-save-btn"
+                      disabled={bot.binding || saving}
+                      onClick={() => void startWeixinBind(idx)}
+                    >
+                      {bot.binding ? "等待扫码…" : "扫码绑定"}
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-reset-btn"
+                      disabled={!bot.bound || bot.binding || saving}
+                      onClick={() => void handleWeixinUnbind(bot.identify)}
+                    >
+                      解绑
+                    </button>
+                    <label className="settings-form-label" style={{ margin: 0 }}>
+                      <input
+                        type="radio"
+                        checked={weixinPrimary === bot.identify && !!bot.identify}
+                        disabled={!bot.bound || !bot.identify}
+                        onChange={() => void handleSetPrimary(bot.identify)}
+                      />
+                      <span style={{ marginLeft: 6 }}>设为主 Bot</span>
+                    </label>
+                    <span className="settings-form-label" style={{ margin: 0 }}>
+                      {bot.bound
+                        ? `已绑定 ${bot.linkedUserIdMasked || ""}`
+                        : "未绑定"}
+                    </span>
+                  </div>
+                  {bot.binding ? (
+                    <p className="settings-channels-desc" style={{ marginTop: 8 }}>
+                      {bot.popupLikelyBlocked
+                        ? "未检测到新标签页（可能被浏览器拦截弹窗）。请允许本站弹窗后，再点一次「扫码绑定」。"
+                        : "已在新标签页打开二维码，请扫码或手机确认。"}
+                    </p>
+                  ) : null}
                 </div>
-              ) : null}
+              ))}
             </div>
           </div>
         </div>

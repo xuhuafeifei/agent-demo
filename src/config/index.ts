@@ -1,7 +1,5 @@
 import path from "node:path";
-import {
-  resolveToolSecurityConfig,
-} from "../agent/tool/security/index.js";
+import { resolveToolSecurityConfig } from "../agent/tool/security/index.js";
 import type {
   FgbgUserConfig,
   FgbgUserRawConfig,
@@ -16,6 +14,9 @@ import {
   buildImplicitProviderTemplates,
   parseModelRef,
 } from "../agent/pi-embedded-runner/model-config.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
+
+const log = getSubsystemConsoleLogger("config");
 
 function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
   const modelsMode = raw.models?.mode ?? "merge";
@@ -117,10 +118,6 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
     channels: {
       qqbot: {
         enabled: raw.channels?.qqbot?.enabled ?? false,
-        appId: raw.channels?.qqbot?.appId ?? "",
-        clientSecret: raw.channels?.qqbot?.clientSecret ?? "",
-        targetOpenid: raw.channels?.qqbot?.targetOpenid,
-        accounts: raw.channels?.qqbot?.accounts,
       },
       weixin: {
         enabled: raw.channels?.weixin?.enabled ?? false,
@@ -128,30 +125,36 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
     },
   };
 
-  // qqbot通道配置校验
-  if (cfg.channels.qqbot.enabled === true && !cfg.channels.qqbot.appId) {
-    throw new Error("开启qqbot通道时, qqbot.appId 不能为空");
-  }
-  if (cfg.channels.qqbot.enabled === true && !cfg.channels.qqbot.clientSecret) {
-    throw new Error("开启qqbot通道时, qqbot.clientSecret 不能为空");
-  }
+  // 不再进行qqbot通道配置校验. 如果开启却不存在appId，则让后续流程报错，不影响底层的核心功能
 
   // memorySearch配置校验
   if (
     cfg.agents.memorySearch.mode === "remote" &&
     !cfg.agents.memorySearch.endpoint
   ) {
-    throw new Error(
-      "memorySearch.mode=remote 时, memorySearch.endpoint 不能为空",
+    log.warn(
+      "memorySearch.mode=remote 时, memorySearch.endpoint 不能为空, 降级成local模式",
     );
+    // 降级成local模式
+    cfg.agents.memorySearch.mode = "local";
+    cfg.agents.memorySearch.model = "nomic-embed-text-v1.5.Q4_K_M";
+    // throw new Error(
+    //   "memorySearch.mode=remote 时, memorySearch.endpoint 不能为空",
+    // );
   }
   if (
     cfg.agents.memorySearch.mode === "remote" &&
     !cfg.agents.memorySearch.apiKey
   ) {
-    throw new Error(
-      "memorySearch.mode=remote 时, memorySearch.apiKey 不能为空",
+    log.warn(
+      "memorySearch.mode=remote 时, memorySearch.apiKey 不能为空, 降级成local模式",
     );
+    // 降级成local模式
+    cfg.agents.memorySearch.mode = "local";
+    cfg.agents.memorySearch.model = "nomic-embed-text-v1.5.Q4_K_M";
+    // throw new Error(
+    //   "memorySearch.mode=remote 时, memorySearch.apiKey 不能为空",
+    // );
   }
   if (cfg.agents.memorySearch.mode === "local") {
     cfg.agents.memorySearch.model = "nomic-embed-text-v1.5.Q4_K_M";

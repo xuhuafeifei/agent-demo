@@ -63,10 +63,7 @@
   },
   "channels": {
     "qqbot": {
-      "enabled": true,
-      "appId": "",
-      "clientSecret": "",
-      "targetOpenid": ""
+      "enabled": true
     }
   },
   "toolSecurity": {
