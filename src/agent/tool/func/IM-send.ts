@@ -5,7 +5,7 @@ import {
   sendIMDirectMessage,
   type IMSendChannel,
 } from "../../../middleware/im/im-send.js";
-import { loadLastIMTarget } from "../../../middleware/im/im-target.js";
+import { loadWeixinAccounts, WX_DEFAULT_IDENTIFY } from "../../../middleware/weixin/weixin-account.js";
 import { getCurrentIdentify } from "../../agent-state.js";
 import {
   getQQBotByIdentify,
@@ -56,25 +56,22 @@ export function createIMSendTool(): ToolDefinition<
           message: "content 不能为空",
         });
       }
-      const qqIdentify =
-        params.identify?.trim() ||
-        getCurrentIdentify()?.trim() ||
-        QQ_DEFAULT_IDENTIFY;
 
+      // identify 由 channel 路由，QQ 默认用 default，微信默认用 primary
+      const identify = params.identify?.trim() || getCurrentIdentify()?.trim();
+
+      // 获取目标用户 ID：QQ 从 bot 记录读取，微信从 accounts 中对应 bot 的 peerUserId 读取
       const toUserId =
         channel === "qq"
-          ? (getQQBotByIdentify(qqIdentify)?.targetOpenId?.trim() ?? "")
-          : loadLastIMTarget("weixin");
-      if (!toUserId) {
-        return errResult(`未找到 ${channel} 最近用户，请先让用户给你发一条消息`, {
-          code: "NOT_FOUND",
-          message: `${channel} target user missing`,
-        });
-      }
-      const sent =
-        channel === "qq"
-          ? await sendIMDirectMessage(channel, content, qqIdentify)
-          : await sendIMDirectMessage(channel, content);
+          ? (getQQBotByIdentify(identify || QQ_DEFAULT_IDENTIFY)?.targetOpenId?.trim() ?? "")
+          : (() => {
+              const store = loadWeixinAccounts();
+              const botIdentify = identify || store.primary || WX_DEFAULT_IDENTIFY;
+              const bot = store.bots.find((b) => b.identify === botIdentify);
+              return bot?.peerUserId?.trim() ?? "";
+            })();
+
+      const sent = await sendIMDirectMessage(channel, content, identify);
       if (!sent) {
         return errResult(`${channel} 消息发送失败`, {
           code: "INTERNAL_ERROR",

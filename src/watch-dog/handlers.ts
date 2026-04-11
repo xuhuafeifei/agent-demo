@@ -232,26 +232,17 @@ async function deliverReminderByChannels(params: {
       if (ok) successCount++;
       else errors.push("qq send failed");
     } else if (ch === "weixin") {
-      const ok = await sendWeixinDirectMessage(text);
+      // 微信 now requires identify to select the bot and read peerUserId from accounts
+      const id = identify.trim();
+      if (!id) {
+        errors.push("identify is required");
+        continue;
+      }
+      const ok = await sendWeixinDirectMessage(text, id);
       if (ok) successCount++;
       else errors.push("weixin send failed");
     } else if (ch === "web") {
-      // todo: 未来把兼容内容给干掉。直接 web 推送
-      // 兼容历史任务：旧版本只支持 qq/web，模型常把“微信”落成 web。
-      if (readFgbgUserConfig().channels.weixin?.enabled) {
-        handlerLogger.warn(
-          "[deliver_reminder] web channel is deprecated, fallback to weixin",
-        );
-        const ok = await sendWeixinDirectMessage(text);
-        if (ok) successCount++;
-        else errors.push("web->weixin send failed");
-      } else {
-        // web 通知渠道暂未实现，记录警告但不阻塞任务
-        handlerLogger.warn(
-          "[deliver_reminder] web channel is not implemented yet, skipping",
-        );
-        errors.push("web channel not implemented");
-      }
+      throw new Error("web channel is not implemented yet");
     }
   }
 

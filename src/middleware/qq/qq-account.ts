@@ -315,7 +315,7 @@ export function getQqbotChannelForApi(enabled: boolean): QqbotChannelConfigView 
   return {
     enabled,
     appId: bot?.appId ?? "",
-    clientSecret: "",
+    clientSecret: bot?.clientSecret ?? "",
     hasCredentials: hasQQAccountCredentials(),
     targetOpenid: bot?.targetOpenId ?? "",
   };
