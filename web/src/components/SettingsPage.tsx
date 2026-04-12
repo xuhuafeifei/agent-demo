@@ -879,7 +879,10 @@ export default function SettingsPage() {
           : JSON.parse(JSON.stringify(rawConfig || {}));
 
       if (!draft.channels) draft.channels = {};
+      // 与 base 对齐展示字段，避免 deepDiff 把「未写在 draft 里的键」当成删除而打成 null（校验/写盘都不需要 null clientSecret）
+      const baseQq = baseConfig.channels?.qqbot ?? {};
       draft.channels.qqbot = {
+        ...baseQq,
         enabled: channelsForm.qqbotEnabled,
         appId: channelsForm.qqbotAppId.trim(),
       };
@@ -888,6 +891,7 @@ export default function SettingsPage() {
           channelsForm.qqbotClientSecret.trim();
       }
       draft.channels.weixin = {
+        ...(baseConfig.channels?.weixin ?? {}),
         enabled: channelsForm.weixinEnabled,
       };
 

@@ -112,8 +112,11 @@ export const heartbeatConfigSchema = z.object({
 /** PATCH：appId/clientSecret 允许空字符串，表示不修改（密钥在 ~/.fgbg/qq/） */
 export const qqbotChannelSchema = z.object({
   enabled: z.boolean().optional(),
-  appId: z.string().optional(),
-  clientSecret: z.string().optional(),
+  appId: z.string().nullish(),
+  /** deepDiff 对「相对 base 缺失的键」会填 null；GET 展示里也可能是 null */
+  clientSecret: z.string().nullish(),
+  /** GET 拼出来的展示字段，不参与写盘，仅允许出现在 PATCH 里 */
+  hasCredentials: z.boolean().nullish(),
   /** 运行时由 ~/.fgbg/qq/accounts.json 维护；前端可能回传 null，不参与业务校验 */
   targetOpenid: z.string().nullish(),
   accounts: z.array(z.string()).optional().default([]),

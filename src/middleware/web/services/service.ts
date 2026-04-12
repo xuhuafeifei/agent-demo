@@ -116,8 +116,9 @@ function omitEmptyQQCredentialFields(
 ): RecursivePartial<FgbgUserConfig> {
   if (!patch.channels?.qqbot) return patch;
   const qq = { ...(patch.channels.qqbot as Record<string, unknown>) };
-  if (qq.appId === "") delete qq.appId;
-  if (qq.clientSecret === "") delete qq.clientSecret;
+  delete qq.hasCredentials;
+  if (qq.appId === "" || qq.appId == null) delete qq.appId;
+  if (qq.clientSecret === "" || qq.clientSecret == null) delete qq.clientSecret;
   if (qq.targetOpenid === "" || qq.targetOpenid == null) delete qq.targetOpenid;
   return {
     ...patch,
