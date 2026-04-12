@@ -1,17 +1,18 @@
 import { Router } from "express";
-import { getAgentRuntimeState } from "../../../agent/run.js";
+import { getAllRunningAgentStates } from "../../../agent/run.js";
 
 /**
  * Status router: GET /status
+ * 返回当前所有正在运行的 agent 状态（按租户隔离）。
  */
 export function createStatusRouter() {
   const router = Router();
 
   router.get("/", (_req, res) => {
-    const runtimeState = getAgentRuntimeState();
+    const runtimeStates = getAllRunningAgentStates();
     res.json({
       success: true,
-      runtime: runtimeState,
+      runtime: runtimeStates,
     });
   });
 

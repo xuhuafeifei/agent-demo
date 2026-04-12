@@ -10,7 +10,7 @@ import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
-import { getCurrentChannel } from "../../agent-state.js";
+import { getAgentState } from "../../agent-state.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -26,9 +26,14 @@ type WriteOutput = {
   bytesWritten: number;
 };
 
-/** 写入文件内容，覆盖已有内容 */
+/**
+ * 创建文件写入工具。
+ * @param workspace 租户 workspace 目录（用于路径安全检查）
+ * @param tenantId 租户 ID（用于获取当前渠道信息，供审批使用）
+ */
 export function createWriteTool(
   workspace: string,
+  tenantId: string,
 ): ToolDefinition<typeof writeParameters, ToolDetails<WriteOutput>> {
   return {
     name: "write",
@@ -69,7 +74,7 @@ export function createWriteTool(
           { path: params.path, contentLength: params.content.length },
           `写入文件: ${params.path} (${params.content.length} 字符)`,
           {
-            channel: getCurrentChannel(),
+            channel: getAgentState(tenantId)?.channel ?? "web",
             unapprovableStrategy: securityConfig.unapprovableStrategy,
             timeoutMs: securityConfig.approval.timeoutMs,
           },

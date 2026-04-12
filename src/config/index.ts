@@ -5,10 +5,7 @@ import type {
   FgbgUserRawConfig,
   ProviderConfig,
 } from "../types.js";
-import {
-  resolveGlobalConfigPath,
-  resolveWorkspaceDir,
-} from "../utils/app-path.js";
+import { resolveGlobalConfigPath } from "../utils/app-path.js";
 import fs from "node:fs";
 import {
   buildImplicitProviderTemplates,
@@ -76,7 +73,6 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
             alias: "qwen-portal",
           },
         },
-        workspace: raw.agents?.defaults?.workspace ?? resolveWorkspaceDir(),
       },
       retry: {
         baseDelayMs: raw.agents?.retry?.baseDelayMs ?? 1000,
@@ -116,6 +112,10 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
       allowedScripts: raw.heartbeat?.allowedScripts ?? [],
     },
     channels: {
+      web: {
+        // web 端当前为单租户，tenantId 固定配置，默认 "default"
+        tenantId: raw.channels?.web?.tenantId?.trim() || "default",
+      },
       qqbot: {
         enabled: raw.channels?.qqbot?.enabled ?? false,
       },

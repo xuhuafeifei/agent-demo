@@ -25,7 +25,7 @@ const persistKnowledgeParameters = Type.Object(
       [
         Type.Literal("memory", {
           description:
-            "Records of important events or topics, written under ~/.fgbg/memory/",
+            "Records of important events or topics, written under workspace/memory/",
         }),
         Type.Literal("userinfo", {
           description:
@@ -88,8 +88,7 @@ function buildMemoryMarkdown(body: string): string {
 /** 仅允许单层安全文件名 *.md */
 function safeMarkdownBasename(input: string): string | null {
   const t = input.trim();
-  if (!t || t.includes("/") || t.includes("\\") || t.includes("\0"))
-    return null;
+  if (!t || t.includes("/") || t.includes("\\") || t.includes("\0")) return null;
   const base = path.basename(t);
   if (base !== t) return null;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.md$/i.test(base)) return null;
@@ -119,10 +118,16 @@ async function writeNewFile(params: {
 }
 
 /**
- * 按 type 写入固定根目录：memory → ~/.fgbg/memory；userinfo / skill → workspace 下对应目录。
+ * 创建知识持久化工具。
+ * 按 type 写入租户私有目录：
+ *   memory   → tenants/{tenantId}/workspace/memory/
+ *   userinfo → tenants/{tenantId}/workspace/userinfo/
+ *   skill    → tenants/{tenantId}/workspace/skills/<path>/SKILL.md
+ *
+ * @param tenantId 租户 ID，用于定位写入目录
  */
 export function createPersistKnowledgeTool(
-  _workspace: string,
+  tenantId: string,
 ): ToolDefinition<
   typeof persistKnowledgeParameters,
   ToolDetails<PersistKnowledgeOutput>
@@ -131,7 +136,7 @@ export function createPersistKnowledgeTool(
     name: "persistKnowledge",
     label: "Persist knowledge",
     description:
-      "Persist structured knowledge. memory: records of important events/topics (~/.fgbg/workspace/memory/, no frontmatter); userinfo: user profile/preferences (workspace/userinfo/, with frontmatter); skill: reusable workflow (workspace/skills/<path>/SKILL.md, with frontmatter). All inputs are required and selectively used by type.",
+      "Persist structured knowledge. memory: records of important events/topics (workspace/memory/, no frontmatter); userinfo: user profile/preferences (workspace/userinfo/, with frontmatter); skill: reusable workflow (workspace/skills/<path>/SKILL.md, with frontmatter). All inputs are required and selectively used by type.",
     parameters: persistKnowledgeParameters,
     execute: async (
       _toolCallId,
@@ -145,20 +150,14 @@ export function createPersistKnowledgeTool(
       if (!fileName) {
         return errResult(
           "Invalid fileName: only single-level *.md with letters, digits, _, ., -",
-          {
-            code: "INVALID_ARGUMENT",
-            message: "invalid fileName",
-          },
+          { code: "INVALID_ARGUMENT", message: "invalid fileName" },
         );
       }
       const safeSkillDir = sanitizeSkillDir(params.path);
       if (!safeSkillDir) {
         return errResult(
           "Invalid path: only relative path segments under skills/ are allowed",
-          {
-            code: "INVALID_ARGUMENT",
-            message: "invalid path",
-          },
+          { code: "INVALID_ARGUMENT", message: "invalid path" },
         );
       }
       const normalizedTitle = params.title.trim();
@@ -192,12 +191,13 @@ export function createPersistKnowledgeTool(
         });
       }
 
+      // 按 type 解析目标目录（均在当前租户 workspace 下）
       const trueDir =
         params.type === "memory"
-          ? resolveWorkspaceMemoryDir()
+          ? resolveWorkspaceMemoryDir(tenantId)
           : params.type === "userinfo"
-            ? resolveWorkspaceUserinfoDir()
-            : path.join(resolveWorkspaceSkillsDir(), safeSkillDir);
+            ? resolveWorkspaceUserinfoDir(tenantId)
+            : path.join(resolveWorkspaceSkillsDir(tenantId), safeSkillDir);
       const trueFileName = params.type === "skill" ? "SKILL.md" : fileName;
       const truePath = path.join(trueDir, trueFileName);
 
@@ -205,20 +205,15 @@ export function createPersistKnowledgeTool(
       if (fileExists) {
         return errResult(
           `File already exists: ${trueFileName}. Please read first, then merge updates.`,
-          {
-            code: "ALREADY_EXISTS",
-            message: `File ${trueFileName} already exists`,
-          },
+          { code: "ALREADY_EXISTS", message: `File ${trueFileName} already exists` },
         );
       }
       try {
         await fs.mkdir(trueDir, { recursive: true, mode: 0o700 });
-        const bytesWritten = await writeNewFile({
-          fullPath: truePath,
-          content: trueContent,
-        });
+        const bytesWritten = await writeNewFile({ fullPath: truePath, content: trueContent });
         if (params.type === "skill") {
-          getSkillManager().loadMetaInfos();
+          // 通知 skill manager 刷新租户 skill 列表
+          getSkillManager(tenantId).loadMetaInfos();
         }
         toolLogger.info(
           `tool=persistKnowledge type=${params.type} path=${truePath} action=created bytes=${bytesWritten} durationMs=${Date.now() - started}`,

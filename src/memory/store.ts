@@ -1,5 +1,7 @@
 import { getLoadablePath } from "sqlite-vec";
+import fs from "node:fs";
 import { ensureMemoryPaths, resolveMemoryDbPath } from "./utils/path.js";
+import { resolveSharedDir, resolveSharedEmbeddingCacheDbPath } from "../utils/app-path.js";
 import type { MemorySource } from "./types.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { readFgbgUserConfig } from "../config/index.js";
@@ -25,25 +27,31 @@ type DbLike = {
   close: () => void;
 };
 
-// 进程级连接复用，避免重复 loadExtension 与建表开销。
-let dbInstance: DbLike | null = null;
+// 按租户 ID 复用连接，避免重复 loadExtension 与建表开销
+const dbInstances = new Map<string, DbLike>();
+// 全局共享的 embedding 缓存数据库——embedding 向量与租户无关，全进程共用一个连接
+let sharedCacheDbInstance: DbLike | null = null;
 const memoryLogger = getSubsystemConsoleLogger("memory");
 
-// Embedding 缓存限制
+// Embedding 缓存条目上限，超过后淘汰最久未访问的条目
 const EMBEDDING_CACHE_MAX_SIZE = 1000;
 
 /**
- * 打开并初始化数据库（惰性初始化）。
+ * 打开指定租户的记忆数据库（惰性初始化，按 tenantId 复用连接）。
+ * 包含 files / chunks / chunks_fts / chunks_vec 四张表，不含 embedding_cache。
  */
-async function openDb(): Promise<DbLike> {
-  if (dbInstance) return dbInstance;
+async function openDb(tenantId: string): Promise<DbLike> {
+  const existing = dbInstances.get(tenantId);
+  if (existing) return existing;
+
   const embeddingDimensions =
     readFgbgUserConfig().agents.memorySearch.embeddingDimensions;
 
   const sqlite = await import("node:sqlite");
-  ensureMemoryPaths();
+  // 确保租户 memory 目录存在，并初始化 embedding 模型目录
+  ensureMemoryPaths(tenantId);
 
-  const dbPath = resolveMemoryDbPath();
+  const dbPath = resolveMemoryDbPath(tenantId);
   const db = new sqlite.DatabaseSync(dbPath, {
     allowExtension: true,
   }) as unknown as DbLike;
@@ -95,14 +103,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
   id INTEGER PRIMARY KEY,
   embedding float[${embeddingDimensions}]
 );
-
-CREATE TABLE IF NOT EXISTS embedding_cache (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  text_hash TEXT NOT NULL UNIQUE,
-  embedding BLOB NOT NULL,
-  last_access_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_embedding_cache_hash ON embedding_cache(text_hash);
 `);
 
   // 旧库可能是 384 维，配置切到 768 后会在查询时报维度不匹配。
@@ -114,7 +114,42 @@ CREATE INDEX IF NOT EXISTS idx_embedding_cache_hash ON embedding_cache(text_hash
     await reinitializeIndexesForEmbeddingDimension(db, embeddingDimensions);
   }
 
-  dbInstance = db;
+  dbInstances.set(tenantId, db);
+  return db;
+}
+
+/**
+ * 打开全局共享的 embedding 缓存数据库（惰性初始化，进程内单例）。
+ * 路径：~/.fgbg/shared/embedding-cache.db。
+ * embedding 向量是纯文本内容的函数，与租户无关，全局共用以提升缓存命中率。
+ */
+async function openSharedCacheDb(): Promise<DbLike> {
+  if (sharedCacheDbInstance) return sharedCacheDbInstance;
+
+  const sqlite = await import("node:sqlite");
+  // 确保 shared 目录存在
+  fs.mkdirSync(resolveSharedDir(), { recursive: true });
+
+  const dbPath = resolveSharedEmbeddingCacheDbPath();
+  const db = new sqlite.DatabaseSync(dbPath, {
+    allowExtension: true,
+  }) as unknown as DbLike;
+
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA synchronous = NORMAL;");
+
+  // 仅包含 embedding_cache 表，不含任何租户记忆数据
+  db.exec(`
+CREATE TABLE IF NOT EXISTS embedding_cache (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  text_hash TEXT NOT NULL UNIQUE,
+  embedding BLOB NOT NULL,
+  last_access_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_embedding_cache_hash ON embedding_cache(text_hash);
+`);
+
+  sharedCacheDbInstance = db;
   return db;
 }
 
@@ -191,8 +226,8 @@ async function reinitializeIndexesForEmbeddingDimension(
 /**
  * 读取 path 对应的文件 hash。
  */
-export async function queryFileHash(path: string): Promise<string | null> {
-  const db = await openDb();
+export async function queryFileHash(tenantId: string, path: string): Promise<string | null> {
+  const db = await openDb(tenantId);
   const row = db
     .prepare("SELECT file_hash FROM files WHERE path = ?")
     .get(path);
@@ -205,10 +240,11 @@ export async function queryFileHash(path: string): Promise<string | null> {
  * Upsert 文件 hash（当前实现主要由 replacePathChunks 调用）。
  */
 export async function upsertFileHash(
+  tenantId: string,
   path: string,
   fileHash: string,
 ): Promise<void> {
-  const db = await openDb();
+  const db = await openDb(tenantId);
   // ON CONFLICT 更新已有 path 的 hash，供下次 sync 判断是否需 rebuild
   db.prepare(
     `INSERT INTO files(path, file_hash, update_time)
@@ -222,8 +258,8 @@ export async function upsertFileHash(
 /**
  * 列出 files 表中所有已跟踪路径。
  */
-export async function listTrackedPaths(): Promise<string[]> {
-  const db = await openDb();
+export async function listTrackedPaths(tenantId: string): Promise<string[]> {
+  const db = await openDb(tenantId);
   const rows = db.prepare("SELECT path FROM files").all();
   return rows.map((r) => String(r.path)); // 全量已索引路径，供 syncAll 补全“已删文件”的 delete 候选
 }
@@ -231,8 +267,8 @@ export async function listTrackedPaths(): Promise<string[]> {
 /**
  * 删除 path 的所有索引数据（chunks + vec + fts + files）。
  */
-export async function deleteByPath(path: string): Promise<void> {
-  const db = await openDb();
+export async function deleteByPath(tenantId: string, path: string): Promise<void> {
+  const db = await openDb(tenantId);
   await transactionCommit(db, () => {
     // 先查该 path 下所有 chunk id，再按 id 删 vec/fts，避免外键或虚拟表残留
     const idRows = db.prepare("SELECT id FROM chunks WHERE path = ?").all(path);
@@ -251,14 +287,14 @@ export async function deleteByPath(path: string): Promise<void> {
 /**
  * 全量替换某个 path 的 chunks 索引（事务）。
  */
-export async function replacePathChunks(params: {
+export async function replacePathChunks(tenantId: string, params: {
   path: string;
   source: MemorySource;
   fileHash: string;
   chunks: Array<{ content: string; lineStart: number; lineEnd: number }>;
   embeddings: number[][];
 }): Promise<number> {
-  const db = await openDb();
+  const db = await openDb(tenantId);
   const { path, source, fileHash, chunks, embeddings } = params;
   if (chunks.length !== embeddings.length) {
     throw new Error("chunks and embeddings length mismatch");
@@ -334,10 +370,11 @@ export async function replacePathChunks(params: {
  * FTS 查询（按 bm25 升序）并输出排名。
  */
 export async function queryFts(
+  tenantId: string,
   query: string,
   topK: number,
 ): Promise<Array<{ id: number; rank: number }>> {
-  const db = await openDb();
+  const db = await openDb(tenantId);
   let rows: Array<Record<string, unknown>> = [];
   try {
     rows = db
@@ -361,10 +398,11 @@ export async function queryFts(
  * 向量检索（sqlite-vec KNN）并输出排名。
  */
 export async function queryVector(
+  tenantId: string,
   embedding: number[],
   topK: number,
 ): Promise<Array<{ id: number; rank: number }>> {
-  const db = await openDb();
+  const db = await openDb(tenantId);
   const rows = db
     .prepare(
       `SELECT id, distance
@@ -380,9 +418,9 @@ export async function queryVector(
 /**
  * 通过 id 列表批量回表拿 chunk 元数据。
  */
-export async function getChunksByIds(ids: number[]): Promise<ChunkRow[]> {
+export async function getChunksByIds(tenantId: string, ids: number[]): Promise<ChunkRow[]> {
   if (ids.length === 0) return [];
-  const db = await openDb();
+  const db = await openDb(tenantId);
   const placeholders = ids.map(() => "?").join(",");
   // 批量回表拿 chunk 元数据，供 recall 拼成 MemoryHit
   const rows = db
@@ -396,22 +434,23 @@ export async function getChunksByIds(ids: number[]): Promise<ChunkRow[]> {
 }
 
 /**
- * 关闭内存数据库连接（用于服务停止）。
+ * 关闭指定租户的记忆数据库连接（用于服务停止）。
  */
-export async function closeMemoryDb(): Promise<void> {
-  if (dbInstance) {
-    dbInstance.close();
-    dbInstance = null; // 置空便于下次 start 时重新 openDb
+export async function closeMemoryDb(tenantId: string): Promise<void> {
+  const db = dbInstances.get(tenantId);
+  if (db) {
+    db.close();
+    dbInstances.delete(tenantId); // 移除，供下次重新 openDb
   }
 }
 
 /**
- * 查询 embedding 缓存。
+ * 查询 embedding 缓存（使用全局共享数据库，与租户无关）。
  */
 export async function queryEmbeddingCache(
   textHash: string,
 ): Promise<number[] | null> {
-  const db = await openDb();
+  const db = await openSharedCacheDb();
   const row = db
     .prepare("SELECT embedding FROM embedding_cache WHERE text_hash = ?")
     .get(textHash);
@@ -472,13 +511,13 @@ async function evictOldEmbeddingCacheEntries(db: DbLike): Promise<void> {
 }
 
 /**
- * 写入 embedding 缓存，并在超过限制时淘汰最不常用的条目。
+ * 写入 embedding 缓存，并在超过限制时淘汰最不常用的条目（使用全局共享数据库）。
  */
 export async function upsertEmbeddingCache(params: {
   textHash: string;
   embedding: number[];
 }): Promise<void> {
-  const db = await openDb();
+  const db = await openSharedCacheDb();
   const { textHash, embedding } = params;
 
   db.prepare(
@@ -494,14 +533,14 @@ export async function upsertEmbeddingCache(params: {
 }
 
 /**
- * 批量查询 embedding 缓存。
+ * 批量查询 embedding 缓存（使用全局共享数据库，与租户无关）。
  */
 export async function batchQueryEmbeddingCache(
   textHashes: string[],
 ): Promise<Map<string, number[]>> {
   if (textHashes.length === 0) return new Map();
 
-  const db = await openDb();
+  const db = await openSharedCacheDb();
   const placeholders = textHashes.map(() => "?").join(",");
   const rows = db
     .prepare(
@@ -532,7 +571,7 @@ export async function batchQueryEmbeddingCache(
 }
 
 /**
- * 批量写入 embedding 缓存，并在超过限制时淘汰最不常用的条目。
+ * 批量写入 embedding 缓存，并在超过限制时淘汰最不常用的条目（使用全局共享数据库）。
  */
 export async function batchUpsertEmbeddingCache(
   params: Array<{
@@ -542,7 +581,7 @@ export async function batchUpsertEmbeddingCache(
 ): Promise<void> {
   if (params.length === 0) return;
 
-  const db = await openDb();
+  const db = await openSharedCacheDb();
   const insert = db.prepare(
     `INSERT INTO embedding_cache(text_hash, embedding, last_access_at)
      VALUES (?, ?, CURRENT_TIMESTAMP)

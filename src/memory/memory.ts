@@ -10,7 +10,7 @@ import type {
   SyncSummary,
 } from "./types.js";
 import { searchMemory } from "./recall.js";
-import { createPrepareStrategy } from "./embedding/embedding-provider.js";
+import { createPrepareStrategy, setModelRepairingFlag } from "./embedding/embedding-provider.js";
 import { readFgbgUserConfig } from "../config/index.js";
 import {
   ensureDirSync,
@@ -32,12 +32,20 @@ const memoryLogger = getSubsystemConsoleLogger("memory");
  * - 管理 watcher 生命周期（start/stop）
  * - 将来源事件转换为按 path 的同步任务
  * - 对外提供 syncAll / search 能力
+ *
+ * 每个租户对应一个独立实例，通过 getMemoryIndexManager(tenantId) 获取。
  */
 export class MemoryIndexManager {
+  /** 该实例所属的租户 ID */
+  private readonly tenantId: string;
   private state: "stopped" | "starting" | "running" | "repairing" | "stopping" =
     "stopped";
   private timerByPath = new Map<string, NodeJS.Timeout>();
   private watchers: FSWatcher[] = [];
+
+  constructor(tenantId: string) {
+    this.tenantId = tenantId;
+  }
 
   /**
    * 设置记忆系统状态（用于内部状态管理）
@@ -49,6 +57,8 @@ export class MemoryIndexManager {
     if (oldState !== newState) {
       memoryLogger.debug(` 状态变更: ${oldState} → ${newState}`);
       this.state = newState;
+      // 通知 embedding-provider 修复状态变化，供 isModelDownloading() 使用
+      setModelRepairingFlag(newState === "repairing");
     }
   }
 
@@ -76,15 +86,15 @@ export class MemoryIndexManager {
     this.setState("starting");
 
     // watcher 启动前确保目录存在，避免监听初始化失败
-    ensureAgentWorkspace();
-    const workspaceMemory = resolveWorkspaceMemoryPath();
-    ensureDirSync(resolveWorkspaceMemoryDir());
-    ensureDirSync(resolveWorkspaceUserinfoDir());
+    ensureAgentWorkspace(this.tenantId);
+    const workspaceMemory = resolveWorkspaceMemoryPath(this.tenantId);
+    ensureDirSync(resolveWorkspaceMemoryDir(this.tenantId));
+    ensureDirSync(resolveWorkspaceUserinfoDir(this.tenantId));
 
-    // 监听：工作区 MEMORY.md、~/.fgbg/workspace/memory/*.md、workspace/userinfo/*.md
+    // 监听：工作区 MEMORY.md、~/.fgbg/tenants/{tenantId}/workspace/memory/*.md、workspace/userinfo/*.md
     this.watchFile(workspaceMemory, "MEMORY.md");
-    this.watchDir(resolveWorkspaceMemoryDir(), "memory");
-    this.watchDir(resolveWorkspaceUserinfoDir(), "userinfo");
+    this.watchDir(resolveWorkspaceMemoryDir(this.tenantId), "memory");
+    this.watchDir(resolveWorkspaceUserinfoDir(this.tenantId), "userinfo");
 
     // 获取配置并创建准备策略
     const config = readFgbgUserConfig().agents.memorySearch;
@@ -121,7 +131,7 @@ export class MemoryIndexManager {
       await this.syncAllInternal();
       this.setState("running");
       // 调度搜索, 触发模型检测
-      await searchMemory("init_memory_system");
+      await searchMemory(this.tenantId, "init_memory_system");
     } catch (error) {
       memoryLogger.error(` 启动失败: ${error}`);
       this.setState("stopped");
@@ -153,8 +163,8 @@ export class MemoryIndexManager {
       await Promise.allSettled(closing);
       this.watchers = [];
 
-      // 最后关闭 SQLite 连接，释放文件句柄
-      await closeMemoryDb();
+      // 最后关闭该租户的 SQLite 连接，释放文件句柄
+      await closeMemoryDb(this.tenantId);
     } catch (error) {
       memoryLogger.error(` 停止过程中出错: ${error}`);
     } finally {
@@ -174,7 +184,7 @@ export class MemoryIndexManager {
 
     const normalized = path.resolve(filePath);
     let mapped: MemorySource = "sessions";
-    if (source === "memory") mapped = "MEMORY.md"; // 用户 memory 目录（~/.fgbg/memory/*.md）→ MEMORY.md
+    if (source === "memory") mapped = "MEMORY.md"; // 用户 memory 目录（~/.fgbg/tenants/{tenantId}/workspace/memory/*.md）→ MEMORY.md
     if (source === "workspace") mapped = "memory"; // 工作区 MEMORY.md 路径 → memory
     if (source === "session") mapped = "sessions";
     if (source === "userinfo") mapped = "userinfo";
@@ -211,8 +221,8 @@ export class MemoryIndexManager {
    * 内部全量同步（不检查 state），供 start() 与 syncAll() 使用。
    */
   private async syncAllInternal(): Promise<SyncSummary> {
-    const sessionDir = resolveSessionDir();
-    const summary = await syncAllMemorySources(sessionDir);
+    const sessionDir = resolveSessionDir(this.tenantId);
+    const summary = await syncAllMemorySources(this.tenantId, sessionDir);
     memoryLogger.info(
       `syncAll total=${summary.total} create=${summary.create} rebuild=${summary.rebuild} delete=${summary.delete} skip=${summary.skip} failed=${summary.failed} durationMs=${summary.durationMs}ms`,
     );
@@ -225,7 +235,7 @@ export class MemoryIndexManager {
   async search(query: string, options?: SearchOptions): Promise<MemoryHit[]> {
     if (this.state !== "running") return [];
     const startMs = Date.now();
-    const hits = await searchMemory(query, options);
+    const hits = await searchMemory(this.tenantId, query, options);
     const durationMs = Date.now() - startMs;
     memoryLogger.info(
       `search query="${query.slice(0, 80)}${query.length > 80 ? "…" : ""}" durationMs=${durationMs}ms hits=${hits.length}`,
@@ -243,7 +253,7 @@ export class MemoryIndexManager {
   ): Promise<SyncResult | null> {
     this.timerByPath.delete(filePath);
     try {
-      const result = await syncMemoryByPath({ path: filePath, source });
+      const result = await syncMemoryByPath(this.tenantId, { path: filePath, source });
       memoryLogger.debug(
         `sync path=${result.path} action=${result.action} chunks=${result.chunkCount} costMs=${result.costMs}ms`,
       );
@@ -304,14 +314,18 @@ export class MemoryIndexManager {
   }
 }
 
-let singleton: MemoryIndexManager | null = null;
+// 按租户 ID 管理 MemoryIndexManager 单例，每个租户一个独立实例
+const managerMap = new Map<string, MemoryIndexManager>();
 
 /**
- * 获取全局单例，避免重复创建 watcher 与数据库连接。
+ * 获取指定租户的 MemoryIndexManager 单例。
+ * 同一 tenantId 在进程内只创建一个实例，避免重复 watcher 与数据库连接。
  */
-export function getMemoryIndexManager(): MemoryIndexManager {
-  if (!singleton) {
-    singleton = new MemoryIndexManager();
+export function getMemoryIndexManager(tenantId: string): MemoryIndexManager {
+  let manager = managerMap.get(tenantId);
+  if (!manager) {
+    manager = new MemoryIndexManager(tenantId);
+    managerMap.set(tenantId, manager);
   }
-  return singleton;
+  return manager;
 }

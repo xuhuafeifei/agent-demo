@@ -2,8 +2,9 @@
  * 工具目录（静态表）
  *
  * 唯一维护 `Record<工具名, { factory, description }>` 的地方。
- * 不读 fgbg.json、不解析 ToolSecurityConfig。
- * 这是「有哪些工具、怎么 new」的目录；配置里启用谁，不在这里决定。
+ * factory 签名统一为 (cwd: string, tenantId: string) => unknown：
+ *   - cwd：租户 workspace 目录，用于路径安全检查和文件操作
+ *   - tenantId：租户 ID，用于获取 agent 运行状态（channel）和路由 bot 账号
  */
 
 import { createReadTool } from "./func/read.js";
@@ -23,20 +24,19 @@ import {
 import { createShellExecuteTool } from "./func/shell-execute.js";
 import { createIMSendTool } from "./func/IM-send.js";
 
-type ToolFactory = (cwd: string) => unknown;
+/** 工具工厂函数签名：cwd 为租户 workspace 目录，tenantId 为租户 ID */
+type ToolFactory = (cwd: string, tenantId: string) => unknown;
 
 type ToolEntry = { factory: ToolFactory; description: string };
 
 /** 与 ToolDefinition.name / enabledTools 中 read、write 对齐；readFile、writeFile 为兼容别名 */
 const readToolEntry: ToolEntry = {
-  factory: () => createReadTool(),
-  description:
-    "readFile(path, offset?, limit?) - read text from file (safe, text-only)",
+  factory: (_cwd, tenantId) => createReadTool(tenantId),
+  description: "readFile(path, offset?, limit?) - read text from file (safe, text-only)",
 };
 const writeToolEntry: ToolEntry = {
-  factory: (cwd) => createWriteTool(cwd),
-  description:
-    "writeFile(path, content) - write file content (safe, text-only)",
+  factory: (cwd, tenantId) => createWriteTool(cwd, tenantId),
+  description: "writeFile(path, content) - write file content (safe, text-only)",
 };
 
 /**
@@ -47,42 +47,38 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   read: readToolEntry,
   write: writeToolEntry,
   memorySearch: {
-    factory: () => createMemorySearchTool(),
-    description:
-      "memorySearch(query, topKFts?, topKVector?, topN?) - retrieve recent memory",
+    factory: (_cwd, tenantId) => createMemorySearchTool(tenantId),
+    description: "memorySearch(query, topKFts?, topKVector?, topN?) - retrieve recent memory",
   },
   persistKnowledge: {
-    factory: (cwd) => createPersistKnowledgeTool(cwd),
+    factory: (_cwd, tenantId) => createPersistKnowledgeTool(tenantId),
     description:
-      "persistKnowledge - discriminated by type (see JSON schema descriptions on each field): memory → ~/.fgbg/memory/*.md create; userinfo → workspace/userinfo/*.md create with YAML frontmatter and indexed; skill → workspace/skills/<dir>/ SKILL.md create with YAML frontmatter",
+      "persistKnowledge - discriminated by type: memory → workspace/memory/*.md; userinfo → workspace/userinfo/*.md; skill → workspace/skills/<path>/SKILL.md",
   },
   loadSkill: {
-    factory: () => createLoadSkillTool(),
+    factory: (_cwd, tenantId) => createLoadSkillTool(tenantId),
     description:
-      "loadSkill(skillDir) - load SKILL.md from ~/.fgbg/workspace/skills/<skillDir>/SKILL.md",
+      "loadSkill(skillDir) - load SKILL.md from tenant workspace/skills/<skillDir>/ or shared/skills/<skillDir>/",
   },
   listTaskSchedules: {
-    factory: () => createListTasksTool(),
-    description:
-      "listTaskSchedules() - list all task_schedule entries (status, next run, attempts, last_error)",
+    factory: (_cwd, tenantId) => createListTasksTool(tenantId),
+    description: "listTaskSchedules() - list task_schedule entries (default sees all; others see own)",
   },
   runTaskByName: {
-    factory: () => createRunTaskTool(),
-    description:
-      "runTaskByName(task_name) - set task to pending and next_run_time=now to trigger it immediately",
+    factory: (_cwd, tenantId) => createRunTaskTool(tenantId),
+    description: "runTaskByName(task_name) - set task to pending and next_run_time=now to trigger it immediately",
   },
   deleteTaskByName: {
-    factory: () => createDeleteTaskTool(),
-    description:
-      "deleteTaskByName(task_name) - delete scheduled task and its execution details",
+    factory: (_cwd, tenantId) => createDeleteTaskTool(tenantId),
+    description: "deleteTaskByName(task_name) - delete scheduled task (default can delete any; others only own)",
   },
   createReminderTask: {
-    factory: () => createReminderTaskTool(),
+    factory: (_cwd, tenantId) => createReminderTaskTool(tenantId),
     description:
-      "createReminderTask(content, scheduleType, runAt?, cron?, timezone?, channels?, identify?, taskName?) - create execute_reminder. identify is required"
+      "createReminderTask(content, scheduleType, runAt?, cron?, timezone?, channels?, tenantId?, taskName?) - create execute_reminder task",
   },
-  createAgentTask: {
-    factory: () => createAgentTaskTool(),
+  createAgentTask: { // todo: 这个任务干啥的完全忘了，以后调研一下
+    factory: (_cwd, tenantId) => createAgentTaskTool(tenantId),
     description:
       "createAgentTask(goal, scheduleType, runAt?, cron?, timezone?, notify?, channels?, mode?, title?, taskName?) - create execute_agent scheduled task",
   },
@@ -91,20 +87,18 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
     description: "getNow(timezone?) - get current time as ISO and unix ms",
   },
   compactContext: {
-    factory: () => createCompactContextTool(),
+    factory: (_cwd, tenantId) => createCompactContextTool(tenantId),
     description: "compactContext() - compress session context to reduce size",
   },
   shellExecute: {
-    factory: () => createShellExecuteTool(),
-    description:
-      "shellExecute(command) - execute whitelisted shell command securely",
+    factory: (_cwd, tenantId) => createShellExecuteTool(tenantId),
+    description: "shellExecute(command) - execute whitelisted shell command securely",
   },
   sendIMMessage: {
-    factory: () => createIMSendTool(),
-    description:
-      "sendIMMessage(channel, content) - send text to latest phone IM user (qq/weixin), target user id loaded internally",
+    factory: (_cwd, tenantId) => createIMSendTool(tenantId),
+    description: "sendIMMessage(channel, content, tenantId) - send text to phone IM user (qq/weixin)",
   },
 };
 
-/** 工具目录名称联合类型（可用于类型约束） */
+/** 工具目录名称联合类型 */
 export type ToolCatalogName = keyof typeof TOOL_CATALOG;

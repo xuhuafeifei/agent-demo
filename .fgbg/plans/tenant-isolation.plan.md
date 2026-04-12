@@ -10,6 +10,8 @@ isProject: true
 
 # 租户隔离重构计划
 
+无需考虑兼容问题，可以删除所有不符合现在逻辑的老代码
+
 ## 目标
 
 - **默认租户（default）**：三端（web/qq/weixin）共享同一套 workspace + memory + session
@@ -29,10 +31,10 @@ isProject: true
 
   tenants/               ← 租户数据（唯一按 tenantId 隔离的层级）
     default/
-      workspace/         ← SOUL.md, SKILL.md, MEMORY.md, memory/, userinfo/, scripts/
+      workspace/         ← SOUL.md, MEMORY.md, memory/, userinfo/, skills/, scripts/
       session/           ← session.json, *.jsonl
       memory/            ← memory.db
-    userA/               ← 未来新增租户
+    userA/               ← 未来新增租户 (租户id满足字母数字下划线)
       workspace/
       session/
       memory/
@@ -53,6 +55,8 @@ isProject: true
 | agentId 用途 | 并发锁键 | `tryAcquireAgent(agentId)` |
 | sessionKey 用途 | session 文件键 | `session.json[sessionKey]` |
 
+> 同一 tenantId 下的不同 channel（qq/weixin/web）共享同一把并发锁和同一份 session，这是有意为之——相同 tenantId 意味着数据互通。
+
 ## fgbg.json 配置变更
 
 ```jsonc
@@ -60,13 +64,11 @@ isProject: true
   "channels": {
     "web": {
       "enabled": true,
-      "tenantId": "default"        // 新增，固定 default
+      "tenantId": "default"        // 新增，固定 default. web段目前不打算接入多租户
     },
     "qqbot": {
       "enabled": true,
-      "tenantId": "default",       // 新增，默认 default
-      "appId": "...",
-      "clientSecret": "..."
+      // qq 多bot架构：每个bot可以配置不同的tenantId. 并且tenantId是在qqbot内部唯一，换句话说，qqbot的tenantId可以和weixin的tenantId重复。此外，废除以前的identify设计. 保留以前的qq/accounts.json
     },
     "weixin": {
       "enabled": true,
@@ -82,7 +84,7 @@ isProject: true
 ```jsonc
 {
   "bots": [{
-    "identify": "default",         // 保留兼容，但实际租户由 channel 配置决定
+    "identify": "default",         // 直接废弃该字段, 直接删除相关代码, 用tenantId取代
     "appId": "...",
     "clientSecret": "...",
     "targetOpenId": "...",
@@ -97,7 +99,7 @@ isProject: true
 ```jsonc
 {
   "bots": [{
-    "identify": "default",
+    "identify": "default",  // 直接删除该字段，废弃相关代码，用tenantId取代
     "token": "...",
     "baseUrl": "...",
     "botId": "...",
@@ -117,7 +119,7 @@ isProject: true
 ### Phase 1: 路径层（基础设施）
 
 **1.1 `src/utils/app-path.ts`**
-- `resolveWorkspaceDir()` → 保留兼容（无参时返回 `~/.fgbg/workspace`），新增 `resolveWorkspaceDir(tenantId: string)` 返回 `~/.fgbg/tenants/{tenantId}/workspace`
+- `resolveWorkspaceDir(tenantId: string)` → `~/.fgbg/tenants/{tenantId}/workspace`（删除无参版本，调用方必须传入 tenantId）
 - 新增 `resolveSharedDir()` → `~/.fgbg/shared`
 - 新增 `resolveEmbeddingModelDir()` → `~/.fgbg/shared/embedding`
 - 新增 `resolveWorkspaceSkillsDir()` → `~/.fgbg/shared/skills`
@@ -127,8 +129,8 @@ isProject: true
 - 新增 `resolveTenantWorkspaceDir(tenantId: string)` → `~/.fgbg/tenants/{tenantId}/workspace`
 
 **1.2 `src/agent/session/session-path.ts`**
-- `resolveSessionDir()` → 保留兼容，新增 `resolveSessionDir(tenantId: string)` 返回租户 session 目录
-- `resolveSessionIndexPath()` → 新增 tenantId 参数
+- `resolveSessionDir(tenantId: string)` → 返回租户 session 目录（删除无参版本）
+- `resolveSessionIndexPath(tenantId: string)` → 必须传入 tenantId
 
 **1.3 `src/memory/utils/path.ts`**
 - `resolveMemoryRootDir()` → 新增 tenantId 参数
@@ -163,9 +165,8 @@ isProject: true
 - `runningAgentId` 存储 `agent:main:{tenantId}`
 
 **3.2 `src/agent/run.ts`**
-- `runWithSingleFlight` 入参：`identify` 废弃，改用 `tenantId?: string`
+- `runWithSingleFlight` 入参：`identify` 废弃，改用 `tenantId: string`（必填，由上层 channel 传入，不再有默认值兜底）
 - 内部：`agentId = agent:main:${tenantId}`, `sessionKey = session:main:${tenantId}`
-- 如果 tenantId 为空，默认 `"default"`
 
 **3.3 `src/agent/pre-run.ts`**
 - `prepareBeforeGetReply(sessionKey, channel, tenantId?)` → 使用 tenantId 解析路径
@@ -173,8 +174,9 @@ isProject: true
 
 **3.4 `src/agent/workspace.ts`**
 - `ensureAgentWorkspace()` → 新增 tenantId 参数
-- SOUL.md / SKILL.md / userinfo / skills 创建在租户 workspace 下
-- embedding / skills 模板从 `shared/` 读取
+- 租户 workspace 下创建：SOUL.md / MEMORY.md / userinfo / skills（agent 自积累的可复用经验）
+- 旧 workspace 根下的 SKILL.md 直接删除，不再维护
+- embedding 模型从 `shared/embedding/` 读取；系统预置 skill 定义从 `shared/skills/` 读取
 
 ### Phase 4: Memory 层
 
@@ -214,41 +216,26 @@ isProject: true
 
 **6.2 watch-dog 本身不改** — DB、调度器全局单实例，只改执行时的租户路由
 
-### Phase 7: 数据迁移
+### ~~Phase 7: 数据迁移~~
 
-**7.1 迁移脚本**
-```
-~/.fgbg/sessions/           → ~/.fgbg/tenants/default/session/
-~/.fgbg/workspace/          → ~/.fgbg/tenants/default/workspace/
-~/.fgbg/memory/             → ~/.fgbg/tenants/default/memory/
-~/.fgbg/workspace/embedding/ → ~/.fgbg/shared/embedding/
-~/.fgbg/workspace/skills/    → ~/.fgbg/shared/skills/
-```
+无需迁移。不符合新设计的旧代码和旧数据直接删除重写，不提供任何迁移脚本。
 
-**7.2 session.json 索引更新**
-- 旧 sessionKey（如 `agent:main:main`）→ 新 `session:main:default`
-- 保持向后兼容：旧 key 能解析到新路径
 
 ### Phase 8: 清理
 
 **8.1 废弃旧路径**
-- 无参的 `resolveWorkspaceDir()` 保留兼容但打 warn 日志
-- 环境变量 `FGBG_WORKSPACE_DIR`、`FGBG_MEMORY_DIR` 保留兼容
-
-**8.2 移除不再需要的文件**
-- `~/.fgbg/agent/` 目录（如果确认未使用）
-- 旧路径的遗留文件
+- 无参的 `resolveWorkspaceDir()`, 无参的函数废弃，调用方必须传入tenantId
+- 环境变量 `FGBG_WORKSPACE_DIR`、`FGBG_MEMORY_DIR` 废弃删除
 
 ## 改动顺序（推荐执行顺序）
 
 1. **Phase 1** → 路径层（无副作用，纯函数改造）
-2. **Phase 7** → 数据迁移脚本（迁移现有数据到新结构）
-3. **Phase 2** → 配置层（加 tenantId 字段）
-4. **Phase 3** → 运行时层（agentId/sessionKey 改名）
-5. **Phase 4** → Memory 层（多 tenant DB 支持）
-6. **Phase 5** → 通道层（web/qq/weixin 路由）
-7. **Phase 6** → Watch-Dog 适配
-8. **Phase 8** → 清理和兼容层移除
+2. **Phase 2** → 配置层（加 tenantId 字段）
+3. **Phase 3** → 运行时层（agentId/sessionKey 格式更新）
+4. **Phase 4** → Memory 层（多 tenant DB 支持）
+5. **Phase 5** → 通道层（web/qq/weixin 路由）
+6. **Phase 6** → Watch-Dog 适配
+7. **Phase 8** → 清理（删除所有无参旧函数、废弃环境变量）
 
 ## 风险点
 

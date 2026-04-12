@@ -1,18 +1,16 @@
 import { sendQQDirectMessage } from "../qq/qq-layer.js";
-import { QQ_DEFAULT_IDENTIFY } from "../qq/qq-account.js";
 import { sendWeixinDirectMessage } from "../weixin/weixin-layer.js";
 
 export type IMSendChannel = "qq" | "weixin";
 
 /**
- * channel 区分平台，identify 区分同平台账号。
- * 因此只需一个 identify 参数，配合 channel 即可定位到具体 bot。
+ * 统一 IM 发送入口：channel 区分平台，tenantId 路由到对应 bot 账号。
  */
 export async function sendIMDirectMessage(
   channel: IMSendChannel,
   content: string,
-  identify?: string,
+  tenantId: string,
 ): Promise<boolean> {
-  if (channel === "qq") return sendQQDirectMessage(content, identify);
-  return sendWeixinDirectMessage(content, identify);
+  if (channel === "qq") return sendQQDirectMessage(content, tenantId);
+  return sendWeixinDirectMessage(content, tenantId);
 }

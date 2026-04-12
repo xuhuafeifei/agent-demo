@@ -27,8 +27,11 @@ export type ScriptTaskPayload = BlacklistPayloadFields & {
 export type ReminderTaskPayload = BlacklistPayloadFields & {
   content: string;
   channels: Array<"qq" | "weixin" | "web">;
-  /** channels 含 qq 时应在创建任务时写入，对应 ~/.fgbg/qq/accounts.json 中 bot 的 identify */
-  identify?: string;
+  /**
+   * 目标租户 ID，用于路由到对应的 bot 账号（qq/weixin accounts.json 中 bot.tenantId）。
+   * channels 含 qq 或 weixin 时必填。
+   */
+  tenantId?: string;
   timezone?: string;
 };
 
@@ -36,7 +39,11 @@ export type AgentTaskPayload = BlacklistPayloadFields & {
   goal: string;
   notify?: boolean;
   channels?: Array<"qq" | "weixin" | "web">;
-  identify?: string;
+  /**
+   * 执行该任务时使用的租户 ID，决定加载哪个租户的 workspace/memory/session。
+   * 通知时也用于路由到对应的 bot 账号。
+   */
+  tenantId?: string;
   timezone?: string;
-  mode?: "evolve" | "analyze_then_notify";
+  mode?: "evolve" | "analyze_then_notify"; // todo: 我他娘忘了设计这个字段目的是啥了, 以后有时间调研一下
 };

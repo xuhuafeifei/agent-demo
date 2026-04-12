@@ -25,6 +25,8 @@ export type TaskScheduleRow = {
   next_run_time: string;
   started_at: string | null;
   finished_at: string | null;
+  /** 任务所属租户 ID；default 租户拥有全量管理权 */
+  tenant_id: string;
 };
 
 export type TaskDetailRow = {
@@ -48,6 +50,8 @@ export type NewTaskInput = {
   timezone?: string;
   status?: TaskStatus;
   next_run_time?: string;
+  /** 任务所属租户 ID，默认 "default" */
+  tenant_id?: string;
 };
 
 const serialExecutor = createSerialExecutor();
@@ -113,11 +117,16 @@ function ensureSchema(database: sqlite.DatabaseSync): void {
       update_time TEXT NOT NULL,
       next_run_time TEXT NOT NULL,
       started_at TEXT,
-      finished_at TEXT
+      finished_at TEXT,
+      tenant_id TEXT NOT NULL DEFAULT 'default'
     );
   `);
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_task_schedule_status_next_run ON task_schedule(status, next_run_time);`,
+  );
+  // 支持按租户过滤任务的索引
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_task_schedule_tenant_id ON task_schedule(tenant_id);`,
   );
   database.exec(`
     CREATE TABLE IF NOT EXISTS task_schedule_detail (
@@ -148,12 +157,13 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
   const nextRun = input.next_run_time ?? now;
   const timezone = input.timezone?.trim() || "Asia/Shanghai";
   const status: TaskStatus = input.status ?? "pending";
+  const tenantId = input.tenant_id?.trim() || "default";
 
   await serialExecutor.execute(async () => {
     const stmt = database.prepare(
       `INSERT INTO task_schedule
-      (task_name, task_type, payload_text, schedule_kind, schedule_expr, timezone, status, attempts, last_error, create_time, update_time, next_run_time)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
+      (task_name, task_type, payload_text, schedule_kind, schedule_expr, timezone, status, attempts, last_error, create_time, update_time, next_run_time, tenant_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)
      ON CONFLICT(task_name) DO UPDATE SET
         task_type=excluded.task_type,
         payload_text=excluded.payload_text,
@@ -162,7 +172,8 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
         timezone=excluded.timezone,
         status=excluded.status,
         update_time=excluded.update_time,
-        next_run_time=excluded.next_run_time`,
+        next_run_time=excluded.next_run_time,
+        tenant_id=excluded.tenant_id`,
     );
     stmt.run(
       input.task_name,
@@ -175,15 +186,17 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
       now,
       now,
       nextRun,
+      tenantId,
     );
   });
   storeLogger.info(
-    "upsert task_schedule name=%s type=%s kind=%s status=%s next=%s",
+    "upsert task_schedule name=%s type=%s kind=%s status=%s next=%s tenant=%s",
     input.task_name,
     input.task_type,
     input.schedule_kind,
     status,
     nextRun,
+    tenantId,
   );
 }
 
@@ -217,27 +230,40 @@ export async function listDueTasks(
      )
      RETURNING id, task_name, task_type, payload_text, status, attempts, last_error,
                schedule_kind, schedule_expr, timezone,
-               create_time, update_time, next_run_time, started_at, finished_at`,
+               create_time, update_time, next_run_time, started_at, finished_at, tenant_id`,
     );
     return stmt.all(nowIso, limit) as TaskScheduleRow[];
   });
 }
 
 /**
- * 查询所有任务（按 next_run_time 升序）
- * 暴露给 function tool
+ * 按租户查询任务：default 租户可查看全部，其他租户只能查看自己的任务。
+ * @param tenantId 当前租户 ID
  */
-export async function listAllTasks(): Promise<TaskScheduleRow[]> {
+export async function listTasksByTenant(tenantId: string): Promise<TaskScheduleRow[]> {
   const database = await getDb();
   return serialExecutor.execute(async () => {
+    if (tenantId === "default") {
+      // default 是主租户，有全量查看权
+      const stmt = database.prepare(
+        `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
+              schedule_kind, schedule_expr, timezone,
+              create_time, update_time, next_run_time, started_at, finished_at, tenant_id
+       FROM task_schedule
+       ORDER BY next_run_time ASC`,
+      );
+      return stmt.all() as TaskScheduleRow[];
+    }
+    // 非 default 租户只能看到自己的任务
     const stmt = database.prepare(
       `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
             schedule_kind, schedule_expr, timezone,
-            create_time, update_time, next_run_time, started_at, finished_at
+            create_time, update_time, next_run_time, started_at, finished_at, tenant_id
      FROM task_schedule
+     WHERE tenant_id = ?
      ORDER BY next_run_time ASC`,
     );
-    return stmt.all() as TaskScheduleRow[];
+    return stmt.all(tenantId) as TaskScheduleRow[];
   });
 }
 
@@ -266,53 +292,69 @@ export async function triggerTaskByName(
 }
 
 /**
- * 按 task_name 获取单个任务
+ * 按 task_name 获取单个任务（按租户隔离）。
+ * default 租户可查看任意任务，其他租户只能查看自己的任务，不存在或无权访问均返回 null。
+ * @param taskName 任务名称
+ * @param tenantId 当前租户 ID
  */
 export async function getTaskByName(
   taskName: string,
+  tenantId: string,
 ): Promise<TaskScheduleRow | null> {
   const database = await getDb();
   return serialExecutor.execute(async () => {
+    if (tenantId === "default") {
+      // default 是主租户，不加租户过滤
+      const stmt = database.prepare(
+        `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
+              schedule_kind, schedule_expr, timezone,
+              create_time, update_time, next_run_time, started_at, finished_at, tenant_id
+       FROM task_schedule
+       WHERE task_name = ?`,
+      );
+      const row = stmt.get(taskName) as TaskScheduleRow | undefined;
+      return row ?? null;
+    }
+    // 非 default 租户：任务不属于该租户则返回 null（不泄露其他租户任务存在）
     const stmt = database.prepare(
       `SELECT id, task_name, task_type, payload_text, status, attempts, last_error,
             schedule_kind, schedule_expr, timezone,
-            create_time, update_time, next_run_time, started_at, finished_at
+            create_time, update_time, next_run_time, started_at, finished_at, tenant_id
      FROM task_schedule
-     WHERE task_name = ?`,
+     WHERE task_name = ? AND tenant_id = ?`,
     );
-    const row = stmt.get(taskName) as TaskScheduleRow | undefined;
+    const row = stmt.get(taskName, tenantId) as TaskScheduleRow | undefined;
     return row ?? null;
   });
 }
 
 /**
- * 按 task_name 删除任务（同时删除执行明细）
- * @returns 是否删除成功（true=删除了至少一条任务）
+ * 按租户删除任务：default 租户可删除任意任务，其他租户只能删除自己的任务。
+ * @returns "ok" 已删除 | "not_found" 任务不存在 | "forbidden" 无权限
  */
-export async function deleteTaskByName(taskName: string): Promise<boolean> {
+export async function deleteTaskByNameForTenant(
+  taskName: string,
+  tenantId: string,
+): Promise<"ok" | "not_found" | "forbidden"> {
   const database = await getDb();
-  // 交由串行执行器执行
   return serialExecutor.execute(async () => {
     const selectStmt = database.prepare(
-      `SELECT id FROM task_schedule WHERE task_name = ?`,
+      `SELECT id, tenant_id FROM task_schedule WHERE task_name = ?`,
     );
-    const row = selectStmt.get(taskName) as { id: number } | undefined;
-    if (!row) return false;
+    const row = selectStmt.get(taskName) as { id: number; tenant_id: string } | undefined;
+    if (!row) return "not_found";
+    // 非 default 租户只能删除自己的任务
+    if (tenantId !== "default" && row.tenant_id !== tenantId) return "forbidden";
 
-    const deleteDetailsStmt = database.prepare(
-      `DELETE FROM task_schedule_detail WHERE task_id = ?`,
+    database.prepare(`DELETE FROM task_schedule_detail WHERE task_id = ?`).run(row.id);
+    database.prepare(`DELETE FROM task_schedule WHERE id = ?`).run(row.id);
+    storeLogger.info(
+      "delete task_schedule name=%s id=%s by_tenant=%s",
+      taskName,
+      row.id,
+      tenantId,
     );
-    deleteDetailsStmt.run(row.id);
-
-    const deleteTaskStmt = database.prepare(
-      `DELETE FROM task_schedule WHERE id = ?`,
-    );
-    const result = deleteTaskStmt.run(row.id);
-    const deleted = typeof result.changes === "number" && result.changes > 0;
-    if (deleted) {
-      storeLogger.info("delete task_schedule name=%s id=%s", taskName, row.id);
-    }
-    return deleted;
+    return "ok";
   });
 }
 

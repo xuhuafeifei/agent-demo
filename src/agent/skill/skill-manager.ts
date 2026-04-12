@@ -3,212 +3,165 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../../event-bus/index.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { resolveWorkspaceDir } from "../../utils/app-path.js";
+import { resolveTenantWorkspaceDir, resolveSharedSkillsDir } from "../../utils/app-path.js";
 import { parseFrontmatterMeta } from "../workspace.js";
 
 /**
  * 技能元信息类型
- * @property skillDir - 技能所在的目录名称
- * @property name - 技能名称
- * @property description - 技能描述
  */
 export type SkillMetaInfo = {
-  skillDir: string;
-  name: string;
-  description: string;
+  skillDir: string;     // 相对于所在 skills 目录的路径（如 "task-scheduler"）
+  name: string;         // YAML frontmatter 中的 name 字段
+  description: string;  // YAML frontmatter 中的 description 字段
 };
 
-/**
- * 读取技能目录的 SKILL.md 并提取元信息
- * @param skillDirPath - 技能目录路径
- * @returns 元信息对象，如果读取失败则返回 null
- */
+/** 读取指定目录下的 SKILL.md 并提取元信息 */
 function readSkillMetaFromMarkdown(skillDirPath: string): SkillMetaInfo | null {
   const skillPath = path.join(skillDirPath, "SKILL.md");
-  
   try {
     const content = fs.readFileSync(skillPath, "utf8");
     const frontmatter = parseFrontmatterMeta(content);
     if (!frontmatter) return null;
-
     return { name: frontmatter.name, description: frontmatter.description, skillDir: "" };
   } catch {
     return null;
   }
 }
 
-/**
- * 技能管理器类型
- * @property getMetaInfos - 获取当前加载的技能元信息列表
- * @property loadMetaInfos - 重新加载技能元信息
- * @property getMetaPromptText - 获取技能元信息的提示文本
- */
+/** 技能管理器接口 */
 type SkillManager = {
   getMetaInfos: () => SkillMetaInfo[];
   loadMetaInfos: () => SkillMetaInfo[];
   getMetaPromptText: () => string;
 };
 
-// 获取技能管理器专用的日志记录器
 const logger = getSubsystemConsoleLogger("skill-manager");
-// 获取事件总线实例
 const eventBus = getEventBus();
 
 /**
- * 获取技能目录的路径
- * @returns 技能目录的绝对路径
+ * 扫描指定 skills 目录，收集所有子目录下的 SKILL.md 元信息。
+ * @param skillsDir 要扫描的 skills 根目录
+ * @param prefix 结果中 skillDir 字段的前缀（用于区分 shared/ 和 tenant/）
  */
-function getSkillsDir(): string {
-  return path.join(resolveWorkspaceDir(), "skills");
-}
-
-/**
- * 扫描技能目录并获取技能元信息
- * @param skillsDir - 技能目录路径
- * @returns 技能元信息列表
- */
-function scanMetaInfos(skillsDir: string): SkillMetaInfo[] {
+function scanMetaInfos(skillsDir: string, prefix = ""): SkillMetaInfo[] {
   if (!fs.existsSync(skillsDir)) return [];
   const result: SkillMetaInfo[] = [];
-  // 递归遍历目录，查找包含 SKILL.md 的目录
-  const entries = fs.readdirSync(skillsDir, {
-    recursive: true,
-    withFileTypes: true,
-  });
+  const entries = fs.readdirSync(skillsDir, { recursive: true, withFileTypes: true });
 
-  // 收集所有 SKILL.md 所在的目录
   const skillDirs = new Set<string>();
   for (const entry of entries) {
     if (!entry.isFile() || entry.name !== "SKILL.md") continue;
-    
-    const parentPath =
-      (entry as fs.Dirent & { parentPath?: string }).parentPath ?? skillsDir;
+    const parentPath = (entry as fs.Dirent & { parentPath?: string }).parentPath ?? skillsDir;
     skillDirs.add(parentPath);
   }
 
-  // 读取每个目录的元信息
   for (const dirPath of skillDirs) {
     const meta = readSkillMetaFromMarkdown(dirPath);
     if (!meta) continue;
-
     const relativeDir = path.relative(skillsDir, dirPath).replace(/\\/g, "/");
-    meta.skillDir = relativeDir;
+    // 带前缀区分来源（如 "shared:task-scheduler" vs 直接 "my-workflow"）
+    meta.skillDir = prefix ? `${prefix}:${relativeDir}` : relativeDir;
     result.push(meta);
   }
 
   result.sort((a, b) => a.skillDir.localeCompare(b.skillDir));
-
   return result;
 }
 
-/**
- * 计算技能目录的哈希值
- * @param skillsDir - 技能目录路径
- * @returns 技能目录的哈希值
- * @description 用于检测技能目录内容是否发生变化
- */
+/** 计算目录内所有 SKILL.md 的内容哈希，用于检测变更 */
 function computeSkillsHash(skillsDir: string): string {
   if (!fs.existsSync(skillsDir)) return "missing";
-
   const h = crypto.createHash("sha256");
   const filePaths: string[] = [];
-  const entries = fs.readdirSync(skillsDir, {
-    recursive: true,
-    withFileTypes: true,
-  });
-
+  const entries = fs.readdirSync(skillsDir, { recursive: true, withFileTypes: true });
   for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (entry.name !== "SKILL.md") continue;
-
-    const parentPath =
-      (entry as fs.Dirent & { parentPath?: string }).parentPath ?? skillsDir;
+    if (!entry.isFile() || entry.name !== "SKILL.md") continue;
+    const parentPath = (entry as fs.Dirent & { parentPath?: string }).parentPath ?? skillsDir;
     filePaths.push(path.join(parentPath, entry.name));
   }
-
   filePaths.sort();
   for (const filePath of filePaths) {
     h.update(path.relative(skillsDir, filePath));
     h.update(fs.readFileSync(filePath, "utf8"));
   }
-
   return h.digest("hex");
 }
 
-/**
- * 渲染技能元信息的提示文本
- * @param metaInfos - 技能元信息列表
- * @returns 格式化后的提示文本
- */
+/** 渲染 skills 元信息为提示文本，供 system prompt 使用 */
 function renderMetaPrompt(metaInfos: SkillMetaInfo[]): string {
   if (metaInfos.length === 0) return "No skills loaded.";
-
   return metaInfos
     .map(
-      (m) =>
-        `- ${m.name}\n  description: ${m.description}\n  loader_input: ${m.skillDir}`,
+      (m) => `- ${m.name}\n  description: ${m.description}\n  loader_input: ${m.skillDir}`,
     )
     .join("\n");
 }
 
 /**
- * 创建技能管理器实例
- * @returns 技能管理器对象
+ * 创建租户技能管理器实例。
+ * 同时扫描两个目录：
+ *   1. 租户私有 workspace/skills/（agent 自积累的可复用经验）
+ *   2. 全局共享 shared/skills/（系统预置，所有租户共用）
+ *
+ * @param tenantId 租户 ID
  */
-function createSkillManager(): SkillManager {
-  const skillsDir = getSkillsDir();
-  let currentHash = "";
+function createSkillManager(tenantId: string): SkillManager {
+  const tenantSkillsDir = path.join(resolveTenantWorkspaceDir(tenantId), "skills");
+  const sharedSkillsDir = resolveSharedSkillsDir();
+
+  let currentTenantHash = "";
+  let currentSharedHash = "";
   let currentMetaInfos: SkillMetaInfo[] = [];
 
-  /**
-   * 加载技能元信息
-   * @returns 技能元信息列表
-   */
-  const loadMetaInfos = (knownHash?: string): SkillMetaInfo[] => {
-    currentMetaInfos = scanMetaInfos(skillsDir);
-    currentHash = knownHash ?? computeSkillsHash(skillsDir);
+  const loadMetaInfos = (): SkillMetaInfo[] => {
+    // 分别扫描两个目录，合并结果（租户私有优先展示）
+    const tenantMetas = scanMetaInfos(tenantSkillsDir);
+    const sharedMetas = scanMetaInfos(sharedSkillsDir);
+    currentMetaInfos = [...tenantMetas, ...sharedMetas];
+    currentTenantHash = computeSkillsHash(tenantSkillsDir);
+    currentSharedHash = computeSkillsHash(sharedSkillsDir);
     logger.info(
-      "[skills] loaded count=%d hash=%s",
+      "[skills] tenant=%s loaded count=%d",
+      tenantId,
       currentMetaInfos.length,
-      currentHash.slice(0, 12),
     );
     return [...currentMetaInfos];
   };
 
-  /**
-   * 获取当前加载的技能元信息
-   * @returns 技能元信息列表
-   */
   const getMetaInfos = (): SkillMetaInfo[] => [...currentMetaInfos];
-
-  /**
-   * 获取技能元信息的提示文本
-   * @returns 格式化后的提示文本
-   */
   const getMetaPromptText = (): string => renderMetaPrompt(currentMetaInfos);
 
-  // 监听心跳事件，定期检查技能目录是否发生变化
+  // 监听心跳，检测 skills 目录变更后自动刷新
   eventBus.on(TOPPIC_HEART_BEAT, () => {
-    const nextHash = computeSkillsHash(skillsDir);
-    if (nextHash === currentHash) return;
-    logger.info("[skills] hash changed, reloading");
-    loadMetaInfos(nextHash);
+    const nextTenantHash = computeSkillsHash(tenantSkillsDir);
+    const nextSharedHash = computeSkillsHash(sharedSkillsDir);
+    if (nextTenantHash === currentTenantHash && nextSharedHash === currentSharedHash) return;
+    logger.info("[skills] tenant=%s hash changed, reloading", tenantId);
+    loadMetaInfos();
   });
 
-  // 初始化时加载技能元信息
+  // 初始化时立即加载
   loadMetaInfos();
 
   return { getMetaInfos, loadMetaInfos, getMetaPromptText };
 }
 
-// 技能管理器单例实例
-let managerSingleton: SkillManager | null = null;
+/**
+ * 全局 skill manager 缓存，按 tenantId 隔离。
+ * 每个租户首次调用时创建实例，后续复用。
+ */
+const managerMap = new Map<string, SkillManager>();
 
 /**
- * 获取技能管理器实例（单例模式）
- * @returns 技能管理器对象
+ * 获取指定租户的技能管理器（按需创建，单例复用）。
+ *
+ * @param tenantId 租户 ID
  */
-export function getSkillManager(): SkillManager {
-  if (!managerSingleton) managerSingleton = createSkillManager();
-  return managerSingleton;
+export function getSkillManager(tenantId: string): SkillManager {
+  let manager = managerMap.get(tenantId);
+  if (!manager) {
+    manager = createSkillManager(tenantId);
+    managerMap.set(tenantId, manager);
+  }
+  return manager;
 }

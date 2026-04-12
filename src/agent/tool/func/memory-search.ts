@@ -44,7 +44,7 @@ type MemorySearchOutput = {
   hits: Array<{ content: string; score: number }>;
 };
 
-export function createMemorySearchTool(): ToolDefinition<
+export function createMemorySearchTool(tenantId: string): ToolDefinition<
   typeof memorySearchParameters,
   ToolDetails<MemorySearchOutput>
 > {
@@ -71,7 +71,7 @@ export function createMemorySearchTool(): ToolDefinition<
       }
 
       try {
-        const hits = await getMemoryIndexManager().search(query, {
+        const hits = await getMemoryIndexManager(tenantId).search(query, {
           topKFts: params.topKFts,
           topKVector: params.topKVector,
           topN: params.topN,

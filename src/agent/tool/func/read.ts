@@ -13,8 +13,8 @@ import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
-import { resolveWorkspaceDir } from "../../../utils/app-path.js";
-import { getCurrentChannel } from "../../agent-state.js";
+import { resolveTenantWorkspaceDir } from "../../../utils/app-path.js";
+import { getAgentState } from "../../agent-state.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -32,11 +32,17 @@ type ReadOutput = {
   totalLines: number;
 };
 
-/** 读取文件内容，支持按行分页 */
-export function createReadTool(): ToolDefinition<
+/**
+ * 创建文件读取工具。
+ * @param tenantId 租户 ID，用于解析工作区路径和获取当前渠道（审批用）
+ */
+export function createReadTool(tenantId: string): ToolDefinition<
   typeof readParameters,
   ToolDetails<ReadOutput>
 > {
+  // 租户 workspace 目录，作为路径安全检查的根目录
+  const workspace = resolveTenantWorkspaceDir(tenantId);
+
   return {
     name: "read",
     label: "Read",
@@ -53,7 +59,6 @@ export function createReadTool(): ToolDefinition<
       const started = Date.now();
 
       // 1. 路径安全检查
-      const workspace = resolveWorkspaceDir();
       const pathCheck = await checkPathSafety(
         params.path,
         workspace,
@@ -72,12 +77,14 @@ export function createReadTool(): ToolDefinition<
       const config = readFgbgUserConfig();
       const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
       if (requiresApproval("read", securityConfig.approval)) {
+        // 从当前租户的 agent 状态中获取渠道信息
+        const channel = getAgentState(tenantId)?.channel ?? "web";
         const approved = await requestApprovalWithDescription(
           "read",
           { path: params.path },
           `读取文件: ${params.path}`,
           {
-            channel: getCurrentChannel(),
+            channel,
             unapprovableStrategy: securityConfig.unapprovableStrategy,
             timeoutMs: securityConfig.approval.timeoutMs,
           },
@@ -90,7 +97,7 @@ export function createReadTool(): ToolDefinition<
         }
       }
 
-      // 3. 文件存在性检查（read 特有：文件必须存在）
+      // 3. 文件存在性检查
       if (!(await exists(filePath))) {
         return errResult(`文件不存在: ${params.path}`, {
           code: "NOT_FOUND",
@@ -98,7 +105,7 @@ export function createReadTool(): ToolDefinition<
         });
       }
 
-      // 3. 文本文件门控：仅允许读取文本文件
+      // 4. 文本文件门控：仅允许读取文本文件
       const isText = await isTextFile(filePath);
       if (!isText) {
         const reason = getFileTypeRejectReason(filePath);
@@ -113,7 +120,6 @@ export function createReadTool(): ToolDefinition<
         const lines = content.split("\n");
         const totalLines = lines.length;
 
-        // 处理分页
         const offset = params.offset ?? 0;
         const limit = params.limit ?? totalLines;
         const slicedLines = lines.slice(offset, offset + limit);
@@ -126,11 +132,7 @@ export function createReadTool(): ToolDefinition<
 
         return okResult(
           `Read ${slicedLines.length}/${totalLines} lines from ${params.path}`,
-          {
-            path: filePath,
-            content: slicedContent,
-            totalLines,
-          },
+          { path: filePath, content: slicedContent, totalLines },
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -182,6 +182,7 @@ export async function createRuntimeAgentSession(params: {
   provider: string;
   apiKey?: string;
   thinkingLevel?: ThinkingLevel;
+  tenantId?: string;
 }): Promise<AgentSession> {
   const {
     model,
@@ -192,6 +193,7 @@ export async function createRuntimeAgentSession(params: {
     provider,
     apiKey,
     thinkingLevel,
+    tenantId = "default",
   } = params;
 
   const sessionManager = SessionManager.open(sessionFile, sessionDir);
@@ -206,7 +208,7 @@ export async function createRuntimeAgentSession(params: {
     path.join(agentDir, "models.json"),
   );
   modelRegistry.refresh();
-  const toolBundle = createToolBundle(cwd);
+  const toolBundle = createToolBundle(cwd, tenantId);
 
   const { session } = await createAgentSession({
     model,

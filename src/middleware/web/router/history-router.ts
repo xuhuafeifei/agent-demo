@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { clearHistory, getHistory } from "../../../agent/run.js";
+import { readFgbgUserConfig } from "../../../config/index.js";
 
 /**
  * History router: GET /history, POST /clear
+ * 使用 web 渠道配置的 tenantId 获取/清除对话历史。
  */
 export function createHistoryRouter() {
   const router = Router();
@@ -10,7 +12,9 @@ export function createHistoryRouter() {
   // GET /history - Get conversation history (backend-defined limit)
   router.get("/", async (_req, res) => {
     try {
-      const history = getHistory();
+      // 从配置中获取 web 渠道的 tenantId
+      const tenantId = readFgbgUserConfig().channels.web.tenantId;
+      const history = getHistory(tenantId);
       res.json({ success: true, history });
     } catch (error: unknown) {
       const runtimeError =
@@ -25,7 +29,9 @@ export function createHistoryRouter() {
   // POST /clear - Clear conversation history
   router.post("/", async (_req, res) => {
     try {
-      clearHistory();
+      // 从配置中获取 web 渠道的 tenantId
+      const tenantId = readFgbgUserConfig().channels.web.tenantId;
+      clearHistory(tenantId);
       res.json({ success: true, message: "对话历史已清除" });
     } catch (error: unknown) {
       const runtimeError =

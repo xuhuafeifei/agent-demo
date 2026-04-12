@@ -12,8 +12,10 @@ const RRF_K = 60;
 
 /**
  * 执行混合检索（FTS + 向量）并融合排序。
+ * @param tenantId 租户 ID，用于定位该租户的记忆数据库
  */
 export async function searchMemory(
+  tenantId: string,
   query: string,
   options?: SearchOptions,
 ): Promise<MemoryHit[]> {
@@ -27,11 +29,11 @@ export async function searchMemory(
   const topKVector = options?.topKVector ?? 20;
   const topN = options?.topN ?? 8;
 
-  // 并行执行 FTS 关键词召回与向量 KNN 召回
+  // 并行执行 FTS 关键词召回与向量 KNN 召回（均作用于该租户的数据库）
   const [ftsRows, vectorRows] = await Promise.all([
-    queryFts(query, topKFts),
+    queryFts(tenantId, query, topKFts),
     embeddingText(query).then((embedding) =>
-      queryVector(embedding, topKVector),
+      queryVector(tenantId, embedding, topKVector),
     ),
   ]);
 
@@ -43,7 +45,7 @@ export async function searchMemory(
   const allIds = Array.from(new Set([...ftsRank.keys(), ...vectorRank.keys()]));
   if (allIds.length === 0) return [];
 
-  const chunks = await getChunksByIds(allIds);
+  const chunks = await getChunksByIds(tenantId, allIds);
   const byId = new Map(chunks.map((item) => [item.id, item])); // id -> ChunkRow，便于按 id 取 content
 
   const hits: MemoryHit[] = [];

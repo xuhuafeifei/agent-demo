@@ -1,24 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
-import { resolveStateDir } from "../../utils/app-path.js";
+import { resolveTenantWorkspaceDir } from "../../utils/app-path.js";
 
 /**
- * Agent 工作目录（默认 ~/.fgbg/agent）。
- * 可通过 FGBG_AGENT_DIR 覆盖，用于存放 agent 运行时生成的文件（如 model.json）。
+ * Pi / runtime 内部数据目录（如 auth.json、models.json）。
+ *
+ * - 默认：`~/.fgbg/tenants/{tenantId}/workspace/.pi-agent`（按租户隔离，不再使用全局 ~/.fgbg/agent）
+ * - 可通过 `FGBG_AGENT_DIR` 覆盖为任意路径。
  */
-export function resolveAgentDir(): string {
+export function resolveAgentDir(tenantId: string): string {
   const override = process.env.FGBG_AGENT_DIR?.trim();
   if (override) {
     return path.resolve(override);
   }
-  return path.join(resolveStateDir(), "agent");
+  return path.join(resolveTenantWorkspaceDir(tenantId), ".pi-agent");
 }
 
 /**
- * 确保 agent 目录存在，不存在则创建（权限 0o700）。
+ * 确保 Pi runtime 数据目录存在，不存在则创建（权限 0o700）。
+ * 调用方应先保证对应租户的 workspace 已存在（例如先调用 `ensureAgentWorkspace`）。
  */
-export function ensureAgentDir(): string {
-  const agentDir = resolveAgentDir();
+export function ensureAgentDir(tenantId: string): string {
+  const agentDir = resolveAgentDir(tenantId);
   if (!fs.existsSync(agentDir)) {
     fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
   }

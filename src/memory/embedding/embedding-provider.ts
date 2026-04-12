@@ -10,7 +10,6 @@ import {
 import { sha256 } from "../utils/hash.js";
 import type { FgbgUserConfig } from "../../types.js";
 import { readFgbgUserConfig, writeFgbgUserConfig } from "../../config/index.js";
-import { getMemoryIndexManager } from "../index.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import {
   batchUpsertEmbeddingCache,
@@ -18,6 +17,20 @@ import {
 } from "../store.js";
 
 const memoryLogger = getSubsystemConsoleLogger("memory");
+
+/**
+ * 模型修复/下载中标志位，由 MemoryIndexManager 在进入/退出 repairing 状态时更新。
+ * embedding 模型是全局共享基础设施，修复状态与租户无关，用模块级变量表示。
+ */
+let modelRepairingFlag = false;
+
+/**
+ * 供 MemoryIndexManager 在修复状态变化时更新此标志。
+ * @param repairing true 表示修复中，false 表示修复完成或未在修复
+ */
+export function setModelRepairingFlag(repairing: boolean): void {
+  modelRepairingFlag = repairing;
+}
 
 // 类型声明
 type MemorySearchConfig = FgbgUserConfig["agents"]["memorySearch"];
@@ -54,10 +67,10 @@ const MODEL_DOWNLOAD_CONFIG = {
 };
 
 /**
- * 检查是否正在修复
+ * 检查是否正在修复（由 MemoryIndexManager 修复状态驱动）
  */
 export function isModelDownloading(): boolean {
-  return getMemoryIndexManager().isRepairing();
+  return modelRepairingFlag;
 }
 
 /**

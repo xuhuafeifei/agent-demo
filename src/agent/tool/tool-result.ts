@@ -16,7 +16,9 @@ export type ToolErrorCode =
   | "IO_ERROR"
   | "INTERNAL_ERROR"
   /** 用户在前端拒绝工具审批（非抛错路径） */
-  | "USER_REJECTED";
+  | "USER_REJECTED"
+  /** 无权限访问或操作该资源 */
+  | "FORBIDDEN";
 
 export type ToolError = {
   code: ToolErrorCode;

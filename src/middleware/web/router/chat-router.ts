@@ -2,7 +2,6 @@ import { Router } from "express";
 import {
   runWithSingleFlight,
   ModelUnavailableError,
-  DEFAULT_SESSION_KEY,
 } from "../../../agent/run.js";
 import type { RuntimeStreamEvent } from "../../../agent/utils/events.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
@@ -13,11 +12,10 @@ import {
   toolUserRejected,
 } from "../../../agent/tool/utils/tool-result-ui.js";
 import { sanitizeToolArgs } from "../../../agent/tool/security/param-sanitizer.js";
-import { QQ_DEFAULT_IDENTIFY } from "../../../middleware/qq/qq-account.js";
+import { readFgbgUserConfig } from "../../../config/index.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
-// 获取工具显示名称（优先使用 alias，否则使用 toolName）
 function getToolDisplayName(toolName: string, alias?: string): string {
   return alias || toolName || "未知工具";
 }
@@ -30,11 +28,8 @@ function stringifySafe(value: unknown): string {
   }
 }
 
-/** 与模型 tool_call 对齐的原始入参，用于前端展示（不脱敏） */
 function formatToolInputForDisplay(args: unknown): string {
-  if (args === undefined || args === null) {
-    return "-";
-  }
+  if (args === undefined || args === null) return "-";
   try {
     return JSON.stringify(args, null, 2);
   } catch {
@@ -43,7 +38,9 @@ function formatToolInputForDisplay(args: unknown): string {
 }
 
 /**
- * Chat router: POST /chat (SSE streaming)
+ * Chat router: POST /chat (SSE 流式响应)
+ *
+ * Web 端当前为单租户：tenantId 由配置文件 channels.web.tenantId 决定（默认 "default"）。
  */
 export function createChatRouter() {
   const router = Router();
@@ -54,14 +51,11 @@ export function createChatRouter() {
       return res.status(400).json({ error: "缺少消息内容" });
     }
 
-    // 模型不可用时直接返回，避免进入 prompt 后才报 provider/auth 错误。
-    // 设置 SSE 响应头。
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("Access-Control-Allow-Origin", "*");
 
-    // 注册当前 SSE response 到 approvalManager
     approvalManager.setActiveRes(res);
     writeNamedSse(res, "streamStart", { startedAt: Date.now() });
     writeNamedSse(res, "user_message_chunk", { content: message });
@@ -70,11 +64,16 @@ export function createChatRouter() {
     let thinkingTextSoFar = "";
     const toolStartedAt = new Map<string, number>();
 
+    // 从配置中获取 web 端租户 ID
+    const tenantId = readFgbgUserConfig().channels.web.tenantId;
+
     try {
       await runWithSingleFlight({
         message,
         channel: "web",
-        identify: QQ_DEFAULT_IDENTIFY,
+        tenantId,
+        module: "main",
+        sessionKey: `session:main:${tenantId}`,
         onEvent: (event: RuntimeStreamEvent) => {
           if (event.type === "message_update") {
             const delta =
@@ -134,8 +133,7 @@ export function createChatRouter() {
 
           if (event.type === "tool_execution_end") {
             const startedAt = toolStartedAt.get(event.toolCallId);
-            const elapsedMs =
-              typeof startedAt === "number" ? Date.now() - startedAt : 0;
+            const elapsedMs = typeof startedAt === "number" ? Date.now() - startedAt : 0;
             const displayName = getToolDisplayName(event.toolName, event.alias);
             const failed = event.isError || toolReturnedFailure(event.result);
             const rejected = toolUserRejected(event.result);
@@ -172,12 +170,9 @@ export function createChatRouter() {
         onBusy: () => {
           writeSse(res, { type: "error", error: "指令正在运行中，请稍后" });
         },
-        // agentId 与 sessionKey 一致，避免并发读写文件问题
-        agentId: DEFAULT_SESSION_KEY,
       });
     } catch (error) {
-      const runtimeError =
-        error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error(`[chat] ${runtimeError.message}`, error);
       if (error instanceof ModelUnavailableError) {
         writeNamedSse(res, "error", {
@@ -188,15 +183,9 @@ export function createChatRouter() {
         });
         return;
       }
-
-      writeSse(res, {
-        type: "error",
-        error: runtimeError.message,
-      });
+      writeSse(res, { type: "error", error: runtimeError.message });
     } finally {
-      // 清理 approvalManager 中的 SSE response 引用
       approvalManager.clearActiveRes();
-      // 取消所有未完成的审批（用户断开/请求结束时）
       approvalManager.cancelAll();
       writeNamedSse(res, "streamEnd", { endedAt: Date.now() });
       res.end();

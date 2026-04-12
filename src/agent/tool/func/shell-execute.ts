@@ -11,7 +11,7 @@ import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
-import { getCurrentChannel } from "../../agent-state.js";
+import { getAgentState } from "../../agent-state.js";
 
 const toolLogger = getSubsystemConsoleLogger("shell-execute");
 const promisifiedExecFile = promisify(execFile);
@@ -119,7 +119,11 @@ type ShellExecuteOutput = {
  * - 超时限制（默认 30 秒）
  * - 环境变量脱敏
  */
-export function createShellExecuteTool(): ToolDefinition<
+/**
+ * 创建 shell 执行工具。
+ * @param tenantId 租户 ID，用于获取当前渠道信息（审批时需要）
+ */
+export function createShellExecuteTool(tenantId: string): ToolDefinition<
   typeof shellExecuteParameters,
   ToolDetails<ShellExecuteOutput>
 > {
@@ -153,7 +157,7 @@ export function createShellExecuteTool(): ToolDefinition<
             { command },
             `执行命令: ${command}`,
             {
-              channel: getCurrentChannel(),
+              channel: getAgentState(tenantId)?.channel ?? "web",
               unapprovableStrategy: securityConfig.unapprovableStrategy,
               timeoutMs: securityConfig.approval.timeoutMs,
             },

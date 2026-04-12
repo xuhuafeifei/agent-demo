@@ -5,10 +5,12 @@ import { createRuntimeAgentSession } from "../../pi-embedded-runner/attempt.js";
 const logger = getSubsystemConsoleLogger("compact-tool");
 
 /**
- * 压缩会话上下文的工具
- * 这个工具会使用 Pi-core 内置的压缩功能，自动压缩会话历史
+ * 创建会话压缩工具。
+ * 使用 Pi-core 内置压缩功能压缩会话历史，减少 token 占用。
+ *
+ * @param tenantId 租户 ID，用于定位租户 session 文件
  */
-export function createCompactContextTool() {
+export function createCompactContextTool(tenantId: string = "default") {
   return {
     name: "compactContext",
     description:
@@ -22,14 +24,12 @@ export function createCompactContextTool() {
       logger.info("开始压缩会话上下文");
 
       try {
-        // 准备会话信息
-        const prepared = await prepareBeforeGetReply({
-          sessionKey: "agent:main:main", // 使用默认会话
-        });
+        // 使用当前租户的主 session 键准备会话信息
+        const sessionKey = `session:main:${tenantId}`;
+        const prepared = await prepareBeforeGetReply({ tenantId, sessionKey });
 
-        // 创建运行时会话
         const session = await createRuntimeAgentSession({
-          model: prepared.model!, // 此时模型应该已经准备好
+          model: prepared.model!,
           sessionDir: prepared.sessionDir,
           sessionFile: prepared.sessionFile,
           cwd: prepared.cwd,
@@ -37,9 +37,9 @@ export function createCompactContextTool() {
           provider: prepared.normalizedProvider,
           apiKey: prepared.apiKey,
           thinkingLevel: prepared.thinkingLevel,
+          tenantId,
         });
 
-        // 使用 Pi-core 内置的压缩方法
         const compactionResult = await session.compact(
           "会话过长，需要压缩以适应上下文窗口限制",
         );
@@ -63,9 +63,7 @@ export function createCompactContextTool() {
         );
         return {
           content: `压缩会话上下文失败: ${error instanceof Error ? error.message : "未知错误"}`,
-          details: {
-            error: error instanceof Error ? error.message : "未知错误",
-          },
+          details: { error: error instanceof Error ? error.message : "未知错误" },
           isError: true,
         };
       }

@@ -2,12 +2,12 @@ import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import {
-  deleteTaskByName,
-  listAllTasks,
+  deleteTaskByNameForTenant,
+  listTasksByTenant,
   type TaskScheduleRow,
+  upsertTaskSchedule,
 } from "../../../watch-dog/store.js";
-import { runTaskByNameNow } from "../../../watch-dog/watch-dog.js";
-import { upsertTaskSchedule } from "../../../watch-dog/store.js";
+import { runTaskByNameNowForTenant } from "../../../watch-dog/watch-dog.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 import { formatChinaIso } from "../../../watch-dog/time.js";
 import { computeNextRunFromCron } from "../../../watch-dog/cron.js";
@@ -138,11 +138,11 @@ const createReminderTaskParams = Type.Object({
       },
     ),
   ),
-  identify: Type.Optional(
+  tenantId: Type.Optional(
     Type.String({
       minLength: 1,
       description:
-        'identify which user do you want to send message to. this message will be take from your system prompt "Channel" chapter',
+        'Tenant ID for routing the reminder to the correct bot account. Read from your system prompt "Channel" chapter. If not found, use "default".',
     }),
   ),
   taskName: Type.Optional(
@@ -231,9 +231,11 @@ function makeTaskName(prefix: string): string {
 }
 
 /**
- * 展示所有调度任务
+ * 展示调度任务列表（按租户隔离）。
+ * default 租户可查看全部任务，其他租户只能查看自己的任务。
+ * @param tenantId 当前租户 ID
  */
-export function createListTasksTool(): ToolDefinition<
+export function createListTasksTool(tenantId: string): ToolDefinition<
   typeof listTasksParams,
   ToolDetails<ListTasksOutput>
 > {
@@ -241,11 +243,11 @@ export function createListTasksTool(): ToolDefinition<
     name: "listTaskSchedules",
     label: "List Task Schedules",
     description:
-      "List all task_schedule entries with status and next_run_time.",
+      "List task_schedule entries. Default tenant sees all tasks; other tenants see only their own.",
     parameters: listTasksParams,
     execute: async (_id, _params: ListTasksInput) => {
       try {
-        const rows = await listAllTasks();
+        const rows = await listTasksByTenant(tenantId);
         const tasks = rows.map((row) => ({
           task_name: row.task_name,
           task_type: row.task_type,
@@ -281,9 +283,11 @@ export function createListTasksTool(): ToolDefinition<
 }
 
 /**
- * 运行调度任务
+ * 运行调度任务（按租户权限校验）。
+ * default 租户可触发任意任务，其他租户只能触发自己的任务。
+ * @param tenantId 当前租户 ID
  */
-export function createRunTaskTool(): ToolDefinition<
+export function createRunTaskTool(tenantId: string): ToolDefinition<
   typeof runTaskParams,
   ToolDetails<{ ok: boolean }>
 > {
@@ -291,7 +295,7 @@ export function createRunTaskTool(): ToolDefinition<
     name: "runTaskByName",
     label: "Run Task By Name",
     description:
-      "Manually execute a task by task_name immediately (does not shift its next_run_time for recurring tasks).",
+      "Manually execute a task by task_name immediately. Default tenant can run any task; others can only run their own.",
     parameters: runTaskParams,
     execute: async (_id, params: RunTaskInput) => {
       const taskName = params.task_name.trim();
@@ -302,11 +306,17 @@ export function createRunTaskTool(): ToolDefinition<
         });
       }
       try {
-        const ok = await runTaskByNameNow(taskName);
-        if (!ok) {
+        const result = await runTaskByNameNowForTenant(taskName, tenantId);
+        if (result === "not_found") {
           return errResult(`未找到任务或缺少 handler：${taskName}`, {
             code: "NOT_FOUND",
             message: "任务不存在或缺少处理器",
+          });
+        }
+        if (result === "forbidden") {
+          return errResult(`无权限操作任务：${taskName}`, {
+            code: "FORBIDDEN",
+            message: "该任务不属于当前租户",
           });
         }
         return okResult(`任务 ${taskName} 已立即执行`, { ok: true });
@@ -325,7 +335,7 @@ export function createRunTaskTool(): ToolDefinition<
 /**
  * 删除调度任务（建议配合“删除后重建”修改任务）
  */
-export function createDeleteTaskTool(): ToolDefinition<
+export function createDeleteTaskTool(tenantId: string): ToolDefinition<
   typeof deleteTaskParams,
   ToolDetails<{ ok: boolean }>
 > {
@@ -333,7 +343,7 @@ export function createDeleteTaskTool(): ToolDefinition<
     name: "deleteTaskByName",
     label: "Delete Task By Name",
     description:
-      "Delete a scheduled task by task_name (also removes task details).",
+      "Delete a scheduled task by task_name. Default tenant can delete any task; others can only delete their own.",
     parameters: deleteTaskParams,
     execute: async (_id, params: DeleteTaskInput) => {
       const taskName = params.task_name.trim();
@@ -344,11 +354,17 @@ export function createDeleteTaskTool(): ToolDefinition<
         });
       }
       try {
-        const ok = await deleteTaskByName(taskName);
-        if (!ok) {
+        const result = await deleteTaskByNameForTenant(taskName, tenantId);
+        if (result === "not_found") {
           return errResult(`未找到任务：${taskName}`, {
             code: "NOT_FOUND",
             message: "任务不存在",
+          });
+        }
+        if (result === "forbidden") {
+          return errResult(`无权限删除任务：${taskName}`, {
+            code: "FORBIDDEN",
+            message: "该任务不属于当前租户",
           });
         }
         return okResult(`任务 ${taskName} 已删除`, { ok: true });
@@ -382,7 +398,7 @@ export function createGetNowTool(): ToolDefinition<
   };
 }
 
-export function createReminderTaskTool(): ToolDefinition<
+export function createReminderTaskTool(tenantId: string): ToolDefinition<
   typeof createReminderTaskParams,
   ToolDetails<{ task_name: string; task_type: string; next_run_time: string }>
 > {
@@ -452,18 +468,18 @@ export function createReminderTaskTool(): ToolDefinition<
         channels,
         timezone,
       };
-      // 必须设置 identify, 否则无法发送消息
-      const id = params.identify?.trim();
-      if (!id) {
+      // tenantId 用于在执行时路由到对应 bot 账号；优先取工具参数，回落到当前租户
+      const tid = params.tenantId?.trim() || tenantId;
+      if (!tid) {
         return errResult(
-          '必须提供 identify, identify 来自你的 system prompt "Channel" 章节. 如果找不到，填写默认的 default',
+          '必须提供 tenantId，从你的 system prompt "Channel" 章节获取。如果找不到，填写 default',
           {
             code: "INVALID_ARGUMENT",
-            message: "identify required, identify from your system prompt 'Channel' chapter. if not found, fill in default",
+            message: "tenantId required, read from system prompt 'Channel' chapter. fallback: 'default'",
           },
         );
       }
-      payload.identify = id;
+      payload.tenantId = tid;
       if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
         payload.blacklistPeriods = params.blacklistPeriods;
       }
@@ -478,6 +494,7 @@ export function createReminderTaskTool(): ToolDefinition<
           timezone,
           next_run_time: nextRunTime,
           status: "pending",
+          tenant_id: tenantId,
         });
         return okResult(`已创建提醒任务 ${taskName}`, {
           task_name: taskName,
@@ -495,7 +512,7 @@ export function createReminderTaskTool(): ToolDefinition<
   };
 }
 
-export function createAgentTaskTool(): ToolDefinition<
+export function createAgentTaskTool(tenantId: string): ToolDefinition<
   typeof createAgentTaskParams,
   ToolDetails<{ task_name: string; task_type: string; next_run_time: string }>
 > {
@@ -571,6 +588,8 @@ export function createAgentTaskTool(): ToolDefinition<
         channels,
         timezone,
         mode,
+        // 将当前租户 ID 写入 payload，执行时 watch-dog 用它路由 workspace/memory/session 和通知 bot
+        tenantId: tenantId,
       };
       if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
         payload.blacklistPeriods = params.blacklistPeriods;
@@ -586,6 +605,7 @@ export function createAgentTaskTool(): ToolDefinition<
           timezone,
           next_run_time: nextRunTime,
           status: "pending",
+          tenant_id: tenantId,
         });
         return okResult(`已创建智能任务 ${taskName}`, {
           task_name: taskName,

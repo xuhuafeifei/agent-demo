@@ -2,6 +2,7 @@
  * 工具装配（bundle）
  *
  * 读 readFgbgUserConfig() → resolveToolSecurityConfig → 按 enabledTools 过滤 tool-catalog → 生成 tools[] / toolings[]
+ * tenantId 透传给每个工具工厂，工具内部通过 tenantId 解析路径和 agent 状态。
  */
 
 import { readFgbgUserConfig } from "../../config/index.js";
@@ -19,10 +20,13 @@ export type ToolBundle = {
 };
 
 /**
- * 根据当前配置为给定 cwd 生成工具实例与说明文案。
- * 工具列表完全由 toolSecurity.enabledTools 决定。
+ * 根据当前配置为给定 cwd 和 tenantId 生成工具实例与说明文案。
+ * 工具列表由 toolSecurity.enabledTools 决定，每个工具通过 (cwd, tenantId) 实例化。
+ *
+ * @param cwd 租户 workspace 目录（用于文件路径安全检查）
+ * @param tenantId 租户 ID（用于工具内部路由 agent 状态和 bot 账号）
  */
-export function createToolBundle(cwd: string): ToolBundle {
+export function createToolBundle(cwd: string, tenantId: string): ToolBundle {
   const config = readFgbgUserConfig();
   const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
 
@@ -32,8 +36,9 @@ export function createToolBundle(cwd: string): ToolBundle {
       typeof name === "string" && name in TOOL_CATALOG,
   );
 
+  // 每个工具工厂接收 (cwd, tenantId)，工具闭包内持有租户上下文
   const tools = enabledToolNames.map((name) =>
-    TOOL_CATALOG[name].factory(cwd),
+    TOOL_CATALOG[name].factory(cwd, tenantId),
   );
   const toolings = enabledToolNames.map(
     (name) => TOOL_CATALOG[name].description,
@@ -48,7 +53,7 @@ export function createToolBundle(cwd: string): ToolBundle {
 
 /**
  * 返回需要从 session 历史对话记录（context）中过滤掉的工具名列表。
- * 下述工具的返回值本就会成为系统提示词的一部分，因此不应该出现在历史对话信息中
+ * 这些工具的返回值已作为 system prompt 的一部分，不应重复出现在历史对话中。
  */
 export const FILTER_FROM_CONTEXT_TOOL_NAMES = [
   "memorySearch",
@@ -58,9 +63,7 @@ export const FILTER_FROM_CONTEXT_TOOL_NAMES = [
   "reminderTask",
 ] as const;
 
-/**
- * 获取需要从上下文过滤的工具名列表
- */
+/** 获取需要从上下文过滤的工具名列表 */
 export function getFilterContextToolNames(): readonly string[] {
   return FILTER_FROM_CONTEXT_TOOL_NAMES;
 }

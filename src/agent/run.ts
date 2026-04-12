@@ -8,7 +8,6 @@ import { createCacheTrace } from "./utils/cache-trace.js";
 import type { RuntimeStreamEvent } from "./utils/events.js";
 import {
   loadSessionIndexEntry,
-  resolveSessionIndexPath,
   resolveSessionDir,
 } from "./session/index.js";
 import {
@@ -23,23 +22,19 @@ import {
   readWorkspaceUserinfoSummary,
 } from "./workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
-import { resolveWorkspaceDir } from "../utils/app-path.js";
+import { resolveTenantWorkspaceDir } from "../utils/app-path.js";
 import { createToolBundle } from "./tool/tool-bundle.js";
 import { getSkillManager } from "./skill/skill-manager.js";
 import {
-  getAgentRuntimeState,
+  getAllRunningAgentStates,
   tryAcquireAgent,
   releaseAgent,
-  setCurrentChannel,
-  setCurrentIdentify,
 } from "./agent-state.js";
 import { formatChinaIso } from "../watch-dog/time.js";
 import { getFilterContextToolNames } from "./tool/tool-bundle.js";
 import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
 import { refreshFgbgUserConfigCache } from "../config/index.js";
 import { areTextsOverTokenThreshold } from "./utils/token-counter.js";
-
-export const DEFAULT_SESSION_KEY = "agent:main:main";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 
@@ -57,28 +52,31 @@ export class ModelUnavailableError extends Error {
   }
 }
 
-export function logRuntimePaths(): void {
+/**
+ * 打印当前租户的运行时路径信息（调试用）
+ */
+export function logRuntimePaths(tenantId: string): void {
+  const sessionKey = `session:main:${tenantId}`;
   agentLogger.info(`全局配置路径: ${getGlobalModelConfigPath()}`);
-  const entry = loadSessionIndexEntry("agent:main:main");
-  agentLogger.info(`会话索引路径: ${resolveSessionIndexPath()}`);
+  const entry = loadSessionIndexEntry(tenantId, sessionKey);
+  agentLogger.info(`会话索引路径: ${resolveSessionDir(tenantId)}/session.json`);
   agentLogger.info(`会话文件路径: ${entry?.sessionFile ?? "未创建"}`);
 }
 
-/** Default history entry count returned by backend */
 const DEFAULT_HISTORY_LIMIT = 20;
 
 /**
- * Get raw session messages (internal use for building chat history context).
- * Returns SessionMessage[] for internal processing.
+ * 获取指定租户的 session 消息列表（内部用，用于构建对话历史上下文）
  */
-function getSessionMessageEntrys(): SessionMessageEntry[] {
-  const entry = loadSessionIndexEntry("agent:main:main");
+function getSessionMessageEntrys(tenantId: string): SessionMessageEntry[] {
+  const sessionKey = `session:main:${tenantId}`;
+  const entry = loadSessionIndexEntry(tenantId, sessionKey);
   if (!entry?.sessionFile) return [];
   if (!fs.existsSync(entry.sessionFile)) return [];
 
   const sessionManager = SessionManager.open(
     entry.sessionFile,
-    resolveSessionDir(),
+    resolveSessionDir(tenantId),
   );
   const entries = sessionManager.getEntries();
 
@@ -89,28 +87,20 @@ function getSessionMessageEntrys(): SessionMessageEntry[] {
 }
 
 /**
- * Get conversation history in chronological order for frontend API.
- * Returns a simplified format for frontend consumption.
+ * 获取指定租户的对话历史（前端 API 消费）
  */
-export function getHistory(): Array<{
+export function getHistory(tenantId: string): Array<{
   role: string;
   content: string;
   timestamp?: number;
 }> {
-  const messageEntrys = getSessionMessageEntrys();
-
-  // Filter to only keep user and assistant messages
+  const messageEntrys = getSessionMessageEntrys(tenantId);
   const filtered = messageEntrys.filter(
     (msg) => msg.message.role === "user" || msg.message.role === "assistant",
   );
-
-  // Get the most recent messages (maintain chronological order)
   const recent = filtered.slice(-DEFAULT_HISTORY_LIMIT);
-
-  // Transform to frontend-friendly format
-  const history: Array<{ role: string; content: string; timestamp?: number }> =
-    [];
-  const baseTimestamp = Date.now() - recent.length * 1000; // Base timestamp for ordering
+  const history: Array<{ role: string; content: string; timestamp?: number }> = [];
+  const baseTimestamp = Date.now() - recent.length * 1000;
 
   recent.forEach((msg, idx) => {
     const raw = msg.message as {
@@ -118,8 +108,6 @@ export function getHistory(): Array<{
       content?: unknown[];
       toolName?: string;
     };
-
-    // Extract text content from the message
     const textParts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
@@ -129,13 +117,11 @@ export function getHistory(): Array<{
         }
       }
     }
-
-    // Only add if there's text content
     if (textParts.length > 0) {
       history.push({
         role: raw.role || "unknown",
         content: textParts.join("\n"),
-        timestamp: baseTimestamp + idx * 1000, // Sequential timestamps for ordering
+        timestamp: baseTimestamp + idx * 1000,
       });
     }
   });
@@ -143,19 +129,22 @@ export function getHistory(): Array<{
   return history;
 }
 
-export function clearHistory(): void {
-  const entry = loadSessionIndexEntry("agent:main:main");
+/**
+ * 清除指定租户的会话历史
+ */
+export function clearHistory(tenantId: string): void {
+  const sessionKey = `session:main:${tenantId}`;
+  const entry = loadSessionIndexEntry(tenantId, sessionKey);
   if (!entry?.sessionFile) return;
   try {
     fs.unlinkSync(entry.sessionFile);
   } catch {
-    // ignore missing file
+    // 忽略文件不存在的情况
   }
 }
 
 /**
- * 从 session 消息列表剪枝：只保留每条 message 的 role 与文本内容，
- * 返回 "user: ...\n\nassistant: ..." 格式字符串。
+ * 从 session 消息列表剪枝，返回 "user: ...\n\nassistant: ..." 格式文本。
  */
 function pruneSessionChat(messages: SessionMessageEntry[]): string {
   const selected: string[] = [];
@@ -169,9 +158,7 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
     };
     const role = raw.role ?? "unknown";
     const toolName = raw.toolName ?? "";
-    if (filterToolNames.includes(toolName)) {
-      continue;
-    }
+    if (filterToolNames.includes(toolName)) continue;
 
     const parts: string[] = [];
     if (Array.isArray(raw.content)) {
@@ -183,51 +170,33 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
       }
     }
     if (parts.length > 0) {
-      const line = `${role}: ${parts.join("\n")}`;
-      selected.push(line);
+      selected.push(`${role}: ${parts.join("\n")}`);
     }
   }
-
   return selected.reverse().join("\n\n");
 }
 
 /**
- * 向 Agent 拉取一次回复；流式进度通过 `onEvent` 交给中间层（layer）。
+ * 向 Agent 拉取一次回复；流式进度通过 `onEvent` 交给中间层。
  *
- * @param params.message - 用户输入
- * @param params.onEvent - layer 流式事件回调
- * @param params.channel - 渠道：`web` | `qq`
- * @param params.sessionKey - 会话键；省略时使用 {@link DEFAULT_SESSION_KEY}
- * @param params.identify - 当前会话绑定的 QQ/微信 bot identify，写入 system prompt 并供工具读取
- *
- * **Session 并发策略（核心设计）**
- *
- * - **agentId === sessionKey**：运行时通过 `runWithSingleFlight` 确保 agentId 唯一，而 agentId 与 sessionKey 保持一致
- * - 因此 agentId 锁定 = session 文件独占锁，避免多路并（web/qq/watch-dog）发写坏 session
- * - watch-dog 后台任务使用独立 sessionKey（`watchdog:task:${id}`），与主链路 session 隔离
+ * @param params.message 用户输入
+ * @param params.onEvent 流式事件回调
+ * @param params.channel 渠道：web | qq | weixin
+ * @param params.tenantId 租户 ID，决定使用哪套 workspace/memory/session
+ * @param params.sessionKey 会话键（watch-dog 使用 `watchdog:task:{id}`，普通渠道使用 `session:main:{tenantId}`）
  */
 export async function getReplyFromAgent(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
   channel: AgentChannel;
-  sessionKey?: string;
-  identify?: string;
+  tenantId: string;
+  sessionKey: string;
 }): Promise<{ finalText: string }> {
-  // 刷新本地fgbg.json配置缓存
   refreshFgbgUserConfigCache();
 
-  const { message, onEvent, channel, sessionKey, identify } = params;
+  const { message, onEvent, channel, tenantId, sessionKey } = params;
 
-  // 设置当前渠道上下文（供工具审批使用）
-  setCurrentChannel(channel);
-  const identifyTrimmed = identify?.trim() ?? "";
-  setCurrentIdentify(identifyTrimmed || null);
-
-  // 每次请求都动态选模型并初始化 Session，run 层不持有任何状态对象。
-  const prepared = await prepareBeforeGetReply({
-    sessionKey: sessionKey ?? DEFAULT_SESSION_KEY,
-    channel,
-  });
+  const prepared = await prepareBeforeGetReply({ tenantId, sessionKey, channel });
 
   const modelRef = prepared.modelRef;
   const model = prepared.model;
@@ -259,17 +228,8 @@ export async function getReplyFromAgent(params: {
     model: modelRef.model,
   });
 
-  if (!prepared.model) {
-    throw new ModelUnavailableError({
-      provider: modelRef.provider,
-      model: modelRef.model,
-      detail: modelError ?? "session 初始化失败",
-    });
-  }
-
-  // 创建会话 (核心)
   const session = await createRuntimeAgentSession({
-    model: prepared.model,
+    model: prepared.model!,
     sessionDir: prepared.sessionDir,
     sessionFile: prepared.sessionFile,
     cwd: prepared.cwd,
@@ -277,29 +237,28 @@ export async function getReplyFromAgent(params: {
     provider: prepared.normalizedProvider,
     apiKey: prepared.apiKey,
     thinkingLevel: prepared.thinkingLevel,
+    tenantId,
   });
 
-  // session 获取当前聊天信息，剪枝为仅保留 user/assistant 的文本内容
-  const chatHistoryText = pruneSessionChat(getSessionMessageEntrys());
+  const chatHistoryText = pruneSessionChat(getSessionMessageEntrys(tenantId));
 
-  // 提示词函数是纯组合器：数据由调用方准备后传入。
   const prompt = buildSystemPrompt({
-    soul: readWorkspaceSoul(),
-    user: readWorkspaceUserinfoSummary(),
+    soul: readWorkspaceSoul(tenantId),
+    user: readWorkspaceUserinfoSummary(tenantId),
     nowText: formatChinaIso(new Date()),
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
     chatHistory: chatHistoryText,
-    workspace: resolveWorkspaceDir(),
-    toolings: createToolBundle(prepared.cwd).toolings,
-    skillsMeta: getSkillManager().getMetaPromptText(),
+    workspace: resolveTenantWorkspaceDir(tenantId),
+    toolings: createToolBundle(prepared.cwd, tenantId).toolings,
+    skillsMeta: getSkillManager(tenantId).getMetaPromptText(),
     channel: channel,
-    identify: identifyTrimmed || undefined,
+    // tenantId 作为 channel 的上下文信息写入 system prompt，供工具参数填写参考
+    identify: tenantId,
   });
   agentLogger.trace(`prompt: ${prompt}`);
 
-  // 使用 token-counter 工具计算 systemprompt + 用户输入的总 token 数
-  const maxTokens = prepared.model.maxTokens;
-  const tokenRatio = prepared.model.tokenRatio || 0.75;
+  const maxTokens = prepared.model!.maxTokens;
+  const tokenRatio = prepared.model!.tokenRatio || 0.75;
   const compressionResult = areTextsOverTokenThreshold(
     [prompt, message],
     maxTokens,
@@ -323,19 +282,17 @@ export async function getReplyFromAgent(params: {
   trace.recordStage("prompt:start");
 
   const emit = (event: RuntimeStreamEvent) => {
-    if (event.type === "message_end") {
-      trace.recordStage("prompt:end");
-    }
+    if (event.type === "message_end") trace.recordStage("prompt:end");
     onEvent(event);
   };
 
-  // 发送 context used 事件到前端
   emit({
     type: "context_used",
     totalTokens: compressionResult.totalTokens,
     threshold: compressionResult.threshold,
     contextWindow: maxTokens,
   });
+
   const channelPolicy = getChannelPolicy(channel);
   const emitContextSnapshot = (reason: "before_prompt") => {
     if (!channelPolicy.emitContextSnapshot) return;
@@ -347,10 +304,8 @@ export async function getReplyFromAgent(params: {
     const runResult = await runEmbeddedPiAgent({
       session,
       message,
-      onEvent: (event) => {
-        emit(event);
-      },
-      needsCompression, // 传递压缩标记
+      onEvent: (event) => emit(event),
+      needsCompression,
     });
     trace.recordStage("request:end");
     emit({ type: "done" });
@@ -360,37 +315,46 @@ export async function getReplyFromAgent(params: {
     trace.recordStage("request:end");
     const message = error instanceof Error ? error.message : "服务器内部错误";
     agentLogger.error(`[agent] request failed: ${message}`, error);
-    emit({
-      type: "error",
-      error: message,
-    });
+    emit({ type: "error", error: message });
     trace.logTimeline("error");
     return { finalText: "" };
   } finally {
-    getMemoryIndexManager().onMemorySourceChanged(
-      "session",
-      prepared.sessionFile,
-    );
+    getMemoryIndexManager(tenantId).onMemorySourceChanged("session", prepared.sessionFile);
     session.dispose();
   }
 }
 
-export { getAgentRuntimeState };
+export { getAllRunningAgentStates };
 
+/**
+ * 以单飞模式运行 agent：同一 agentId（module + tenantId）同时只允许一个执行。
+ * 不同 module 的同租户 agent 可以并发（如 watch-dog 与 main 互不阻塞）。
+ *
+ * @param params.tenantId 租户 ID
+ * @param params.module   模块名，决定锁粒度与 session 隔离（channel 来源传 "main"，watch-dog 传 "watch-dog"）
+ * @param params.sessionKey 会话键，由调用方显式指定（格式 session:{module}:{tenantId} 或自定义）
+ * @param params.channel 当前渠道
+ * @param params.message 用户消息
+ * @param params.onEvent 流式事件回调
+ * @param params.onBusy 同一 agentId 正在运行时的回调
+ * @param params.onAccepted 成功获取锁（开始执行）时的回调
+ */
 export async function runWithSingleFlight(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
   onBusy?: () => void | Promise<void>;
   onAccepted?: () => void | Promise<void>;
-  agentId: string;
+  tenantId: string;
+  module: string;
+  sessionKey: string;
   channel: AgentChannel;
-  /** 与本次会话绑定的 QQ/微信 bot identify，透传至 agent 与 system prompt */
-  identify?: string;
 }): Promise<{ status: "busy" | "completed"; finalText: string }> {
-  const { message, onEvent, onBusy, onAccepted, channel, agentId, identify } =
+  const { message, onEvent, onBusy, onAccepted, tenantId, module: mod, sessionKey, channel } =
     params;
+  // 锁 key 由 module + tenantId 组成，不同 module 的同租户 agent 可并发
+  const agentId = `agent:${mod}:${tenantId}`;
 
-  if (!tryAcquireAgent(agentId)) {
+  if (!tryAcquireAgent(agentId, tenantId, channel)) {
     await onBusy?.();
     return { status: "busy", finalText: "" };
   }
@@ -401,8 +365,8 @@ export async function runWithSingleFlight(params: {
       message,
       onEvent,
       channel,
-      sessionKey: agentId,
-      identify,
+      tenantId,
+      sessionKey,
     });
     return { status: "completed", finalText: result.finalText };
   } finally {

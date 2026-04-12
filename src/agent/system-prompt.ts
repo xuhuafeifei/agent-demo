@@ -10,7 +10,10 @@ export type BuildSystemPromptInput = {
   toolings?: string[];
   skillsMeta?: string;
   channel?: AgentChannel;
-  /** 当前会话绑定的 bot identify（QQ/微信多账号路由；供 sendIMMessage 等工具对齐） */
+  /**
+   * 当前会话所属租户 ID（tenantId）。
+   * 用于告知大模型在调用 sendIMMessage、createReminderTask 等工具时填入的 tenantId 值。
+   */
   identify?: string;
 };
 
@@ -48,7 +51,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
   const channel = normalizeChannel(input.channel);
   const identifyLine = (input.identify ?? "").trim()
-    ? `\nCurrent bot identify (for IM routing, sendIMMessage): ${(input.identify ?? "").trim()}.\nYou can use ${input.identify} as identify parameter in sendIMMessage tool.`
+    ? `\nCurrent tenantId: ${(input.identify ?? "").trim()}.\nUse this value for the tenantId parameter when calling sendIMMessage, createReminderTask, and other tools that require tenantId.`
     : "";
   return `## who you are
 ${soul}

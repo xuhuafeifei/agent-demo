@@ -14,6 +14,7 @@ import {
 import { startWatchDog } from "./watch-dog/watch-dog.js";
 import { startQQLayer } from "./middleware/qq/qq-layer.js";
 import { startWeixinLayer } from "./middleware/weixin/weixin-layer.js";
+import { readFgbgUserConfig } from "./config/index.js";
 
 // 加载环境变量
 dotenv.config();
@@ -74,7 +75,9 @@ function startServer(port: number) {
 
 async function bootstrap() {
   ensureLoggingSetting();
-  logRuntimePaths();
+  // 获取 web 渠道的默认租户 ID，用于服务启动时的路径日志和记忆系统初始化
+  const webTenantId = readFgbgUserConfig().channels.web.tenantId;
+  logRuntimePaths(webTenantId);
   // 先把服务跑起来
   try {
     startServer(PORT);
@@ -96,7 +99,7 @@ async function bootstrap() {
   }
   // 之后在运行这些插件类内容
   try {
-    getMemoryIndexManager().start();
+    getMemoryIndexManager(webTenantId).start();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     serverLogger.error("[memory-index-manager] failed to start: %s", message);

@@ -171,19 +171,27 @@ async function processTasks(
 }
 
 /**
- * 立即执行指定 task_name（不依赖下一次心跳）
+ * 立即执行指定 task_name，并进行租户权限校验。
+ * default 租户可触发任意任务，其他租户只能触发自己的任务。
+ * 内部使用 "default" 身份查询任务，以区分 not_found 和 forbidden。
+ * @returns "ok" 已触发 | "not_found" 任务不存在 | "forbidden" 无权限
  */
-export async function runTaskByNameNow(taskName: string): Promise<boolean> {
-  const task = await getTaskByName(taskName);
-  if (!task) return false;
+export async function runTaskByNameNowForTenant(
+  taskName: string,
+  tenantId: string,
+): Promise<"ok" | "not_found" | "forbidden"> {
+  // 用 "default" 身份查询，确保任务存在时能区分 "forbidden" 与 "not_found"
+  const task = await getTaskByName(taskName, "default");
+  if (!task) return "not_found";
+  // 非 default 租户只能触发自己的任务
+  if (tenantId !== "default" && task.tenant_id !== tenantId) return "forbidden";
   const handler = HANDLERS[task.task_type];
   if (!handler) {
     logger.error("no handler for task_type=%s", task.task_type);
-    return false;
+    return "not_found";
   }
-  // 手动执行：不更新 next_run_time，保持原始节拍
   await runSingleTask(task, handler, { triggerBy: "functionTool" });
-  return true;
+  return "ok";
 }
 
 /**

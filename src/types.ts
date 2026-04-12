@@ -79,7 +79,6 @@ export type FgbgUserRawConfig = {
     defaults?: {
       model?: { primary?: string };
       models?: Record<string, { alias?: string }>;
-      workspace?: string;
     };
     /** 自动重试：baseDelayMs 首次间隔(ms)，maxRetries 最大重试次数，maxDelayMs 单次最大等待(ms) */
     retry?: {
@@ -129,11 +128,15 @@ export type FgbgUserRawConfig = {
     allowedScripts?: string[];
   };
   channels?: {
-    /** QQ：fgbg 只存开关；账号见 ~/.fgbg/qq/accounts.json */
+    /** Web 端：单租户，tenantId 固定，不打算支持多租户 */
+    web?: {
+      tenantId?: string;
+    };
+    /** QQ：fgbg 只存开关；账号和 tenantId 见 ~/.fgbg/qq/accounts.json */
     qqbot?: {
       enabled?: boolean;
     };
-    /** 微信 iLink：仅 enabled 入 fgbg，token 存 ~/.fgbg/weixin */
+    /** 微信 iLink：仅 enabled 入 fgbg，token 和 tenantId 存 ~/.fgbg/weixin/accounts.json */
     weixin?: {
       enabled?: boolean;
     };
@@ -154,7 +157,6 @@ export type FgbgUserConfig = {
     defaults: {
       model: { primary: string };
       models: Record<string, { alias?: string }>;
-      workspace: string;
     };
     /** 自动重试：baseDelayMs 首次间隔(ms)，maxRetries 最大重试次数，maxDelayMs 单次最大等待(ms) */
     retry: {
@@ -204,7 +206,11 @@ export type FgbgUserConfig = {
     allowedScripts: string[];
   };
   channels: {
-    /** 落盘仅 `enabled`；appId/secret/target 由 accounts.json，GET 接口再拼成展示字段 */
+    /** Web 端租户 ID，默认 "default"，web 端当前不支持多租户 */
+    web: {
+      tenantId: string;
+    };
+    /** 落盘仅 `enabled`；appId/secret/target 和 tenantId 由 accounts.json 管理 */
     qqbot: {
       enabled: boolean;
     };

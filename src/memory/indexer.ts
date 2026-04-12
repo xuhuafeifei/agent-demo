@@ -58,14 +58,14 @@ function measureSync<T>(params: {
  * 根据路径推断来源类型，用于缺省 source 的场景。
  * 与 memory.ts 映射一致：workspace 的 MEMORY.md → memory；用户 memory 目录 → MEMORY.md；userinfo → userinfo。
  */
-function detectSourceByPath(filePath: string): MemorySource {
+function detectSourceByPath(tenantId: string, filePath: string): MemorySource {
   const normalized = path.resolve(filePath);
   if (filePath.endsWith(".jsonl")) return "sessions";
-  if (normalized === path.resolve(resolveWorkspaceMemoryPath())) return "memory";
-  const userinfoDir = path.resolve(resolveWorkspaceUserinfoDir());
+  if (normalized === path.resolve(resolveWorkspaceMemoryPath(tenantId))) return "memory";
+  const userinfoDir = path.resolve(resolveWorkspaceUserinfoDir(tenantId));
   const userinfoPrefix = userinfoDir + path.sep;
   if (normalized.startsWith(userinfoPrefix)) return "userinfo";
-  const workspaceMem = path.resolve(resolveWorkspaceMemoryDir());
+  const workspaceMem = path.resolve(resolveWorkspaceMemoryDir(tenantId));
   if (
     normalized.startsWith(workspaceMem + path.sep) ||
     normalized === workspaceMem
@@ -84,13 +84,13 @@ function detectSourceByPath(filePath: string): MemorySource {
  * - 新文件 -> create
  * - hash 变化 -> rebuild
  */
-export async function syncMemoryByPath(params: {
+export async function syncMemoryByPath(tenantId: string, params: {
   path: string;
   source?: MemorySource;
 }): Promise<SyncResult> {
   const started = Date.now();
   const filePath = path.resolve(params.path);
-  const source = params.source ?? detectSourceByPath(filePath);
+  const source = params.source ?? detectSourceByPath(tenantId, filePath);
   const metaBase = { path: filePath, source };
 
   const { value: exists } = measureSync({
@@ -102,7 +102,7 @@ export async function syncMemoryByPath(params: {
   const { value: existingHash } = await measureAsync({
     label: "query_file_hash",
     meta: metaBase,
-    fn: () => queryFileHash(filePath),
+    fn: () => queryFileHash(tenantId, filePath),
   });
 
   // 文件已删除：有历史索引则 delete 清理，否则 skip
@@ -111,7 +111,7 @@ export async function syncMemoryByPath(params: {
       await measureAsync({
         label: "delete_index",
         meta: metaBase,
-        fn: () => deleteByPath(filePath),
+        fn: () => deleteByPath(tenantId, filePath),
       });
       return {
         path: filePath,
@@ -175,7 +175,7 @@ export async function syncMemoryByPath(params: {
     label: "write_db",
     meta: { ...metaBase, chunks: chunks.length },
     fn: () =>
-      replacePathChunks({
+      replacePathChunks(tenantId, {
         path: filePath,
         source,
         fileHash: nextHash,
@@ -229,16 +229,17 @@ function listJsonlFiles(dir: string): string[] {
  * - 逐个执行 syncMemoryByPath 并汇总结果
  */
 export async function syncAllMemorySources(
+  tenantId: string,
   sessionDir?: string,
 ): Promise<SyncSummary> {
   const started = Date.now();
-  ensureDirSync(resolveWorkspaceMemoryDir());
-  ensureDirSync(resolveWorkspaceUserinfoDir());
+  ensureDirSync(resolveWorkspaceMemoryDir(tenantId));
+  ensureDirSync(resolveWorkspaceUserinfoDir(tenantId));
 
 
-  const workspaceMemory = resolveWorkspaceMemoryPath();
-  const userMemoryFiles = listMarkdownFiles(resolveWorkspaceMemoryDir());
-  const userinfoFiles = listMarkdownFiles(resolveWorkspaceUserinfoDir());
+  const workspaceMemory = resolveWorkspaceMemoryPath(tenantId);
+  const userMemoryFiles = listMarkdownFiles(resolveWorkspaceMemoryDir(tenantId));
+  const userinfoFiles = listMarkdownFiles(resolveWorkspaceUserinfoDir(tenantId));
   const sessionFiles = sessionDir ? listJsonlFiles(sessionDir) : [];
 
   memoryLogger.debug("syncAllMemorySources: workspaceMemory", {
@@ -261,9 +262,9 @@ export async function syncAllMemorySources(
   memoryLogger.debug("syncAllMemorySources: candidates", { candidates });
 
   // 历史已跟踪但本轮未扫描到的路径也加入候选，以便 sync 时执行 delete
-  for (const tracked of await listTrackedPaths()) {
+  for (const tracked of await listTrackedPaths(tenantId)) {
     if (!candidates.has(path.resolve(tracked))) {
-      candidates.set(path.resolve(tracked), detectSourceByPath(tracked));
+      candidates.set(path.resolve(tracked), detectSourceByPath(tenantId, tracked));
     }
   }
 
@@ -281,7 +282,7 @@ export async function syncAllMemorySources(
     summary.total += 1;
     try {
       const start = Date.now();
-      const result = await syncMemoryByPath({ path: filePath, source });
+      const result = await syncMemoryByPath(tenantId, { path: filePath, source });
       memoryLogger.info(
         ` syncMemoryByPath done action=${result.action} totalMs=${Date.now() - start} source=${source} path=${filePath} chunks=${result.chunkCount}`,
       );
