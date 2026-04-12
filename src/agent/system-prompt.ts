@@ -61,6 +61,9 @@ Please current date is ${nowText}! don't forget it!
 if you forget it, you can use the function tool, getNow to get the current date!
 In addition, if you see other time information elsewhere, those are outdated; ${nowText} is the correct one!
 
+## Channel
+${channel}${identifyLine}
+
 ## Toolings
 
 You have access to the following toolings:
@@ -80,8 +83,6 @@ If the user does not request it, reply in ${language}.
 ## Workspace
 Your working directory is: ${workspace}
 
-## Channel
-${channel}${identifyLine}
 
 ## Memory Recall
 Do not assume memory is preloaded in this prompt.
