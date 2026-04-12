@@ -87,12 +87,11 @@ export class MemoryIndexManager {
 
     // watcher 启动前确保目录存在，避免监听初始化失败
     ensureAgentWorkspace(this.tenantId);
-    const workspaceMemory = resolveWorkspaceMemoryPath(this.tenantId);
     ensureDirSync(resolveWorkspaceMemoryDir(this.tenantId));
     ensureDirSync(resolveWorkspaceUserinfoDir(this.tenantId));
 
     // 监听：工作区 MEMORY.md、~/.fgbg/tenants/{tenantId}/workspace/memory/*.md、workspace/userinfo/*.md
-    this.watchFile(workspaceMemory, "MEMORY.md");
+    this.watchFile(resolveWorkspaceMemoryPath(this.tenantId), "MEMORY.md");
     this.watchDir(resolveWorkspaceMemoryDir(this.tenantId), "memory");
     this.watchDir(resolveWorkspaceUserinfoDir(this.tenantId), "userinfo");
 

@@ -48,6 +48,11 @@ function extractUserText(msg: Record<string, unknown>): string {
  * 向指定 tenantId 对应的微信 Bot 发送单向消息。
  * 从 accounts.json 读取对应 Bot 的 peerUserId 和 contextToken。
  *
+ * tenantId 查找策略（优先级递减）：
+ *   1. 精确匹配 bot.tenantId === tenantId
+ *   2. 回退到主 bot（store.primary）
+ *   3. 取第一个可用 bot
+ *
  * @param content 消息内容
  * @param tenantId 目标租户 ID，对应 accounts.json 中 bot.tenantId
  */
@@ -93,12 +98,17 @@ export async function sendWeixinDirectMessage(
 /**
  * 处理单个 Bot 桶内的消息聚合与 Agent 调用。
  * 将同一 Bot 的多条消息合并后调用 Agent 处理（单飞）。
+ *
+ * tenantId 流向：
+ *   bot.tenantId（来自 WeixinBoundBot）→ runWithSingleFlight({ tenantId })
+ *   该 tenantId 会被 Agent 系统用来隔离不同租户的会话上下文和记忆。
  */
 async function processBotBucket(
   bot: WeixinBoundBot,
   messages: Array<{ from: string; text: string }>,
   signal: AbortSignal,
 ): Promise<void> {
+  // 聚合多条用户消息为编号列表，便于 Agent 理解批量输入
   const aggregatedText = messages.map((m, i) => `${i + 1}. ${m.text}`).join("\n");
   const from = messages[0]?.from ?? "";
   if (!from) return;
@@ -106,15 +116,16 @@ async function processBotBucket(
   // 持久化对手方用户 ID，供后续主动发消息使用
   updateWeixinBotPeerUserId(bot.tenantId, from);
 
-  // 以 bot.tenantId 作为租户标识调用 Agent
+  // 以 bot.tenantId 作为租户标识调用 Agent 单飞逻辑
+  // runWithSingleFlight 内部会根据 tenantId 隔离会话，保证同一租户同时只有一个请求在运行
   const result = await runWithSingleFlight({
     message: aggregatedText,
     channel: "weixin",
-    tenantId: bot.tenantId,
+    tenantId: bot.tenantId,  // 关键：将微信 bot 的 tenantId 传入 Agent，实现租户级隔离
     module: "main",
-    sessionKey: `session:main:${bot.tenantId}`,
     onEvent: () => {},
     onBusy: async () => {
+      // 当同一租户有正在运行的 Agent 请求时触发（单飞机制），告知用户等待
       await ilinkSendText({
         baseUrl: bot.baseUrl,
         token: bot.token,
@@ -124,6 +135,7 @@ async function processBotBucket(
       });
     },
     onAccepted: async () => {
+      // 请求被 Agent 接收后发送确认回执，避免用户重复发送
       try {
         await ilinkSendText({
           baseUrl: bot.baseUrl,
@@ -138,7 +150,9 @@ async function processBotBucket(
     },
   });
 
+  // 检查 Agent 执行结果：非 completed 状态则不发送回复
   if (result.status !== "completed") return;
+  // 将 Agent 最终生成的文本回复给用户，若无内容则发送默认回复"好的"
   const out = (result.finalText ?? "").trim() || "好的";
   await ilinkSendText({
     baseUrl: bot.baseUrl,
@@ -154,12 +168,27 @@ async function processBotBucket(
 
 /**
  * 单个 Bot 完整入站周期：长轮询 → 过滤聚合 → 执行 Agent
+ *
+ * 执行流程：
+ *   1. 检查会话是否暂停（sessionPausedUntil），若处于冷却期则跳过本轮
+ *   2. 调用 ilinkGetUpdates 长轮询微信服务端，拉取新消息（超时 POLL_MS=35s）
+ *   3. 检查响应错误码，若为 SESSION_ERR(-14) 则标记会话暂停 1 小时
+ *   4. 更新 bot 的 updateBuf（游标），避免重复拉取
+ *   5. 遍历 msgs 数组，过滤出符合条件的消息：
+ *      - 必须有 from_user_id
+ *      - 排除群消息（group_id 非空）
+ *      - 仅处理文本类型消息（message_type === 1）
+ *      - 提取有效文本内容
+ *   6. 同步 context_token 到 bot 状态
+ *   7. 若有有效消息，调用 processBotBucket 聚合后送入 Agent
  */
 async function runBotCycle(bot: WeixinBoundBot, signal: AbortSignal): Promise<void> {
   log.debug("run cycle...", bot.tenantId);
 
+  // 会话冷却期检查：绑定失效或扫码过期后暂停轮询
   if (bot.sessionPausedUntil && Date.now() < bot.sessionPausedUntil) return;
 
+  // 长轮询拉取新消息，服务端会在有新消息或超时后返回
   const resp = await ilinkGetUpdates({
     baseUrl: bot.baseUrl,
     token: bot.token,
@@ -169,10 +198,12 @@ async function runBotCycle(bot: WeixinBoundBot, signal: AbortSignal): Promise<vo
 
   log.debug(`resp ${JSON.stringify(resp, null, 2)}`);
 
+  // 检查接口返回是否异常（ret 或 errcode 非 0）
   const bad =
     (resp.ret !== undefined && resp.ret !== 0) ||
     (resp.errcode !== undefined && resp.errcode !== 0);
   if (bad) {
+    // SESSION_ERR(-14) 表示微信会话过期（如二维码失效），暂停 1 小时避免频繁报错
     if (resp.errcode === SESSION_ERR || resp.ret === SESSION_ERR) {
       const pausedUntil = Date.now() + 60 * 60_000;
       log.warn(`微信会话过期 tenantId=${bot.tenantId}，暂停 1 小时（需重新扫码绑定）`);
@@ -181,18 +212,23 @@ async function runBotCycle(bot: WeixinBoundBot, signal: AbortSignal): Promise<vo
     return;
   }
 
+  // 更新消息游标，下次轮询从该位置继续，避免重复消费
   if (resp.get_updates_buf != null && resp.get_updates_buf !== "") {
     updateWeixinBotBuf(bot.tenantId, resp.get_updates_buf);
   }
 
+  // 过滤并聚合有效消息
   const messages: Array<{ from: string; text: string }> = [];
   for (const full of resp.msgs ?? []) {
     const from = String(full.from_user_id ?? "").trim();
     if (!from) continue;
+    // 跳过群消息，仅处理私聊
     if (full.group_id != null && String(full.group_id).trim() !== "") continue;
+    // 仅处理文本类型消息（type=1）
     if (Number(full.message_type) !== 1) continue;
     const text = extractUserText(full);
     if (!text) continue;
+    // 同步 context_token，供后续发消息使用
     const ctx = String(full.context_token ?? "").trim();
     if (ctx) updateWeixinBotContextToken(bot.tenantId, ctx);
     messages.push({ from, text });
@@ -201,6 +237,7 @@ async function runBotCycle(bot: WeixinBoundBot, signal: AbortSignal): Promise<vo
   if (messages.length === 0) return;
   if (signal.aborted) return;
 
+  // 消息送入 Agent 处理（聚合后单飞）
   await processBotBucket(bot, messages, signal);
 }
 

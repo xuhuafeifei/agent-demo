@@ -51,12 +51,16 @@ export function createChatRouter() {
       return res.status(400).json({ error: "缺少消息内容" });
     }
 
+    // 初始化响应头：设置为 SSE 流式响应
+    // Content-Type 为 text/event-stream，禁用缓存，保持长连接
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("Access-Control-Allow-Origin", "*");
 
+    // 将当前响应对象注册到审批管理器，供工具调用需要用户确认时使用
     approvalManager.setActiveRes(res);
+    // 发送流开始信号和用户消息回显
     writeNamedSse(res, "streamStart", { startedAt: Date.now() });
     writeNamedSse(res, "user_message_chunk", { content: message });
 
@@ -64,17 +68,24 @@ export function createChatRouter() {
     let thinkingTextSoFar = "";
     const toolStartedAt = new Map<string, number>();
 
-    // 从配置中获取 web 端租户 ID
+    // 从配置文件 (fgbg.json) 中读取 web 渠道对应的租户 ID
+    // 当前 Web 端为单租户模式，tenantId 由 channels.web.tenantId 决定（默认 "default"）
     const tenantId = readFgbgUserConfig().channels.web.tenantId;
 
+    // 调用 runWithSingleFlight 执行 Agent 逻辑：
+    // - module: "main" 表示主对话模块
+    // - tenantId: 用于隔离不同租户的会话状态和上下文
+    // - sessionKey: 未显式传入时由 runWithSingleFlight 内部根据 channel + tenantId 派生
+    // - singleFlight 机制确保同一会话同一时间只有一个请求在执行，避免并发冲突
     try {
       await runWithSingleFlight({
         message,
         channel: "web",
         tenantId,
         module: "main",
-        sessionKey: `session:main:${tenantId}`,
+        // onEvent：Agent 运行时产生流式事件时的回调，负责将不同类型的事件转换为 SSE 推送
         onEvent: (event: RuntimeStreamEvent) => {
+          // 文本消息增量更新
           if (event.type === "message_update") {
             const delta =
               typeof event.delta === "string"
@@ -167,14 +178,17 @@ export function createChatRouter() {
 
           writeSse(res, event);
         },
+        // onBusy：singleFlight 检测到当前会话已有请求在执行时触发，返回忙状态提示
         onBusy: () => {
           writeSse(res, { type: "error", error: "指令正在运行中，请稍后" });
         },
       });
     } catch (error) {
+      // 异常处理：统一记录日志，区分模型不可用错误和其他运行时错误
       const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error(`[chat] ${runtimeError.message}`, error);
       if (error instanceof ModelUnavailableError) {
+        // 模型服务不可用时，发送结构化错误事件（包含 provider/model 信息）
         writeNamedSse(res, "error", {
           error: error.message,
           provider: error.provider,
@@ -183,8 +197,10 @@ export function createChatRouter() {
         });
         return;
       }
+      // 其他错误发送通用 error 事件
       writeSse(res, { type: "error", error: runtimeError.message });
     } finally {
+      // 清理：注销当前活跃响应，取消所有待审批，发送流结束标记并关闭连接
       approvalManager.clearActiveRes();
       approvalManager.cancelAll();
       writeNamedSse(res, "streamEnd", { endedAt: Date.now() });

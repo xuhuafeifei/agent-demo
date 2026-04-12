@@ -67,19 +67,28 @@ const DEFAULT_HISTORY_LIMIT = 20;
 
 /**
  * 获取指定租户的 session 消息列表（内部用，用于构建对话历史上下文）
+ *
+ * 流程：
+ * 1. 通过 sessionKey 定位索引文件
+ * 2. 打开 SessionManager 读取所有消息条目
+ * 3. 过滤出 type === "message" 的条目返回
  */
 function getSessionMessageEntrys(tenantId: string): SessionMessageEntry[] {
+  // 构造该租户的主会话键
   const sessionKey = `session:main:${tenantId}`;
   const entry = loadSessionIndexEntry(tenantId, sessionKey);
+  // 无索引或文件不存在，返回空列表
   if (!entry?.sessionFile) return [];
   if (!fs.existsSync(entry.sessionFile)) return [];
 
+  // 打开 session 文件，提取所有消息条目
   const sessionManager = SessionManager.open(
     entry.sessionFile,
     resolveSessionDir(tenantId),
   );
   const entries = sessionManager.getEntries();
 
+  // 只保留 type === "message" 的条目（排除 system/tool 类型）
   return entries.filter(
     (entryItem): entryItem is SessionMessageEntry =>
       entryItem.type === "message",
@@ -88,6 +97,9 @@ function getSessionMessageEntrys(tenantId: string): SessionMessageEntry[] {
 
 /**
  * 获取指定租户的对话历史（前端 API 消费）
+ *
+ * 从 session 文件中提取最近 20 条 user/assistant 消息，
+ * 只保留纯文本内容，过滤掉 tool 调用等内部消息。
  */
 export function getHistory(tenantId: string): Array<{
   role: string;
@@ -95,11 +107,14 @@ export function getHistory(tenantId: string): Array<{
   timestamp?: number;
 }> {
   const messageEntrys = getSessionMessageEntrys(tenantId);
+  // 只保留 user 和 assistant 角色的消息
   const filtered = messageEntrys.filter(
     (msg) => msg.message.role === "user" || msg.message.role === "assistant",
   );
+  // 取最近 20 条
   const recent = filtered.slice(-DEFAULT_HISTORY_LIMIT);
   const history: Array<{ role: string; content: string; timestamp?: number }> = [];
+  // 伪造时间戳：基于当前时间倒推，每条间隔 1 秒
   const baseTimestamp = Date.now() - recent.length * 1000;
 
   recent.forEach((msg, idx) => {
@@ -108,6 +123,7 @@ export function getHistory(tenantId: string): Array<{
       content?: unknown[];
       toolName?: string;
     };
+    // 从复合消息中提取文本部分
     const textParts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
@@ -117,6 +133,7 @@ export function getHistory(tenantId: string): Array<{
         }
       }
     }
+    // 只保留有文本内容的消息
     if (textParts.length > 0) {
       history.push({
         role: raw.role || "unknown",
@@ -145,6 +162,10 @@ export function clearHistory(tenantId: string): void {
 
 /**
  * 从 session 消息列表剪枝，返回 "user: ...\n\nassistant: ..." 格式文本。
+ *
+ * 用于构建 system prompt 中的对话历史上下文。
+ * 过滤掉 context tool（如 memory-search、read 等无实际对话意义的工具调用），
+ * 只保留有文本内容的 user/assistant 消息，按时间倒序后反转恢复正序。
  */
 function pruneSessionChat(messages: SessionMessageEntry[]): string {
   const selected: string[] = [];
@@ -158,8 +179,10 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
     };
     const role = raw.role ?? "unknown";
     const toolName = raw.toolName ?? "";
+    // 跳过 context tool 的调用记录（如 memory-search、read 等）
     if (filterToolNames.includes(toolName)) continue;
 
+    // 提取消息中的文本部分
     const parts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
@@ -173,6 +196,7 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
       selected.push(`${role}: ${parts.join("\n")}`);
     }
   }
+  // 反转恢复时间正序，用双换行分隔
   return selected.reverse().join("\n\n");
 }
 
@@ -192,10 +216,12 @@ export async function getReplyFromAgent(params: {
   tenantId: string;
   sessionKey: string;
 }): Promise<{ finalText: string }> {
+  // 刷新配置缓存，确保使用最新的模型配置
   refreshFgbgUserConfigCache();
 
   const { message, onEvent, channel, tenantId, sessionKey } = params;
 
+  // 准备运行时环境：模型选择、workspace 创建、session 初始化
   const prepared = await prepareBeforeGetReply({ tenantId, sessionKey, channel });
 
   const modelRef = prepared.modelRef;
@@ -203,16 +229,19 @@ export async function getReplyFromAgent(params: {
   const modelError = prepared.modelError;
   const discoveryError = prepared.discoveryError;
 
+  // 记录模型发现错误（不阻塞，可能是非关键问题）
   if (discoveryError) {
     agentLogger.error(`模型发现失败: ${discoveryError}`);
   }
 
+  // 非 ollama 模型需要 API Key，否则记录警告
   if (!prepared.apiKey && modelRef.provider !== "ollama") {
     agentLogger.warn(
       `警告：未配置 ${modelRef.provider.toUpperCase()}_API_KEY，模型可能无法工作`,
     );
   }
 
+  // 模型不可用时抛出错误
   if (!model) {
     throw new ModelUnavailableError({
       provider: modelRef.provider,
@@ -221,6 +250,7 @@ export async function getReplyFromAgent(params: {
     });
   }
 
+  // 创建请求追踪 trace
   const requestId = Date.now().toString();
   const trace = createCacheTrace({
     requestId,
@@ -228,6 +258,7 @@ export async function getReplyFromAgent(params: {
     model: modelRef.model,
   });
 
+  // 创建运行时 agent session（包含工具链、模型配置、租户隔离）
   const session = await createRuntimeAgentSession({
     model: prepared.model!,
     sessionDir: prepared.sessionDir,
@@ -240,8 +271,10 @@ export async function getReplyFromAgent(params: {
     tenantId,
   });
 
+  // 从 session 历史剪枝生成对话上下文字
   const chatHistoryText = pruneSessionChat(getSessionMessageEntrys(tenantId));
 
+  // 构建 system prompt：整合 SOUL.md、userinfo、对话历史、工具元数据、技能元数据
   const prompt = buildSystemPrompt({
     soul: readWorkspaceSoul(tenantId),
     user: readWorkspaceUserinfoSummary(tenantId),
@@ -257,6 +290,7 @@ export async function getReplyFromAgent(params: {
   });
   agentLogger.trace(`prompt: ${prompt}`);
 
+  // 检查提示词总 token 数是否超过模型上下文窗口，决定是否需要压缩
   const maxTokens = prepared.model!.maxTokens;
   const tokenRatio = prepared.model!.tokenRatio || 0.75;
   const compressionResult = areTextsOverTokenThreshold(
@@ -276,16 +310,20 @@ export async function getReplyFromAgent(params: {
     );
   }
 
+  // 设置 system prompt 到 session
   session.agent.setSystemPrompt(prompt);
 
+  // 记录请求阶段开始
   trace.recordStage("request:start");
   trace.recordStage("prompt:start");
 
+  // 事件转发器：在 message_end 时记录 prompt:end
   const emit = (event: RuntimeStreamEvent) => {
     if (event.type === "message_end") trace.recordStage("prompt:end");
     onEvent(event);
   };
 
+  // 发送 context_used 事件，告知前端上下文窗口使用情况
   emit({
     type: "context_used",
     totalTokens: compressionResult.totalTokens,
@@ -293,6 +331,7 @@ export async function getReplyFromAgent(params: {
     contextWindow: maxTokens,
   });
 
+  // 根据渠道策略决定是否发送 context_snapshot（如 web 端调试用）
   const channelPolicy = getChannelPolicy(channel);
   const emitContextSnapshot = (reason: "before_prompt") => {
     if (!channelPolicy.emitContextSnapshot) return;
@@ -301,6 +340,7 @@ export async function getReplyFromAgent(params: {
 
   try {
     emitContextSnapshot("before_prompt");
+    // 执行嵌入式 PI agent
     const runResult = await runEmbeddedPiAgent({
       session,
       message,
@@ -319,7 +359,9 @@ export async function getReplyFromAgent(params: {
     trace.logTimeline("error");
     return { finalText: "" };
   } finally {
+    // 通知 memory 系统 session 文件已变更，触发增量索引
     getMemoryIndexManager(tenantId).onMemorySourceChanged("session", prepared.sessionFile);
+    // 释放 session 资源
     session.dispose();
   }
 }
@@ -327,12 +369,35 @@ export async function getReplyFromAgent(params: {
 export { getAllRunningAgentStates };
 
 /**
+ * 在 runWithSingleFlight 内部组装会话索引键；调用方不传入 sessionKey。
+ *
+ * - 普通入口（module 非 watch-dog）：`session:main:{tenantId}`
+ * - watch-dog 定时任务：`watchdog:task:{watchDogTaskId}`（每任务独立会话）
+ */
+export function buildSessionKeyForSingleFlight(params: {
+  module: string;
+  tenantId: string;
+  watchDogTaskId?: string;
+}): string {
+  const mod = params.module.trim();
+  const tenantId = params.tenantId.trim();
+  if (mod === "watch-dog") {
+    const id = params.watchDogTaskId?.trim();
+    if (!id) {
+      throw new Error("runWithSingleFlight: module=watch-dog 时必须提供 watchDogTaskId");
+    }
+    return `watchdog:task:${id}`;
+  }
+  return `session:main:${tenantId}`;
+}
+
+/**
  * 以单飞模式运行 agent：同一 agentId（module + tenantId）同时只允许一个执行。
  * 不同 module 的同租户 agent 可以并发（如 watch-dog 与 main 互不阻塞）。
  *
  * @param params.tenantId 租户 ID
  * @param params.module   模块名，决定锁粒度与 session 隔离（channel 来源传 "main"，watch-dog 传 "watch-dog"）
- * @param params.sessionKey 会话键，由调用方显式指定（格式 session:{module}:{tenantId} 或自定义）
+ * @param params.watchDogTaskId 仅 `module === "watch-dog"` 时必填，用于组装独立任务会话
  * @param params.channel 当前渠道
  * @param params.message 用户消息
  * @param params.onEvent 流式事件回调
@@ -346,11 +411,15 @@ export async function runWithSingleFlight(params: {
   onAccepted?: () => void | Promise<void>;
   tenantId: string;
   module: string;
-  sessionKey: string;
+  watchDogTaskId?: string;
   channel: AgentChannel;
 }): Promise<{ status: "busy" | "completed"; finalText: string }> {
-  const { message, onEvent, onBusy, onAccepted, tenantId, module: mod, sessionKey, channel } =
-    params;
+  const { message, onEvent, onBusy, onAccepted, tenantId, module: mod, channel } = params;
+  const sessionKey = buildSessionKeyForSingleFlight({
+    module: mod,
+    tenantId,
+    watchDogTaskId: params.watchDogTaskId,
+  });
   // 锁 key 由 module + tenantId 组成，不同 module 的同租户 agent 可并发
   const agentId = `agent:${mod}:${tenantId}`;
 

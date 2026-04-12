@@ -97,6 +97,38 @@ async function getDb(): Promise<sqlite.DatabaseSync> {
  * 确保数据库表结构存在
  * 创建 task_schedule 主表和 task_schedule_detail 明细表
  * 以及必要的索引
+ *
+ * 【表结构设计】
+ * 1. task_schedule（任务调度主表）- 存储任务的"定义"与"当前状态"
+ *    - id: 自增主键，唯一标识每个任务
+ *    - task_name: 任务名称，UNIQUE 约束确保全局唯一
+ *    - task_type: 任务类型（如 "http_request", "script" 等），用于路由到不同的执行器
+ *    - payload_text: 任务执行所需的载荷数据（如 HTTP 请求体、脚本内容等），可为空
+ *    - schedule_kind: 调度类型，"once" 表示单次执行，"cron" 表示周期性执行
+ *    - schedule_expr: 调度表达式，cron 类型时为 cron 表达式，once 类型时为具体时间
+ *    - timezone: 时区配置，默认 'Asia/Shanghai'，用于 cron 表达式的时间解析
+ *    - status: 任务当前状态，可选值: pending / running / done / failed / timeout
+ *    - attempts: 已尝试执行次数，每次调度时 +1，用于监控和重试分析
+ *    - last_error: 最后一次执行的错误信息，失败时写入，成功时清空
+ *    - create_time / update_time: 记录创建和更新时间
+ *    - next_run_time: 下次计划执行时间，调度器据此判断任务是否到期
+ *    - started_at / finished_at: 当前执行周期的开始/结束时间，running 时设置 started_at，完成时设置 finished_at
+ *    - tenant_id: 租户隔离字段，"default" 租户拥有全量管理权，其他租户只能管理自己的任务
+ *
+ * 2. task_schedule_detail（任务执行明细表）- 存储"每次执行"的快照记录
+ *    - id: 自增主键
+ *    - task_id: 外键关联 task_schedule.id，指向被执行的任务
+ *    - start_time / end_time: 本次执行的实际开始/结束时间
+ *    - create_time / update_time: 记录创建和更新时间
+ *    - status: 本次执行结果，可选值: success / failed / timeout / skipped
+ *    - error_message: 执行失败时的错误信息
+ *    - executor: 执行者标识（如触发该次执行的用户或系统组件名）
+ *
+ * 【索引设计】
+ * - idx_task_schedule_status_next_run: 复合索引 (status, next_run_time)，加速到期任务查询
+ * - idx_task_schedule_tenant_id: 租户索引，加速按租户过滤任务的查询
+ * - idx_task_detail_task_id: 明细表索引，加速按 task_id 查询执行历史
+ *
  * @param database - SQLite 数据库连接
  */
 function ensureSchema(database: sqlite.DatabaseSync): void {
@@ -201,12 +233,29 @@ export async function upsertTaskSchedule(input: NewTaskInput): Promise<void> {
 }
 
 /**
- * 查询到期待执行的任务列表
- * 查询条件：状态为 pending 且 next_run_time <= 当前时间
- * 按 next_run_time 升序排列，限制返回数量
- * @param limit - 最大返回数量
- * @param nowIso - 当前时间的 ISO 字符串
- * @returns 到期任务列表
+ * 查询到期可执行的任务列表
+ *
+ * 【调度机制】
+ * 该方法由调度器周期性调用，用于获取当前应该执行的任务。
+ *
+ * 【查询条件】
+ * - status = 'pending': 只选择处于等待状态的任务（排除正在运行或已完成的任务）
+ * - next_run_time <= nowIso: 计划执行时间已到或已过（到期任务）
+ *
+ * 【原子性保证】
+ * 使用 UPDATE ... RETURNING 语法实现"查询并更新"的原子操作：
+ * 1. 先通过子查询选出符合条件的任务 ID（按 next_run_time 升序，限制数量）
+ * 2. 将这些任务的状态更新为 'running'，同时记录开始时间和增加尝试次数
+ * 3. RETURNING 子句返回更新后的完整任务行
+ *
+ * 这种设计避免了"查询"和"更新"之间的竞态条件，确保同一任务不会被多个调度器同时拾取。
+ *
+ * 【返回结果排序】
+ * 按 next_run_time 升序排列，优先执行最早到期的任务。
+ *
+ * @param limit - 最大返回数量，控制单次调度批次的任务数
+ * @param nowIso - 当前时间的 ISO 字符串，用于判断哪些任务已到期
+ * @returns 到期任务列表，已标记为 running 状态
  */
 export async function listDueTasks(
   limit: number,
@@ -390,8 +439,32 @@ export async function markTaskRunning(
 
 /**
  * 完成任务，更新最终状态
- * 更新状态、完成时间、下次运行时间、错误信息
+ *
+ * 【执行跟踪机制】
+ * 任务执行完成后调用此方法，更新主表中的任务状态。完整的执行跟踪流程如下：
+ *
+ * 1. 任务被调度器拾取（listDueTasks）→ 状态变为 'running'，started_at 被记录
+ * 2. 执行器执行任务逻辑
+ * 3. 执行完成后调用 finalizeTask → 更新状态为 done/failed/timeout，记录 finished_at
+ * 4. 同时调用 insertTaskDetail → 在明细表中插入一条执行记录，保存本次执行的详细结果
+ *
+ * 【状态流转】
+ * - pending → running（listDueTasks）→ done/failed/timeout（finalizeTask）
+ * - 如果是 cron 任务且状态为 done，next_run_time 会被更新为下次执行时间
+ * - 如果是失败/超时任务，last_error 会记录错误信息，便于后续排查
+ *
+ * 【下次运行时间计算】
+ * - nextRunTimeIso 由调用方根据 schedule_kind 和 schedule_expr 计算：
+ *   - cron 任务：根据 cron 表达式计算下一次触发时间
+ *   - once 任务：通常不设置（保持 NULL 或原值），因为单次任务不再重复
+ * - 使用 COALESCE(?, next_run_time) 确保未传入新值时保留原有值
+ *
  * @param params - 任务完成参数
+ * @param params.taskId - 任务 ID
+ * @param params.status - 最终状态: done（成功）/ failed（失败）/ timeout（超时）
+ * @param params.finishedAtIso - 完成时间的 ISO 字符串
+ * @param params.nextRunTimeIso - 下次计划执行时间（cron 任务必填）
+ * @param params.lastError - 错误信息（失败时填写）
  */
 export async function finalizeTask(params: {
   taskId: number;
@@ -428,7 +501,29 @@ export async function finalizeTask(params: {
 
 /**
  * 插入任务执行明细记录
- * 记录每次任务执行的详细信息
+ *
+ * 【执行跟踪机制 - 明细记录】
+ * 每次任务执行完毕后调用，在 task_schedule_detail 表中插入一条快照记录。
+ * 与主表（task_schedule）的关系：
+ * - 主表：每个任务只有一行，记录"当前"状态和元数据
+ * - 明细表：每个任务有多行，记录"历史"每次执行的结果
+ *
+ * 【记录内容】
+ * - task_id: 关联到 task_schedule.id
+ * - start_time / end_time: 本次执行的实际起止时间，用于计算执行耗时
+ * - status: 本次执行结果
+ *   - success: 执行成功
+ *   - failed: 执行失败（如网络错误、脚本异常等）
+ *   - timeout: 执行超时（超过预设的最大执行时间）
+ *   - skipped: 被跳过（如前置条件不满足、依赖任务失败等）
+ * - error_message: 失败/超时时的错误堆栈或描述
+ * - executor: 执行者标识，可用于审计（如哪个用户手动触发、哪个系统组件自动执行）
+ *
+ * 【使用场景】
+ * - 查询任务的执行历史（按 task_id 查询明细表）
+ * - 统计任务成功率、平均耗时等指标
+ * - 排查问题时查看历史错误信息
+ *
  * @param params - 任务明细参数
  */
 export async function insertTaskDetail(params: {
@@ -470,9 +565,23 @@ export async function insertTaskDetail(params: {
 
 /**
  * 清理旧的任务明细记录
- * 删除创建时间早于指定截止时间的记录
- * @param cutoffIso - 截止时间的 ISO 字符串
- * @returns 删除的记录数
+ *
+ * 【清理机制】
+ * 由于每次任务执行都会在 task_schedule_detail 表中插入一条记录，长期运行会导致表数据膨胀。
+ * 此方法用于定期清理过期的明细记录，控制数据库大小。
+ *
+ * 【清理策略】
+ * - 按 create_time 字段判断记录是否过期
+ * - 调用方传入截止时间 cutoffIso（如 7 天前的时间戳），删除所有早于该时间的记录
+ * - 典型用法：cleanupOldDetails(cutoffIso) 其中 cutoffIso = 7天前的 ISO 时间
+ *
+ * 【注意事项】
+ * - 只清理明细表（task_schedule_detail），不清理主表（task_schedule）
+ * - 主表中的任务定义和当前状态需要永久保留（除非手动删除任务）
+ * - 建议在定时任务中定期调用此方法，如每天凌晨执行一次清理
+ *
+ * @param cutoffIso - 截止时间的 ISO 字符串，删除创建时间早于此值的明细记录
+ * @returns 删除的记录数，可用于监控清理效果
  */
 export async function cleanupOldDetails(cutoffIso: string): Promise<number> {
   const database = await getDb();

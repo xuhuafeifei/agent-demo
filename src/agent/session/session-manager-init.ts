@@ -21,12 +21,16 @@ function isUserOrAssistantMessage(m: AgentMessage): m is UserOrAssistantMessage 
 
 /**
  * 从旧会话中获取需要保留到新轮转会话的消息（最多 10 条 user/assistant 文本消息）。
+ *
+ * 会话轮转时，不能直接丢弃所有历史。此函数从旧 session 末尾倒序扫描，
+ * 最多保留 10 条有意义的 user/assistant 对话消息，过滤掉 context tool 调用记录。
  */
 function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
   const entries = oldSessionManager.getEntries();
   const messagesToPreserve: Message[] = [];
   const filterToolNames = getFilterContextToolNames();
 
+  // 从后往前扫描，保留最多 10 条有意义的消息
   for (let i = entries.length - 1; i >= 0 && messagesToPreserve.length < 10; i--) {
     const entry = entries[i];
     if (entry.type !== "message") continue;
@@ -34,12 +38,14 @@ function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
     const message = (entry as SessionMessageEntry).message;
     if (!isUserOrAssistantMessage(message)) continue;
 
+    // 跳过 context tool 的调用记录（如 memory-search、read 等）
     const toolName =
       "toolName" in message && typeof (message as { toolName?: string }).toolName === "string"
         ? (message as { toolName: string }).toolName
         : "";
     if (filterToolNames.includes(toolName)) continue;
 
+    // unshift 保持原始时间顺序
     messagesToPreserve.unshift(message);
   }
 
@@ -145,7 +151,9 @@ export function prepareBeforeSessionManager(params: {
   entry: SessionIndexEntry;
 } {
   const { tenantId } = params;
+  // 确保租户 session 目录存在
   const sessionDir = ensureSessionDir(tenantId);
+  // 加载 session.json 索引
   const index = loadSessionIndex(tenantId);
   const existing = index[params.sessionKey];
 
@@ -153,7 +161,7 @@ export function prepareBeforeSessionManager(params: {
   let shouldWrite = false;
 
   if (!existing?.sessionFile || !existing.sessionId) {
-    // 无已有会话，新建
+    // 无已有会话，新建 SessionManager 并写入索引
     const manager = SessionManager.create(params.cwd, sessionDir);
     const sessionFile = ensureSessionFile(manager);
     nextEntry = createSessionEntry({
@@ -167,14 +175,19 @@ export function prepareBeforeSessionManager(params: {
     });
     shouldWrite = true;
   } else {
-    // 已有会话，检查是否需要轮转
+    // 已有会话，检查文件大小是否超过 512KB 阈值
     const resolvedFile = path.resolve(existing.sessionFile);
     if (shouldRotateSessionFile(resolvedFile)) {
+      // 会话文件过大，需要轮转：
+      // 1. 打开旧 session，提取需要保留的历史消息（最多 10 条）
+      // 2. 创建新 session，将历史消息复制过去
+      // 3. 更新索引指向新 session
       const oldManager = SessionManager.open(existing.sessionFile, sessionDir);
       const messagesToPreserve = getMessagesToPreserve(oldManager);
       const manager = SessionManager.create(params.cwd, sessionDir);
       const sessionFile = ensureSessionFile(manager);
 
+      // 将保留的消息追加到新 session 中
       for (const message of messagesToPreserve) {
         manager.appendMessage(message);
       }
@@ -194,6 +207,7 @@ export function prepareBeforeSessionManager(params: {
 
   if (!nextEntry) throw new Error("session entry init failed");
 
+  // 写入 session.json 索引（仅在有新条目或索引文件不存在时）
   if (shouldWrite || !fs.existsSync(resolveSessionIndexPath(tenantId))) {
     index[params.sessionKey] = nextEntry;
     saveSessionIndex(tenantId, index);
