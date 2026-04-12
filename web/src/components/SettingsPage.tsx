@@ -15,6 +15,7 @@ import {
   getDefaultModelProvider,
   testModelConnection,
   getQwenPortalCredentials,
+  weixinSetPrimary,
 } from "../api/configApi";
 import MessageManager from "./Message";
 import { X } from "lucide-react";
@@ -72,6 +73,7 @@ export default function SettingsPage() {
     qqbotClientSecret: "",
     qqbotHasCredentials: false,
     weixinEnabled: false,
+    weixinPrimaryPending: "", // 用户选了新主账号但还没保存
   });
   const [showQqbotSecret, setShowQqbotSecret] = useState(false);
 
@@ -176,6 +178,7 @@ export default function SettingsPage() {
           qqbotClientSecret: qqbot.clientSecret ?? "",
           qqbotHasCredentials: qqbot.hasCredentials ?? false,
           weixinEnabled: weixin.enabled ?? false,
+          weixinPrimaryPending: "",
         });
       } catch (error) {
         if (mounted) MessageManager.info(`加载配置失败: ${error.message}`);
@@ -897,6 +900,14 @@ export default function SettingsPage() {
           setChannelsForm((prev) => ({ ...prev, qqbotHasCredentials: hc }));
         }
       }
+
+      // 保存微信主账号（如果用户切换了）
+      const pendingPrimary = channelsForm.weixinPrimaryPending?.trim();
+      if (pendingPrimary) {
+        await weixinSetPrimary(pendingPrimary);
+        setChannelsForm((prev) => ({ ...prev, weixinPrimaryPending: "" }));
+      }
+
       MessageManager.success("保存成功");
     } catch (error) {
       MessageManager.error(`保存失败: ${error.message}`);

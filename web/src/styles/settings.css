@@ -1528,6 +1528,186 @@
   gap: 20px;
 }
 
+.settings-channels-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ─── 新增 bot 按钮 ──────────────────────────────────────────────── */
+.settings-add-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border: 2px dashed var(--border-light);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.settings-add-btn:hover:not(:disabled) {
+  border-color: var(--primary-green);
+  color: var(--primary-green);
+  background: var(--primary-green-light);
+}
+
+.settings-add-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── 微信 Bot 卡片 ────────────────────────────────────────────── */
+.weixin-bot-card {
+  position: relative;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  transition: all 0.2s ease;
+}
+
+.weixin-bot-card:hover {
+  border-color: var(--primary-green);
+  box-shadow: 0 2px 8px rgba(120, 195, 132, 0.08);
+}
+
+.weixin-bot-card--primary {
+  border-color: var(--primary-green);
+  border-width: 1.5px;
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(120, 195, 132, 0.04) 100%);
+  box-shadow: 0 2px 12px rgba(120, 195, 132, 0.12);
+}
+
+/* 主账号气泡提醒 */
+.channel-primary-bubble {
+  position: absolute;
+  top: -42px;
+  left: 16px;
+  right: 16px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  color: #ad8b00;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 10;
+  animation: bubble-pop-in 0.25s ease;
+}
+
+@keyframes bubble-pop-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.channel-primary-bubble svg {
+  flex-shrink: 0;
+}
+
+/* Bot 卡片顶部：identify 输入 + 主账号选择 */
+.weixin-bot-card-top {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.weixin-bot-identify-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.weixin-bot-identify-group .settings-form-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.weixin-bot-identify-group .settings-form-input {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+/* 主账号单选框 */
+.weixin-primary-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.weixin-primary-radio:hover:not(:has(input:disabled)) {
+  border-color: var(--primary-green);
+  color: var(--primary-green);
+}
+
+.weixin-primary-radio:has(input:checked) {
+  background: var(--primary-green);
+  border-color: var(--primary-green);
+  color: white;
+}
+
+.weixin-primary-radio input[type="radio"] {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--primary-green);
+  cursor: pointer;
+}
+
+.weixin-primary-radio:has(input:checked) input[type="radio"] {
+  accent-color: white;
+}
+
+.weixin-primary-radio:has(input:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.weixin-primary-radio .weixin-bot-primary-text {
+  font-weight: 500;
+}
+
+/* Bot 卡片操作按钮 */
+.weixin-bot-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Bot 状态文字 */
+.weixin-bot-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 0 0;
+  border-top: 1px solid var(--border-light);
+}
+
+.weixin-bot-status--unbound {
+  color: var(--text-placeholder);
+}
+
+.weixin-bot-status--binding {
+  color: #d97706;
+}
+
 /* Channel section */
 .settings-channel-section {
   border: 1px solid var(--border-light);
