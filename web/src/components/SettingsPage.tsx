@@ -16,6 +16,8 @@ import {
   testModelConnection,
   getQwenPortalCredentials,
   weixinSetPrimary,
+  stopQqLayer,
+  startQqLayerIfIdle,
 } from "../api/configApi";
 import MessageManager from "./Message";
 import { X } from "lucide-react";
@@ -907,6 +909,9 @@ export default function SettingsPage() {
         await weixinSetPrimary(pendingPrimary);
         setChannelsForm((prev) => ({ ...prev, weixinPrimaryPending: "" }));
       }
+
+      if (channelsForm.qqbotEnabled) await startQqLayerIfIdle();
+      else await stopQqLayer();
 
       MessageManager.success("保存成功");
     } catch (error) {

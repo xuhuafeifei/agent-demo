@@ -15,6 +15,10 @@ import {
   heartbeatConfigSchema,
 } from "../utils/validators.js";
 import { getQqbotChannelForApi } from "../../qq/qq-account.js";
+import {
+  maybeStartQQLayerIfEnabledAndIdle,
+  stopQQLayer,
+} from "../../qq/qq-layer.js";
 
 const webLogger = getSubsystemConsoleLogger("web");
 
@@ -109,6 +113,14 @@ export function createFgbgRouter() {
       }
 
       const result = patchConfig(patchRaw);
+      if (
+        patchRaw.channels &&
+        typeof patchRaw.channels === "object" &&
+        Object.prototype.hasOwnProperty.call(patchRaw.channels, "qqbot")
+      ) {
+        if (!result.config.channels.qqbot.enabled) stopQQLayer();
+        else await maybeStartQQLayerIfEnabledAndIdle();
+      }
       maskQqbotChannelForResponse(result.config);
       res.json({
         success: true,
@@ -127,9 +139,10 @@ export function createFgbgRouter() {
   });
 
   // POST /config/fgbg/reset - Reset config to defaults
-  router.post("/reset", (_req, res) => {
+  router.post("/reset", async (_req, res) => {
     try {
       const result = resetConfig();
+      stopQQLayer();
       maskQqbotChannelForResponse(result.config);
       res.json({
         success: true,
@@ -148,7 +161,7 @@ export function createFgbgRouter() {
   });
 
   // POST /config/fgbg/reset/section - 恢复指定配置模块的默认值
-  router.post("/reset/section", (req, res) => {
+  router.post("/reset/section", async (req, res) => {
     const { section } = req.body || {};
     if (!section || typeof section !== "string") {
       return res.status(400).json({
@@ -159,6 +172,7 @@ export function createFgbgRouter() {
 
     try {
       const result = resetConfigSection(section);
+      if (section === "channels.qqbot") stopQQLayer();
       maskQqbotChannelForResponse(result.config);
       res.json({
         success: true,

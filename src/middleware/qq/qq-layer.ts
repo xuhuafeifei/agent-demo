@@ -5,6 +5,7 @@ import { resolveQQAccountFromConfig } from "./qq-config.js";
 import { getEventBus } from "../../event-bus/index.js";
 import { getGatewayUrl, sendC2CMessage } from "./qq-api.js";
 import {
+  applyQQLayerStoppedStatus,
   clearQQAccessTokenStatus,
   forceRefreshQQAccessToken,
   getLastSeenQQOpenidStatus,
@@ -28,6 +29,43 @@ import {
 
 const qqLogger = getSubsystemConsoleLogger("qq-layer");
 const eventBus = getEventBus();
+
+/** 用户关闭或未启用时置位；重连 setTimeout 回调里先看此标志再决定是否 connect */
+let qqIntentionalStop = false;
+/** 当前 Gateway 连接：stopQQLayer 在 connect 闭包外执行，须保留引用才能 ws.close() */
+let qqGatewayWs: WebSocket | null = null;
+let qqHeartbeatTimer: NodeJS.Timeout | null = null;
+
+/**
+ * 主动断开 QQ Gateway；关闭完成后由 applyQQLayerStoppedStatus 写回 qq-status。
+ */
+export function stopQQLayer(): void {
+  qqIntentionalStop = true;
+  if (qqHeartbeatTimer) {
+    clearInterval(qqHeartbeatTimer);
+    qqHeartbeatTimer = null;
+  }
+  if (qqGatewayWs) {
+    try {
+      qqGatewayWs.removeAllListeners();
+      qqGatewayWs.close();
+    } catch {
+      /* ignore */
+    }
+    qqGatewayWs = null;
+  }
+  applyQQLayerStoppedStatus();
+}
+
+/**
+ * 配置为启用且 qq-status 显示未在跑（非 ready、非 connecting）时再 startQQLayer。
+ */
+export async function maybeStartQQLayerIfEnabledAndIdle(): Promise<void> {
+  if (!readFgbgUserConfig().channels.qqbot.enabled) return;
+  if (isQQReadyStatus() || isQQConnectingStatus()) return;
+  qqIntentionalStop = false;
+  await startQQLayer();
+}
 
 /**
  * 收到私聊时按当前机器人 appId 写入 ~/.fgbg/qq/accounts.json
@@ -171,23 +209,29 @@ export async function startQQLayer(): Promise<void> {
   const appId = account.appId;
   const secret = account.clientSecret;
 
-  // heartbeatTimer: 心跳定时器，按 Gateway 要求的间隔定期发送 op=1 保活
-  let heartbeatTimer: NodeJS.Timeout | null = null;
+  if (isQQReadyStatus() || isQQConnectingStatus()) return;
+
+  qqIntentionalStop = false;
+
   // lastSeq: 记录最后一个事件序列号，心跳时传给 Gateway 用于事件确认
   let lastSeq: number | null = null;
 
   // connect 是实际建立 WebSocket 连接的函数，失败或断线时会重新调用
   const connect = async () => {
+    if (qqIntentionalStop) return;
     // 防止重复连接：如果正在连接中则直接返回
     if (isQQConnectingStatus()) return;
     setQQConnectingStatus(true);
     try {
       // 第一步：获取 access_token，用于请求 Gateway URL 和后续 WebSocket 认证
       const accessToken = await getQQAccessToken(appId, secret);
+      if (qqIntentionalStop) return;
       // 第二步：通过 REST API 获取 WebSocket 网关地址
       const gatewayUrl = await getGatewayUrl(accessToken);
+      if (qqIntentionalStop) return;
       // 第三步：建立 WebSocket 长连接，此后所有事件通过 WS 收发
       const ws = new WebSocket(gatewayUrl);
+      qqGatewayWs = ws;
       qqLogger.info("qq-layer 已连接 QQ Gateway");
       setQQReadyStatus(true);
       eventBus.emitSync("qq:ready", { accountId: account.accountId });
@@ -215,9 +259,9 @@ export async function startQQLayer(): Promise<void> {
             },
           }));
           // 清理旧的心跳定时器，启动新的心跳机制
-          if (heartbeatTimer) clearInterval(heartbeatTimer);
+          if (qqHeartbeatTimer) clearInterval(qqHeartbeatTimer);
           // 心跳定时器：按 Gateway 指定的间隔定期发送 op=1 保活
-          heartbeatTimer = setInterval(() => {
+          qqHeartbeatTimer = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
               // op=1 是 Heartbeat 帧，d 为 lastSeq 用于事件确认
               ws.send(JSON.stringify({ op: 1, d: lastSeq }));
@@ -298,13 +342,18 @@ export async function startQQLayer(): Promise<void> {
 
       // 连接断开事件：清理心跳、更新状态、触发断线事件、1 秒后自动重连
       ws.on("close", () => {
-        if (heartbeatTimer) clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
+        if (qqGatewayWs === ws) qqGatewayWs = null;
+        if (qqHeartbeatTimer) clearInterval(qqHeartbeatTimer);
+        qqHeartbeatTimer = null;
         setQQReadyStatus(false);
         clearQQAccessTokenStatus();
         eventBus.emitSync("qq:offline", { accountId: account.accountId });
+        if (qqIntentionalStop) return;
         qqLogger.warn("QQ Gateway 连接断开，1 秒后重连");
-        setTimeout(() => { void connect(); }, 1000);
+        setTimeout(() => {
+          if (qqIntentionalStop) return;
+          void connect();
+        }, 1000);
       });
 
       // 连接错误事件：仅记录日志，真正的重连由 close 事件触发
@@ -318,7 +367,12 @@ export async function startQQLayer(): Promise<void> {
       setQQReadyStatus(false);
       clearQQAccessTokenStatus();
       qqLogger.error(`qq-layer 启动失败: ${message}`);
-      setTimeout(() => { void connect(); }, 5000);
+      if (!qqIntentionalStop) {
+        setTimeout(() => {
+          if (qqIntentionalStop) return;
+          void connect();
+        }, 5000);
+      }
     } finally {
       setQQConnectingStatus(false);
     }

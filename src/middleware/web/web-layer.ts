@@ -10,6 +10,7 @@ import { createOAuthRouter } from "./router/oauth-router.js";
 import { createApprovalRouter } from "./router/approval-router.js";
 import { createToolSecurityRouter } from "./router/tool-security-router.js";
 import { createWeixinRouter } from "./router/weixin-router.js";
+import { createQQConfigRouter } from "./router/qq-config-router.js";
 
 /**
  * Create the web layer router.
@@ -27,6 +28,7 @@ export function createWebLayer() {
 
   // Config routers
   router.use("/config/fgbg", createFgbgRouter());
+  router.use("/config/qq", createQQConfigRouter());
   router.use("/config/memory-search", createMemorySearchRouter());
   router.use("/config", createProvidersRouter());
   router.use("/config/logging", createLoggingRouter());

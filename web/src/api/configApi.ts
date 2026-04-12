@@ -25,6 +25,15 @@ export async function patchFgbgConfig(patch) {
   });
 }
 
+export async function stopQqLayer() {
+  return requestJson("/api/config/qq/stop", { method: "POST" });
+}
+
+/** 仅当 fgbg 已启用 qqbot 且 qq-status 非 ready、非 connecting 时才会连 Gateway */
+export async function startQqLayerIfIdle() {
+  return requestJson("/api/config/qq/start", { method: "POST" });
+}
+
 export async function resetFgbgConfig() {
   return requestJson("/api/config/fgbg/reset", {
     method: "POST",
@@ -137,11 +146,11 @@ export async function pollQwenPortalOAuth(oauthSessionId) {
   return payload;
 }
 
-export async function weixinLoginStart(identify) {
+export async function weixinLoginStart(tenantId) {
   return requestJson("/api/v1/weixin/login/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identify }),
+    body: JSON.stringify({ tenantId }),
   });
 }
 
@@ -157,16 +166,16 @@ export async function weixinStatus() {
   return requestJson("/api/v1/weixin/status");
 }
 
-export async function weixinSetPrimary(identify) {
+export async function weixinSetPrimary(tenantId) {
   return requestJson("/api/v1/weixin/primary", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identify }),
+    body: JSON.stringify({ tenantId }),
   });
 }
 
-export async function weixinUnbind(identify) {
-  return requestJson(`/api/v1/weixin/account/${encodeURIComponent(identify)}`, {
+export async function weixinUnbind(tenantId) {
+  return requestJson(`/api/v1/weixin/account/${encodeURIComponent(tenantId)}`, {
     method: "DELETE",
   });
 }

@@ -103,3 +103,12 @@ export function isQQConnectingStatus(): boolean {
 export function setQQConnectingStatus(connecting: boolean): void {
   status.connecting = connecting;
 }
+
+/** 主动关闭 QQ 连接后统一写回运行时状态（由 stopQQLayer 调用） */
+export function applyQQLayerStoppedStatus(): void {
+  status.ready = false;
+  status.connecting = false;
+  status.accessToken = "";
+  status.accessTokenExpiresAt = 0;
+  status.reconnectFn = null;
+}
