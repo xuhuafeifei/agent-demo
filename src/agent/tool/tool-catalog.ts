@@ -16,7 +16,7 @@
  *
  * tenantId 对工具行为的影响：
  * - 大多数工具接收 tenantId 后，用于限定操作范围（如只访问该租户的 workspace）
- * - IM 工具根据 tenantId 路由到对应的 bot 账号和 channel（qq/weixin）
+ * - IM 工具根据 tenantId 路由到对应的 bot 账号和 channel
  * - 任务调度工具根据 tenantId 区分任务归属（非 default 租户只能操作自己的任务）
  * - 部分工具忽略 cwd（用 _cwd 表示），因为只依赖 tenantId 即可
  * - getNow 是唯一的无状态工具，不需要 cwd 或 tenantId
@@ -146,7 +146,7 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   // ===== IM 通信（tenantId 用于路由到对应 bot 账号和 channel） =====
   sendIMMessage: {
     factory: (_cwd, tenantId) => createIMSendTool(tenantId),
-    description: "sendIMMessage(channel, content, tenantId) - send text to phone IM user (qq/weixin)",
+    description: "sendIMMessage(channel, content, tenantId) - send text to phone IM user",
   },
 
   // ===== 网络工具 =====

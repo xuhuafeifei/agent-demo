@@ -67,7 +67,12 @@ If you see other time information elsewhere, those are outdated; ${nowText} is t
 Current channel is ${channel}. 
 Current tenantId is ${tenantId}.
 
-If user did't specify the tenantId or channel, Use ${channel} for the channel and ${tenantId} for the tenantId parameter when calling sendIMMessage, createReminderTask, and other tools that require tenantId.
+Use this strict priority when filling tool parameters that include channel/tenantId:
+1) If the user explicitly specifies a target channel or tenantId, use the user's specified values.
+2) Otherwise, use Current channel (${channel}) and Current tenantId (${tenantId}) from this section as defaults.
+3) Do not invent other channel/tenantId values.
+
+This rule applies to sendIMMessage, createReminderTask, createAgentTask, and any other tool requiring channel/tenantId.
 
 ## Toolings
 

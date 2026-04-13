@@ -10,7 +10,8 @@ import { getWeixinBotByTenantId } from "../../../middleware/weixin/weixin-accoun
 
 const imSendParameters = Type.Object({
   channel: Type.Union([Type.Literal("qq"), Type.Literal("weixin")], {
-    description: "IM channel to send message through: qq or weixin.",
+    description:
+      "IM channel to send through: qq/weixin. Priority: user-specified channel > current channel in system prompt 'Channel' section.",
   }),
   content: Type.String({
     minLength: 1,
@@ -19,7 +20,7 @@ const imSendParameters = Type.Object({
   tenantId: Type.String({
     minLength: 1,
     description:
-      "Tenant ID that identifies which bot account to use. Read from your system prompt ## Channel section. If not found, use 'default'.",
+      "Tenant ID for routing to the correct bot account. Priority: user-specified tenantId > current tenantId in system prompt 'Channel' section.",
   }),
 });
 
@@ -37,15 +38,14 @@ type IMSendOutput = {
  *
  * @param tenantId 当前 agent 所属租户 ID（工具参数 tenantId 可覆盖此值）
  */
-export function createIMSendTool(tenantId: string): ToolDefinition<
-  typeof imSendParameters,
-  ToolDetails<IMSendOutput>
-> {
+export function createIMSendTool(
+  tenantId: string,
+): ToolDefinition<typeof imSendParameters, ToolDetails<IMSendOutput>> {
   return {
     name: "sendIMMessage",
     label: "IM Send Message",
     description:
-      "Send message to QQ/Weixin user. tenantId routes to the correct bot account.",
+      "Send message to user IM device. tenantId routes to the correct bot account.",
     parameters: imSendParameters,
     execute: async (_toolCallId, params: IMSendInput) => {
       const content = params.content.trim();
@@ -60,10 +60,13 @@ export function createIMSendTool(tenantId: string): ToolDefinition<
         });
       }
       if (!targetTenantId) {
-        return errResult("tenantId 不能为空，请从 system prompt ## Channel 中获取", {
-          code: "INVALID_ARGUMENT",
-          message: "tenantId required",
-        });
+        return errResult(
+          "tenantId 不能为空，请从 system prompt ## Channel 中获取",
+          {
+            code: "INVALID_ARGUMENT",
+            message: "tenantId required",
+          },
+        );
       }
 
       // 按 tenantId 查找目标用户 ID：QQ 读 targetOpenId，微信读 peerUserId
@@ -74,16 +77,22 @@ export function createIMSendTool(tenantId: string): ToolDefinition<
 
       const sent = await sendIMDirectMessage(channel, content, targetTenantId);
       if (!sent) {
-        return errResult(`${channel} 消息发送失败（tenantId=${targetTenantId}）`, {
-          code: "INTERNAL_ERROR",
-          message: `send ${channel} failed for tenantId=${targetTenantId}`,
-        });
+        return errResult(
+          `${channel} 消息发送失败（tenantId=${targetTenantId}）`,
+          {
+            code: "INTERNAL_ERROR",
+            message: `send ${channel} failed for tenantId=${targetTenantId}`,
+          },
+        );
       }
-      return okResult(`已向 ${toUserId || targetTenantId} 发送 ${channel} 消息`, {
-        channel,
-        toUserId,
-        sent: true,
-      });
+      return okResult(
+        `已向 ${toUserId || targetTenantId} 发送 ${channel} 消息`,
+        {
+          channel,
+          toUserId,
+          sent: true,
+        },
+      );
     },
   };
 }

@@ -151,13 +151,13 @@ const createReminderTaskParams = Type.Object({
     {
       minItems: 1,
       description:
-        "Required notification channels. Read from your system prompt '## Channel' chapter.",
+        "Required notification channels. Priority: user-specified channels > current channel in system prompt '## Channel' chapter.",
     },
   ),
   tenantId: Type.String({
     minLength: 1,
     description:
-      'Required tenant ID for routing the reminder to the correct bot account. Read from your system prompt "Channel" chapter.',
+      'Required tenant ID for routing the reminder. Priority: user-specified tenantId > current tenantId in system prompt "Channel" chapter.',
   }),
   taskName: Type.Optional(
     Type.String({
@@ -214,13 +214,13 @@ const createAgentTaskParams = Type.Object({
     {
       minItems: 1,
       description:
-        "Required notification channels. Read from your system prompt '## Channel' chapter.",
+        "Required notification channels. Priority: user-specified channels > current channel in system prompt '## Channel' chapter.",
     },
   ),
   tenantId: Type.String({
     minLength: 1,
     description:
-      'Required tenant ID for routing and permission checks. Read from your system prompt "Channel" chapter.',
+      'Required tenant ID for routing and permission checks. Priority: user-specified tenantId > current tenantId in system prompt "Channel" chapter.',
   }),
   mode: Type.Optional(
     Type.Union([Type.Literal("evolve"), Type.Literal("analyze_then_notify")], {
