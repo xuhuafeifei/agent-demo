@@ -251,6 +251,7 @@ export async function runEmbeddedPiAgent(params: {
 }): Promise<string> {
   const { session, message, onEvent, needsCompression = false } = params;
   let latestAssistantText = "";
+  let latestModelError: string | undefined;
 
   // 打印当前 Session 文件路径
   attemptLogger.info(
@@ -378,6 +379,7 @@ export async function runEmbeddedPiAgent(params: {
       const detail = enrichProviderErrorMessage(
         messageWithStopReason.errorMessage,
       );
+      latestModelError = detail;
       attemptLogger.error(
         `模型调用失败：provider=${messageWithStopReason.provider ?? "unknown"}, ` +
           `model=${messageWithStopReason.model ?? "unknown"}, ` +
@@ -486,7 +488,14 @@ export async function runEmbeddedPiAgent(params: {
 
   try {
     await session.prompt(message);
-    return latestAssistantText;
+    const finalText = latestAssistantText.trim();
+    if (finalText) {
+      return finalText;
+    }
+    if (latestModelError) {
+      throw new Error(latestModelError);
+    }
+    throw new Error("模型未返回有效内容");
   } finally {
     unsubscribe();
   }
