@@ -21,6 +21,8 @@ export const DEFAULT_GUARD_CONFIG: ToolSecurityConfig = {
     "listTaskSchedules",
     "runTaskByName",
     "deleteTaskByName",
+    "webSearch",
+    "webFetch",
   ],
   denyPaths: [],
   access: {
@@ -82,6 +84,8 @@ export const DEFAULT_YOLO_CONFIG: ToolSecurityConfig = {
     "listTaskSchedules",
     "runTaskByName",
     "deleteTaskByName",
+    "webSearch",
+    "webFetch",
   ],
   denyPaths: [],
   access: {

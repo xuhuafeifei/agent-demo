@@ -38,6 +38,8 @@ import {
 } from "./func/watch-dog.js";
 import { createShellExecuteTool } from "./func/shell-execute.js";
 import { createIMSendTool } from "./func/IM-send.js";
+import { createWebSearchTool } from "./func/web-search.js";
+import { createWebFetchTool } from "./func/web-fetch.js";
 
 /** 工具工厂函数签名：cwd 为租户 workspace 目录，tenantId 为租户 ID */
 type ToolFactory = (cwd: string, tenantId: string) => unknown;
@@ -145,6 +147,16 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   sendIMMessage: {
     factory: (_cwd, tenantId) => createIMSendTool(tenantId),
     description: "sendIMMessage(channel, content, tenantId) - send text to phone IM user (qq/weixin)",
+  },
+
+  // ===== 网络工具 =====
+  webSearch: {
+    factory: () => createWebSearchTool(),
+    description: "webSearch(query, limit?) - search the web for information",
+  },
+  webFetch: {
+    factory: () => createWebFetchTool(),
+    description: "webFetch(url, prompt) - fetch and extract content from a URL",
   },
 };
 

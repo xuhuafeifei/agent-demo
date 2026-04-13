@@ -123,6 +123,10 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
         enabled: raw.channels?.weixin?.enabled ?? false,
       },
     },
+    webSearch: {
+      provider: raw.webSearch?.provider?.trim() || "duckduckgo",
+      apiKey: raw.webSearch?.apiKey ?? "",
+    },
   };
 
   // 不再进行qqbot通道配置校验. 如果开启却不存在appId，则让后续流程报错，不影响底层的核心功能

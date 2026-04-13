@@ -1,0 +1,49 @@
+wing: agent_demo
+rooms:
+- name: testing
+  description: Files from test/
+  keywords:
+  - testing
+  - test
+- name: configuration
+  description: Files from config/
+  keywords:
+  - configuration
+  - config
+- name: web
+  description: Files from web/
+  keywords:
+  - web
+  - web
+- name: patches
+  description: Files from patches/
+  keywords:
+  - patches
+  - patches
+- name: documentation
+  description: Files from docs/
+  keywords:
+  - documentation
+  - docs
+- name: scripts
+  description: Files from scripts/
+  keywords:
+  - scripts
+  - scripts
+- name: fgbg
+  description: Files from fgbg/
+  keywords:
+  - fgbg
+  - fgbg
+- name: src
+  description: Files from src/
+  keywords:
+  - src
+  - src
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []
+- name: agent-demo
+  description: ''
+  keywords:
+  - agent-demo

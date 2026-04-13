@@ -141,6 +141,11 @@ export type FgbgUserRawConfig = {
       enabled?: boolean;
     };
   };
+  /** 搜索服务配置 */
+  webSearch?: {
+    provider?: string;
+    apiKey?: string;
+  };
 };
 
 export type FgbgUserConfig = {
@@ -217,6 +222,11 @@ export type FgbgUserConfig = {
     weixin: {
       enabled: boolean;
     };
+  };
+  /** 搜索服务配置 */
+  webSearch: {
+    provider: string;
+    apiKey: string;
   };
 };
 
