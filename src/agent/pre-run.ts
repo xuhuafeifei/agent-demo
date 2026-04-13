@@ -9,7 +9,7 @@ import {
 import type { RuntimeModel } from "../types.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { ensureAgentWorkspace } from "./workspace.js";
-import { type AgentChannel, normalizeChannel } from "./channel-policy.js";
+import { type AgentChannel } from "./channel-policy.js";
 import { readFgbgUserConfig } from "../config/index.js";
 
 /**
@@ -69,7 +69,7 @@ function resolveThinkingLevel(channel: AgentChannel): ThinkingLevel {
 export async function prepareBeforeGetReply(params: {
   tenantId: string;
   sessionKey: string;
-  channel?: AgentChannel;
+  channel: AgentChannel;
 }): Promise<{
   cwd: string;             // 租户 workspace 目录
   agentDir: string;        // agent 内部数据目录
@@ -85,10 +85,7 @@ export async function prepareBeforeGetReply(params: {
   apiKey?: string;
   thinkingLevel: ThinkingLevel;
 }> {
-  const { tenantId, sessionKey } = params;
-  // 规范化渠道类型：将可能为 undefined 或非标准值的 channel 转换为标准的 AgentChannel
-  // 这确保后续配置读取时不会因为渠道值不一致而导致查找失败
-  const channel = normalizeChannel(params.channel);
+  const { tenantId, sessionKey, channel } = params;
 
   // ─── 步骤 1：选择运行时模型 ───
   // 根据全局配置选择本次请求要使用的 LLM 模型

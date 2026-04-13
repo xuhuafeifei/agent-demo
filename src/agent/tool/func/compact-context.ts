@@ -10,7 +10,7 @@ const logger = getSubsystemConsoleLogger("compact-tool");
  *
  * @param tenantId 租户 ID，用于定位租户 session 文件
  */
-export function createCompactContextTool(tenantId: string = "default") {
+export function createCompactContextTool(tenantId: string) {
   return {
     name: "compactContext",
     description:
@@ -26,7 +26,11 @@ export function createCompactContextTool(tenantId: string = "default") {
       try {
         // 使用当前租户的主 session 键准备会话信息
         const sessionKey = `session:main:${tenantId}`;
-        const prepared = await prepareBeforeGetReply({ tenantId, sessionKey });
+        const prepared = await prepareBeforeGetReply({
+          tenantId,
+          sessionKey,
+          channel: "web",
+        });
 
         const session = await createRuntimeAgentSession({
           model: prepared.model!,
@@ -63,7 +67,9 @@ export function createCompactContextTool(tenantId: string = "default") {
         );
         return {
           content: `压缩会话上下文失败: ${error instanceof Error ? error.message : "未知错误"}`,
-          details: { error: error instanceof Error ? error.message : "未知错误" },
+          details: {
+            error: error instanceof Error ? error.message : "未知错误",
+          },
           isError: true,
         };
       }

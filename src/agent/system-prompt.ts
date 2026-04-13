@@ -1,4 +1,4 @@
-import { normalizeChannel, type AgentChannel } from "./channel-policy.js";
+import { type AgentChannel } from "./channel-policy.js";
 
 export type BuildSystemPromptInput = {
   soul: string;

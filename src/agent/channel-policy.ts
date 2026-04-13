@@ -28,17 +28,11 @@ export const CHANNEL_POLICY: Record<AgentChannel, ChannelPolicy> = {
   },
 };
 
-const DEFAULT_CHANNEL: AgentChannel = "web";
-
 export function isAgentChannel(value: unknown): value is AgentChannel {
   return (
     typeof value === "string" &&
     (SUPPORTED_CHANNELS as readonly string[]).includes(value)
   );
-}
-
-export function normalizeChannel(value: unknown): AgentChannel {
-  return isAgentChannel(value) ? value : DEFAULT_CHANNEL;
 }
 
 export function getChannelPolicy(channel: AgentChannel): ChannelPolicy {
