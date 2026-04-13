@@ -1,4 +1,7 @@
 import { type AgentChannel } from "./channel-policy.js";
+import { getSubsystemConsoleLogger } from "../logger/logger.js";
+
+const logger = getSubsystemConsoleLogger("system-prompt");
 
 export type BuildSystemPromptInput = {
   soul: string;
@@ -51,6 +54,8 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
   const channel = input.channel;
   const tenantId = input.tenantId;
+  // debug，一手删了
+  logger.debug(`channel, tenantId: ${channel}, ${tenantId}`);
   return `## who you are
 ${soul}
 
