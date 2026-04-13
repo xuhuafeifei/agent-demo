@@ -14,7 +14,7 @@ export type BuildSystemPromptInput = {
    * 当前会话所属租户 ID（tenantId）。
    * 用于告知大模型在调用 sendIMMessage、createReminderTask 等工具时填入的 tenantId 值。
    */
-  identify?: string;
+  tenantId: string;
 };
 
 function nonEmptyOrFallback(
@@ -50,19 +50,19 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const toolings = nonEmptyListOrFallback(input.toolings, ["N/A"]);
   const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
   const channel = normalizeChannel(input.channel);
-  const identifyLine = (input.identify ?? "").trim()
-    ? `\nCurrent tenantId: ${(input.identify ?? "").trim()}.\nUse this value for the tenantId parameter when calling sendIMMessage, createReminderTask, and other tools that require tenantId.`
-    : "";
+  const tenantId = input.tenantId;
   return `## who you are
 ${soul}
 
 ## Environment
 Please current date is ${nowText}! don't forget it!
-if you forget it, you can use the function tool, getNow to get the current date!
-In addition, if you see other time information elsewhere, those are outdated; ${nowText} is the correct one!
+If you see other time information elsewhere, those are outdated; ${nowText} is the correct one!
 
 ## Channel
-${channel}${identifyLine}
+Current channel is ${channel}. 
+Current tenantId is ${tenantId}.
+
+Use ${channel} for the channel and ${tenantId} for the tenantId parameter when calling sendIMMessage, createReminderTask, and other tools that require tenantId.
 
 ## Toolings
 

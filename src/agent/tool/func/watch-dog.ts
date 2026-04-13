@@ -12,6 +12,8 @@ import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 import { formatChinaIso } from "../../../watch-dog/time.js";
 import { computeNextRunFromCron } from "../../../watch-dog/cron.js";
 import { formatBlacklistPresetLines } from "../../../watch-dog/blacklist-presets.js";
+import { getQQBotByTenantId } from "../../../middleware/qq/qq-account.js";
+import { getWeixinBotByTenantId } from "../../../middleware/weixin/weixin-account.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -228,6 +230,23 @@ type CreateAgentTaskInput = Static<typeof createAgentTaskParams>;
 
 function makeTaskName(prefix: string): string {
   return `${prefix}_${Date.now()}`;
+}
+
+function validateTaskTenant(params: {
+  tenantId: string;
+  channels: Array<"qq" | "weixin" | "web">;
+}): { ok: true } | { ok: false; message: string } {
+  const tid = params.tenantId.trim();
+  if (!tid) {
+    return { ok: false, message: "tenantId 不能为空" };
+  }
+  if (params.channels.includes("qq") && !getQQBotByTenantId(tid)) {
+    return { ok: false, message: `tenantId=${tid} 未绑定 QQ 账号，无法创建提醒任务` };
+  }
+  if (params.channels.includes("weixin") && !getWeixinBotByTenantId(tid)) {
+    return { ok: false, message: `tenantId=${tid} 未绑定 weixin 账号，无法创建提醒任务` };
+  }
+  return { ok: true };
 }
 
 /**
@@ -479,6 +498,13 @@ export function createReminderTaskTool(tenantId: string): ToolDefinition<
           },
         );
       }
+      const tenantValidation = validateTaskTenant({ tenantId: tid, channels });
+      if (!tenantValidation.ok) {
+        return errResult(tenantValidation.message, {
+          code: "INVALID_ARGUMENT",
+          message: tenantValidation.message,
+        });
+      }
       payload.tenantId = tid;
       if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
         payload.blacklistPeriods = params.blacklistPeriods;
@@ -531,6 +557,7 @@ export function createAgentTaskTool(tenantId: string): ToolDefinition<
         params.channels && params.channels.length > 0 ? params.channels : ["qq"]
       ) as Array<"qq" | "weixin" | "web">;
       const mode = params.mode ?? "evolve";
+      const taskTenantId = tenantId.trim();
       const taskName =
         params.taskName?.trim() ||
         params.title?.trim() ||
@@ -589,10 +616,21 @@ export function createAgentTaskTool(tenantId: string): ToolDefinition<
         timezone,
         mode,
         // 将当前租户 ID 写入 payload，执行时 watch-dog 用它路由 workspace/memory/session 和通知 bot
-        tenantId: tenantId,
+        tenantId: taskTenantId,
       };
       if (params.blacklistPeriods && params.blacklistPeriods.length > 0) {
         payload.blacklistPeriods = params.blacklistPeriods;
+      }
+
+      const tenantValidation = validateTaskTenant({
+        tenantId: taskTenantId,
+        channels: notify ? channels : ["web"],
+      });
+      if (!tenantValidation.ok) {
+        return errResult(tenantValidation.message, {
+          code: "INVALID_ARGUMENT",
+          message: tenantValidation.message,
+        });
       }
 
       try {
@@ -605,7 +643,7 @@ export function createAgentTaskTool(tenantId: string): ToolDefinition<
           timezone,
           next_run_time: nextRunTime,
           status: "pending",
-          tenant_id: tenantId,
+          tenant_id: taskTenantId,
         });
         return okResult(`已创建智能任务 ${taskName}`, {
           task_name: taskName,

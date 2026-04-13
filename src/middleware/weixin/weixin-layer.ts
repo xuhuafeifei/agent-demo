@@ -70,13 +70,17 @@ export async function sendWeixinDirectMessage(
     store.bots[0];
 
   if (!bot) {
-    log.error(`sendWeixinDirectMessage failed: no bot for tenantId=${tenantId}`);
+    log.error(
+      `sendWeixinDirectMessage failed: no bot for tenantId=${tenantId}`,
+    );
     return false;
   }
 
   const toUserId = bot.peerUserId?.trim();
   if (!toUserId) {
-    log.error(`sendWeixinDirectMessage failed: peerUserId missing for bot tenantId=${bot.tenantId}`);
+    log.error(
+      `sendWeixinDirectMessage failed: peerUserId missing for bot tenantId=${bot.tenantId}`,
+    );
     return false;
   }
 
@@ -90,7 +94,9 @@ export async function sendWeixinDirectMessage(
     });
     return true;
   } catch (e) {
-    log.error(`sendWeixinDirectMessage failed: ${e instanceof Error ? e.message : String(e)}`);
+    log.error(
+      `sendWeixinDirectMessage failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
     return false;
   }
 }
@@ -109,7 +115,9 @@ async function processBotBucket(
   signal: AbortSignal,
 ): Promise<void> {
   // 聚合多条用户消息为编号列表，便于 Agent 理解批量输入
-  const aggregatedText = messages.map((m, i) => `${i + 1}. ${m.text}`).join("\n");
+  const aggregatedText = messages
+    .map((m, i) => `${i + 1}. ${m.text}`)
+    .join("\n");
   const from = messages[0]?.from ?? "";
   if (!from) return;
 
@@ -121,7 +129,7 @@ async function processBotBucket(
   const result = await runWithSingleFlight({
     message: aggregatedText,
     channel: "weixin",
-    tenantId: bot.tenantId,  // 关键：将微信 bot 的 tenantId 传入 Agent，实现租户级隔离
+    tenantId: bot.tenantId, // 关键：将微信 bot 的 tenantId 传入 Agent，实现租户级隔离
     module: "main",
     onEvent: () => {},
     onBusy: async () => {
@@ -145,7 +153,9 @@ async function processBotBucket(
           contextToken: bot.contextToken || undefined,
         });
       } catch (e) {
-        log.warn(`微信「收到指令」回执发送失败 tenantId=${bot.tenantId}: ${e instanceof Error ? e.message : String(e)}`);
+        log.warn(
+          `微信「收到指令」回执发送失败 tenantId=${bot.tenantId}: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     },
   });
@@ -182,13 +192,27 @@ async function processBotBucket(
  *   6. 同步 context_token 到 bot 状态
  *   7. 若有有效消息，调用 processBotBucket 聚合后送入 Agent
  */
-async function runBotCycle(bot: WeixinBoundBot, signal: AbortSignal): Promise<void> {
-  log.debug("run cycle...", bot.tenantId);
+async function runBotCycle(
+  bot: WeixinBoundBot,
+  signal: AbortSignal,
+): Promise<void> {
+  // log.debug("run cycle...", bot.tenantId);
 
   // 会话冷却期检查：绑定失效或扫码过期后暂停轮询
-  if (bot.sessionPausedUntil && Date.now() < bot.sessionPausedUntil) return;
+  if (bot.sessionPausedUntil && Date.now() < bot.sessionPausedUntil) {
+    const pauseUntilStr = new Date(bot.sessionPausedUntil).toLocaleString(
+      "zh-CN",
+      { timeZone: "Asia/Shanghai" },
+    );
+    // 这里需要抛出异常，让外层捕获 sleep 3s。不然外层会以为运行成功，快速进行下一轮循环，实际上空转 cpu
+    throw new Error(
+      `微信会话过期 tenantId=${bot.tenantId}，暂停至 ${pauseUntilStr}（需重新扫码绑定）`,
+    );
+  }
 
   // 长轮询拉取新消息，服务端会在有新消息或超时后返回
+  // 长轮询本身就自然充当间隔机制。没有消息，服务端挂起 35s 后返回
+  // 因此空消息也不需要 sleep
   const resp = await ilinkGetUpdates({
     baseUrl: bot.baseUrl,
     token: bot.token,
@@ -206,7 +230,9 @@ async function runBotCycle(bot: WeixinBoundBot, signal: AbortSignal): Promise<vo
     // SESSION_ERR(-14) 表示微信会话过期（如二维码失效），暂停 1 小时避免频繁报错
     if (resp.errcode === SESSION_ERR || resp.ret === SESSION_ERR) {
       const pausedUntil = Date.now() + 60 * 60_000;
-      log.warn(`微信会话过期 tenantId=${bot.tenantId}，暂停 1 小时（需重新扫码绑定）`);
+      log.warn(
+        `微信会话过期 tenantId=${bot.tenantId}，暂停 1 小时（需重新扫码绑定）`,
+      );
       updateWeixinBotSessionPause(bot.tenantId, pausedUntil);
     }
     return;
@@ -259,8 +285,10 @@ export async function runWeixinInboundLoop(signal: AbortSignal): Promise<void> {
     try {
       await Promise.all(store.bots.map((bot) => runBotCycle(bot, signal)));
     } catch (e) {
-      log.error(`weixin 轮询异常: ${e instanceof Error ? e.message : String(e)}`);
-      await sleep(3000);
+      log.error(
+        `weixin 轮询异常: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      await sleep(5000);
     }
   }
 }

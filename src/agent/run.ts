@@ -286,7 +286,7 @@ export async function getReplyFromAgent(params: {
     skillsMeta: getSkillManager(tenantId).getMetaPromptText(),
     channel: channel,
     // tenantId 作为 channel 的上下文信息写入 system prompt，供工具参数填写参考
-    identify: tenantId,
+    tenantId: tenantId,
   });
   agentLogger.trace(`prompt: ${prompt}`);
 
@@ -369,29 +369,6 @@ export async function getReplyFromAgent(params: {
 export { getAllRunningAgentStates };
 
 /**
- * 在 runWithSingleFlight 内部组装会话索引键；调用方不传入 sessionKey。
- *
- * - 普通入口（module 非 watch-dog）：`session:main:{tenantId}`
- * - watch-dog 定时任务：`watchdog:task:{watchDogTaskId}`（每任务独立会话）
- */
-export function buildSessionKeyForSingleFlight(params: {
-  module: string;
-  tenantId: string;
-  watchDogTaskId?: string;
-}): string {
-  const mod = params.module.trim();
-  const tenantId = params.tenantId.trim();
-  if (mod === "watch-dog") {
-    const id = params.watchDogTaskId?.trim();
-    if (!id) {
-      throw new Error("runWithSingleFlight: module=watch-dog 时必须提供 watchDogTaskId");
-    }
-    return `watchdog:task:${id}`;
-  }
-  return `session:main:${tenantId}`;
-}
-
-/**
  * 以单飞模式运行 agent：同一 agentId（module + tenantId）同时只允许一个执行。
  * 不同 module 的同租户 agent 可以并发（如 watch-dog 与 main 互不阻塞）。
  *
@@ -415,13 +392,10 @@ export async function runWithSingleFlight(params: {
   channel: AgentChannel;
 }): Promise<{ status: "busy" | "completed"; finalText: string }> {
   const { message, onEvent, onBusy, onAccepted, tenantId, module: mod, channel } = params;
-  const sessionKey = buildSessionKeyForSingleFlight({
-    module: mod,
-    tenantId,
-    watchDogTaskId: params.watchDogTaskId,
-  });
+
   // 锁 key 由 module + tenantId 组成，不同 module 的同租户 agent 可并发
   const agentId = `agent:${mod}:${tenantId}`;
+  const sessionKey = `session:${mod}:${tenantId}`;
 
   if (!tryAcquireAgent(agentId, tenantId, channel)) {
     await onBusy?.();
