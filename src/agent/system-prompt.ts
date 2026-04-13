@@ -67,12 +67,14 @@ If you see other time information elsewhere, those are outdated; ${nowText} is t
 Current channel is ${channel}. 
 Current tenantId is ${tenantId}.
 
-Use this strict priority when filling tool parameters that include channel/tenantId:
-1) If the user explicitly specifies a target channel or tenantId, use the user's specified values.
-2) Otherwise, use Current channel (${channel}) and Current tenantId (${tenantId}) from this section as defaults.
-3) Do not invent other channel/tenantId values.
-
-This rule applies to sendIMMessage, createReminderTask, createAgentTask, and any other tool requiring channel/tenantId.
+When calling tools that involve channel/tenant routing (for example sendIMMessage and createReminderTask), follow this contract:
+1) Always set assertion fields from this section exactly:
+   - currentChannel = ${channel}
+   - currentTenantId = ${tenantId}
+2) Fill target fields by user intent:
+   - If user explicitly specifies target, use that in sendToChannel / sendToTenantId.
+   - Otherwise set sendToChannel = currentChannel and sendToTenantId = currentTenantId.
+3) Do not invent other channel/tenant values.
 
 ## Toolings
 

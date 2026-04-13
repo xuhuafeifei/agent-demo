@@ -7,20 +7,33 @@ import {
 } from "../../../middleware/im/im-send.js";
 import { getQQBotByTenantId } from "../../../middleware/qq/qq-account.js";
 import { getWeixinBotByTenantId } from "../../../middleware/weixin/weixin-account.js";
+import type { AgentChannel } from "../../channel-policy.js";
 
 const imSendParameters = Type.Object({
-  channel: Type.Union([Type.Literal("qq"), Type.Literal("weixin")], {
+  currentChannel: Type.Union(
+    [Type.Literal("web"), Type.Literal("qq"), Type.Literal("weixin")],
+    {
+      description:
+        "Current runtime channel from system prompt 'Channel' section. Must exactly match runtime current channel.",
+    },
+  ),
+  currentTenantId: Type.String({
+    minLength: 1,
     description:
-      "IM channel to send through: qq/weixin. Priority: user-specified channel > current channel in system prompt 'Channel' section.",
+      "Current runtime tenantId from system prompt 'Channel' section. Must exactly match runtime current tenantId.",
+  }),
+  sendToChannel: Type.Union([Type.Literal("qq"), Type.Literal("weixin")], {
+    description:
+      "Target IM channel to send to: qq/weixin. If user specifies target channel, use it; otherwise use currentChannel.",
+  }),
+  sendToTenantId: Type.String({
+    minLength: 1,
+    description:
+      "Target tenantId to send to. If user specifies target tenantId, use it; otherwise use currentTenantId.",
   }),
   content: Type.String({
     minLength: 1,
     description: "Text content to send to phone IM user.",
-  }),
-  tenantId: Type.String({
-    minLength: 1,
-    description:
-      "Tenant ID for routing to the correct bot account. Priority: user-specified tenantId > current tenantId in system prompt 'Channel' section.",
   }),
 });
 
@@ -34,12 +47,14 @@ type IMSendOutput = {
 
 /**
  * 创建 IM 发送工具。
- * 工厂闭包持有 tenantId，作为发送目标的默认路由依据。
+ * 工厂闭包持有运行时 current tenant/channel，用于参数断言校验。
  *
- * @param tenantId 当前 agent 所属租户 ID（工具参数 tenantId 可覆盖此值）
+ * @param tenantId 当前运行时 tenantId（用于校验 currentTenantId）
+ * @param channel 当前运行时 channel（用于校验 currentChannel）
  */
 export function createIMSendTool(
   tenantId: string,
+  channel: AgentChannel,
 ): ToolDefinition<typeof imSendParameters, ToolDetails<IMSendOutput>> {
   return {
     name: "sendIMMessage",
@@ -49,9 +64,11 @@ export function createIMSendTool(
     parameters: imSendParameters,
     execute: async (_toolCallId, params: IMSendInput) => {
       const content = params.content.trim();
-      const channel = params.channel;
-      // 工具参数 tenantId 由大模型传入；若大模型漏填，回落到工厂闭包中的当前租户
-      const targetTenantId = params.tenantId?.trim() || tenantId;
+      const currentTenantId = params.currentTenantId.trim();
+      const sendToTenantId = params.sendToTenantId.trim();
+      const sendToChannel = params.sendToChannel;
+      const runtimeTenantId = tenantId.trim();
+      const runtimeChannel = channel;
 
       if (!content) {
         return errResult("content 不能为空", {
@@ -59,7 +76,7 @@ export function createIMSendTool(
           message: "content 不能为空",
         });
       }
-      if (!targetTenantId) {
+      if (!currentTenantId || !sendToTenantId) {
         return errResult(
           "tenantId 不能为空，请从 system prompt ## Channel 中获取",
           {
@@ -68,27 +85,47 @@ export function createIMSendTool(
           },
         );
       }
+      if (params.currentChannel !== runtimeChannel) {
+        return errResult(
+          `currentChannel 不匹配：expected=${runtimeChannel}, got=${params.currentChannel}。请重新阅读 system prompt 的 ## Channel 章节与用户最新指令，重新理解当前 Channel 以及 sendToChannel/sendToTenantId 后再重试。`,
+          {
+            code: "INVALID_ARGUMENT",
+            message:
+              "currentChannel mismatch; re-check system prompt Channel and user intent before retry",
+          },
+        );
+      }
+      if (currentTenantId !== runtimeTenantId) {
+        return errResult(
+          `currentTenantId 不匹配：expected=${runtimeTenantId}, got=${currentTenantId}。请重新阅读 system prompt 的 ## Channel 章节与用户最新指令，重新理解当前 tenantId 以及 sendToChannel/sendToTenantId 后再重试。`,
+          {
+            code: "INVALID_ARGUMENT",
+            message:
+              "currentTenantId mismatch; re-check system prompt Channel and user intent before retry",
+          },
+        );
+      }
 
       // 按 tenantId 查找目标用户 ID：QQ 读 targetOpenId，微信读 peerUserId
       const toUserId =
-        channel === "qq"
-          ? (getQQBotByTenantId(targetTenantId)?.targetOpenId?.trim() ?? "")
-          : (getWeixinBotByTenantId(targetTenantId)?.peerUserId?.trim() ?? "");
+        sendToChannel === "qq"
+          ? (getQQBotByTenantId(sendToTenantId)?.targetOpenId?.trim() ?? "")
+          : (getWeixinBotByTenantId(sendToTenantId)?.peerUserId?.trim() ?? "");
 
-      const sent = await sendIMDirectMessage(channel, content, targetTenantId);
+      const sent = await sendIMDirectMessage(sendToChannel, content, sendToTenantId);
       if (!sent) {
         return errResult(
-          `${channel} 消息发送失败（tenantId=${targetTenantId}）`,
+          `${sendToChannel} 消息发送失败（tenantId=${sendToTenantId}）`,
           {
             code: "INTERNAL_ERROR",
-            message: `send ${channel} failed for tenantId=${targetTenantId}`,
+            message: `send ${sendToChannel} failed for tenantId=${sendToTenantId}`,
           },
         );
       }
       return okResult(
-        `已向 ${toUserId || targetTenantId} 发送 ${channel} 消息`,
+        `已向 ${toUserId || sendToTenantId} 发送 ${sendToChannel} 消息`,
         {
-          channel,
+          channel: sendToChannel,
           toUserId,
           sent: true,
         },

@@ -36,10 +36,9 @@ type ReadOutput = {
  * 创建文件读取工具。
  * @param tenantId 租户 ID，用于解析工作区路径和获取当前渠道（审批用）
  */
-export function createReadTool(tenantId: string): ToolDefinition<
-  typeof readParameters,
-  ToolDetails<ReadOutput>
-> {
+export function createReadTool(
+  tenantId: string,
+): ToolDefinition<typeof readParameters, ToolDetails<ReadOutput>> {
   // 租户 workspace 目录，作为路径安全检查的根目录
   const workspace = resolveTenantWorkspaceDir(tenantId);
 

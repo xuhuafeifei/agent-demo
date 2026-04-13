@@ -19,6 +19,7 @@ import { createToolBundle } from "../tool/tool-bundle.js";
 import { getFilterContextToolNames } from "../tool/tool-bundle.js";
 import { toolReturnedFailure } from "../tool/utils/tool-result-ui.js";
 import { updateAgentHeartbeatFromEvent } from "../agent-state.js";
+import type { AgentChannel } from "../channel-policy.js";
 
 const attemptLogger = getSubsystemConsoleLogger("attempt");
 
@@ -184,6 +185,7 @@ export async function createRuntimeAgentSession(params: {
   apiKey?: string;
   thinkingLevel?: ThinkingLevel;
   tenantId: string;
+  channel: AgentChannel;
 }): Promise<AgentSession> {
   const {
     model,
@@ -195,6 +197,7 @@ export async function createRuntimeAgentSession(params: {
     apiKey,
     thinkingLevel,
     tenantId,
+    channel,
   } = params;
 
   const sessionManager = SessionManager.open(sessionFile, sessionDir);
@@ -209,7 +212,7 @@ export async function createRuntimeAgentSession(params: {
     path.join(agentDir, "models.json"),
   );
   modelRegistry.refresh();
-  const toolBundle = createToolBundle(cwd, tenantId);
+  const toolBundle = createToolBundle(cwd, tenantId, channel);
 
   const { session } = await createAgentSession({
     model,

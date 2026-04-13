@@ -42,6 +42,7 @@ export function createCompactContextTool(tenantId: string) {
           apiKey: prepared.apiKey,
           thinkingLevel: prepared.thinkingLevel,
           tenantId,
+          channel: "web",
         });
 
         const compactionResult = await session.compact(

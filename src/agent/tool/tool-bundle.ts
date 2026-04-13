@@ -23,6 +23,7 @@ import { readFgbgUserConfig } from "../../config/index.js";
 import { resolveToolSecurityConfig } from "./security/tool-security.resolve.js";
 import type { ToolMode } from "./security/constants.js";
 import { TOOL_CATALOG } from "./tool-catalog.js";
+import type { AgentChannel } from "../channel-policy.js";
 
 /**
  * 工具包：包含给定 cwd 和 tenantId 下的所有工具实例与说明文案。
@@ -45,7 +46,11 @@ export type ToolBundle = {
  * @param cwd 租户 workspace 目录（用于文件路径安全检查，防止越权访问）
  * @param tenantId 租户 ID（用于工具内部路由 agent 状态和 bot 账号）
  */
-export function createToolBundle(cwd: string, tenantId: string): ToolBundle {
+export function createToolBundle(
+  cwd: string,
+  tenantId: string,
+  channel: AgentChannel,
+): ToolBundle {
   // 1. 读取用户配置（包含 enabledTools 等安全策略）
   const config = readFgbgUserConfig();
   // 2. 解析出最终的安全配置（合并默认值、用户覆盖等）
@@ -60,7 +65,7 @@ export function createToolBundle(cwd: string, tenantId: string): ToolBundle {
   // 4. 为每个工具名调用工厂函数，传入 (cwd, tenantId) 生成实例
   //    工具内部通过闭包持有 tenantId，后续调用时可访问租户专属资源
   const tools = enabledToolNames.map((name) =>
-    TOOL_CATALOG[name].factory(cwd, tenantId),
+    TOOL_CATALOG[name].factory(cwd, tenantId, channel),
   );
   // 5. 收集工具说明文案，用于构建 system prompt
   const toolings = enabledToolNames.map(

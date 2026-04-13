@@ -14,6 +14,7 @@ import { computeNextRunFromCron } from "../../../watch-dog/cron.js";
 import { formatBlacklistPresetLines } from "../../../watch-dog/blacklist-presets.js";
 import { getQQBotByTenantId } from "../../../middleware/qq/qq-account.js";
 import { getWeixinBotByTenantId } from "../../../middleware/weixin/weixin-account.js";
+import type { AgentChannel } from "../../channel-policy.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -142,22 +143,30 @@ const createReminderTaskParams = Type.Object({
       description: "Timezone. Defaults to Asia/Shanghai.",
     }),
   ),
-  channels: Type.Array(
-    Type.Union([
-      Type.Literal("qq"),
-      Type.Literal("weixin"),
-      Type.Literal("web"),
-    ]),
+  currentChannel: Type.Union(
+    [Type.Literal("web"), Type.Literal("qq"), Type.Literal("weixin")],
     {
-      minItems: 1,
       description:
-        "Required notification channels. Priority: user-specified channels > current channel in system prompt '## Channel' chapter.",
+        "Current runtime channel from system prompt '## Channel' section. Must exactly match runtime current channel.",
     },
   ),
-  tenantId: Type.String({
+  currentTenantId: Type.String({
     minLength: 1,
     description:
-      'Required tenant ID for routing the reminder. Priority: user-specified tenantId > current tenantId in system prompt "Channel" chapter.',
+      'Current runtime tenantId from system prompt "## Channel" section. Must exactly match runtime current tenantId.',
+  }),
+  sendToChannel: Type.Union([
+    Type.Literal("qq"),
+    Type.Literal("weixin"),
+    Type.Literal("web"),
+  ], {
+    description:
+      "Target channel for reminder delivery. If user specifies target channel, use it; otherwise use currentChannel.",
+  }),
+  sendToTenantId: Type.String({
+    minLength: 1,
+    description:
+      'Target tenantId for reminder routing. If user specifies target tenantId, use it; otherwise use currentTenantId.',
   }),
   taskName: Type.Optional(
     Type.String({
@@ -450,6 +459,7 @@ export function createGetNowTool(): ToolDefinition<
 
 export function createReminderTaskTool(
   tenantId: string,
+  channel: AgentChannel,
 ): ToolDefinition<
   typeof createReminderTaskParams,
   ToolDetails<{ task_name: string; task_type: string; next_run_time: string }>
@@ -464,7 +474,33 @@ export function createReminderTaskTool(
       const content = params.content.trim();
       const scheduleType = params.scheduleType;
       const timezone = params.timezone?.trim() || "Asia/Shanghai";
-      const channels = params.channels as Array<"qq" | "weixin" | "web">;
+      const runtimeChannel = channel;
+      const runtimeTenantId = tenantId.trim();
+      const currentTenantId = params.currentTenantId.trim();
+      const sendToTenantId = params.sendToTenantId.trim();
+      if (params.currentChannel !== runtimeChannel) {
+        return errResult(
+          `currentChannel 不匹配：expected=${runtimeChannel}, got=${params.currentChannel}`,
+          { code: "INVALID_ARGUMENT", message: "currentChannel mismatch" },
+        );
+      }
+      if (currentTenantId !== runtimeTenantId) {
+        return errResult(
+          `currentTenantId 不匹配：expected=${runtimeTenantId}, got=${currentTenantId}。请重新阅读 system prompt 的 ## Channel 章节与用户最新指令，重新理解当前 tenantId 以及 sendToChannel/sendToTenantId 后再重试。`,
+          {
+            code: "INVALID_ARGUMENT",
+            message:
+              "currentTenantId mismatch; re-check system prompt Channel and user intent before retry",
+          },
+        );
+      }
+      if (!sendToTenantId) {
+        return errResult("sendToTenantId 不能为空", {
+          code: "INVALID_ARGUMENT",
+          message: "sendToTenantId required",
+        });
+      }
+      const channels = [params.sendToChannel] as Array<"qq" | "weixin" | "web">;
       const taskName = params.taskName?.trim() || makeTaskName("reminder");
       let nextRunTime: string;
       let scheduleKind: "once" | "cron";
@@ -518,7 +554,7 @@ export function createReminderTaskTool(
         channels,
         timezone,
       };
-      const tid = params.tenantId.trim();
+      const tid = sendToTenantId;
       const tenantValidation = validateTaskTenant({ tenantId: tid, channels });
       if (!tenantValidation.ok) {
         return errResult(tenantValidation.message, {

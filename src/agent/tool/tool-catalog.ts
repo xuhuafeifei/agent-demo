@@ -40,9 +40,14 @@ import { createShellExecuteTool } from "./func/shell-execute.js";
 import { createIMSendTool } from "./func/IM-send.js";
 import { createWebSearchTool } from "./func/web-search.js";
 import { createWebFetchTool } from "./func/web-fetch.js";
+import type { AgentChannel } from "../channel-policy.js";
 
 /** 工具工厂函数签名：cwd 为租户 workspace 目录，tenantId 为租户 ID */
-type ToolFactory = (cwd: string, tenantId: string) => unknown;
+type ToolFactory = (
+  cwd: string,
+  tenantId: string,
+  channel: AgentChannel,
+) => unknown;
 
 /** 工具目录条目：包含工厂函数和说明文案 */
 type ToolEntry = { factory: ToolFactory; description: string };
@@ -115,9 +120,9 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
     description: "deleteTaskByName(task_name) - delete scheduled task (default can delete any; others only own)",
   },
   createReminderTask: {
-    factory: (_cwd, tenantId) => createReminderTaskTool(tenantId),
+    factory: (_cwd, tenantId, channel) => createReminderTaskTool(tenantId, channel),
     description:
-      "createReminderTask(content, scheduleType, runAt?, cron?, timezone?, channels?, tenantId?, taskName?) - create execute_reminder task",
+      "createReminderTask(content, scheduleType, currentChannel, currentTenantId, sendToChannel, sendToTenantId, runAt?, cron?, timezone?, taskName?) - create execute_reminder task",
   },
   createAgentTask: { // todo: 这个任务干啥的完全忘了，以后调研一下
     factory: (_cwd, tenantId) => createAgentTaskTool(tenantId),
@@ -145,8 +150,9 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
 
   // ===== IM 通信（tenantId 用于路由到对应 bot 账号和 channel） =====
   sendIMMessage: {
-    factory: (_cwd, tenantId) => createIMSendTool(tenantId),
-    description: "sendIMMessage(channel, content, tenantId) - send text to phone IM user",
+    factory: (_cwd, tenantId, channel) => createIMSendTool(tenantId, channel),
+    description:
+      "sendIMMessage(currentChannel, currentTenantId, sendToChannel, sendToTenantId, content) - send text to phone IM user",
   },
 
   // ===== 网络工具 =====
