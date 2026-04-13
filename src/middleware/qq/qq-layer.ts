@@ -127,27 +127,35 @@ export async function sendQQDirectMessage(
 ): Promise<boolean> {
   // 检查 qqbot 频道是否启用
   if (!readFgbgUserConfig().channels.qqbot.enabled) {
-    qqLogger.error("sendQQDirectMessage failed: qqbot channel disabled");
+    qqLogger.error(
+      `sendQQDirectMessage failed: qqbot channel disabled, tenantId=${tenantId}`,
+    );
     return false;
   }
   // 按 tenantId 查找 bot 配置；tenantId 是多租户隔离的关键字段，
   // 不同租户可以配置不同的 QQ 机器人账号
   const bot = getQQBotByTenantId(tenantId) ?? getPrimaryQQBot();
   if (!bot?.appId?.trim() || !bot.clientSecret?.trim()) {
-    qqLogger.error(`sendQQDirectMessage failed: no bot for tenantId=${tenantId}`);
+    qqLogger.error(
+      `sendQQDirectMessage failed: no bot for tenantId=${tenantId}`,
+    );
     return false;
   }
   // targetOpenId 是机器人要发送消息的目标用户标识，
   // 由用户主动给机器人发私聊时通过 persistTargetOpenid 写入
   const openid = bot.targetOpenId?.trim() ?? "";
   if (!openid) {
-    qqLogger.error(`sendQQDirectMessage failed: targetOpenId empty for tenantId=${tenantId}`);
+    qqLogger.error(
+      `sendQQDirectMessage failed: targetOpenId empty for tenantId=${tenantId}`,
+    );
     return false;
   }
   // 等待 token 就绪（可能需要异步刷新）
   const ready = await waitForQQAccessToken(bot.appId, bot.clientSecret, 7000);
   if (!ready) {
-    qqLogger.error("sendQQDirectMessage failed: access token unavailable");
+    qqLogger.error(
+      `sendQQDirectMessage failed: access token unavailable, tenantId=${tenantId}`,
+    );
     return false;
   }
   try {
@@ -157,20 +165,33 @@ export async function sendQQDirectMessage(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // 错误码 11244 表示 token 过期或无效，需要刷新后重试
-    if (message.includes("11244") || message.includes("token not exist or expire")) {
+    if (
+      message.includes("11244") ||
+      message.includes("token not exist or expire")
+    ) {
       try {
-        invalidateQQAccessTokenStatus("QQ API 11244 (tenantId send)");
-        const retryToken = await forceRefreshQQAccessToken(bot.appId, bot.clientSecret);
+        invalidateQQAccessTokenStatus(
+          `QQ API 11244 (tenantId send), tenantId=${tenantId}`,
+        );
+        const retryToken = await forceRefreshQQAccessToken(
+          bot.appId,
+          bot.clientSecret,
+        );
         await sendC2CMessage({ accessToken: retryToken, openid, content });
         qqLogger.warn("sendQQDirectMessage: token refreshed after 11244");
         return true;
       } catch (retryError) {
-        const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
-        qqLogger.error(`sendQQDirectMessage retry failed: ${retryMessage}`);
+        const retryMessage =
+          retryError instanceof Error ? retryError.message : String(retryError);
+        qqLogger.error(
+          `sendQQDirectMessage retry failed: ${retryMessage}, tenantId=${tenantId}`,
+        );
         return false;
       }
     }
-    qqLogger.error(`sendQQDirectMessage failed: ${message}`);
+    qqLogger.error(
+      `sendQQDirectMessage failed: ${message}, tenantId=${tenantId}`,
+    );
     return false;
   }
 }
@@ -202,7 +223,9 @@ export async function startQQLayer(): Promise<void> {
   // 返回的 account 包含 appId、clientSecret、accountId 等关键信息
   const account = resolveQQAccountFromConfig();
   if (!account) {
-    qqLogger.info("未启用或未正确配置 fgbg.json.channels.qqbot，跳过 qq-layer 启动");
+    qqLogger.info(
+      "未启用或未正确配置 fgbg.json.channels.qqbot，跳过 qq-layer 启动",
+    );
     return;
   }
 
@@ -245,19 +268,22 @@ export async function startQQLayer(): Promise<void> {
         // op=10 是 Gateway 下发的 Hello 帧，表示连接已建立，需要发送 Identify 进行认证
         if (payload.op === 10) {
           const heartbeatInterval = Number(
-            (payload.d as { heartbeat_interval?: number })?.heartbeat_interval ?? 30000,
+            (payload.d as { heartbeat_interval?: number })
+              ?.heartbeat_interval ?? 30000,
           );
           // 发送 Identify 帧（op=2）进行身份认证
           // intents: 订阅的事件类型，(1<<30)|(1<<12)|(1<<25) 对应 C2C 消息等事件
           // shard: 分片信息，[0, 1] 表示只有 1 个分片
-          ws.send(JSON.stringify({
-            op: 2,
-            d: {
-              token: `QQBot ${accessToken}`,
-              intents: (1 << 30) | (1 << 12) | (1 << 25),
-              shard: [0, 1],
-            },
-          }));
+          ws.send(
+            JSON.stringify({
+              op: 2,
+              d: {
+                token: `QQBot ${accessToken}`,
+                intents: (1 << 30) | (1 << 12) | (1 << 25),
+                shard: [0, 1],
+              },
+            }),
+          );
           // 清理旧的心跳定时器，启动新的心跳机制
           if (qqHeartbeatTimer) clearInterval(qqHeartbeatTimer);
           // 心跳定时器：按 Gateway 指定的间隔定期发送 op=1 保活
@@ -287,7 +313,8 @@ export async function startQQLayer(): Promise<void> {
         const currentToken = await getQQAccessToken(appId, secret);
         // 使用 primary bot 的 tenantId 作为该次请求的租户上下文
         // tenantId 决定了 AI 对话使用哪个租户的配置（如 API key、模型等）
-        const tenantId = getPrimaryQQBot()?.tenantId?.trim() || QQ_DEFAULT_TENANT_ID;
+        const tenantId =
+          getPrimaryQQBot()?.tenantId?.trim() || QQ_DEFAULT_TENANT_ID;
 
         // 调用 runWithSingleFlight 启动 AI 对话处理流程
         // singleFlight 保证同一时刻只有一个对话在运行，避免并发冲突
