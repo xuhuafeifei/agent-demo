@@ -1,8 +1,5 @@
 import { Router } from "express";
-import {
-  runWithSingleFlight,
-  ModelUnavailableError,
-} from "../../../agent/run.js";
+import { runWithSingleFlight } from "../../../agent/run.js";
 import type { RuntimeStreamEvent } from "../../../agent/utils/events.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { writeNamedSse, writeSse } from "../utils/sse.js";
@@ -78,7 +75,7 @@ export function createChatRouter() {
     // - sessionKey: 未显式传入时由 runWithSingleFlight 内部根据 channel + tenantId 派生
     // - singleFlight 机制确保同一会话同一时间只有一个请求在执行，避免并发冲突
     try {
-      await runWithSingleFlight({
+      const result = await runWithSingleFlight({
         message,
         channel: "web",
         tenantId,
@@ -178,27 +175,29 @@ export function createChatRouter() {
 
           writeSse(res, event);
         },
-        // onBusy：singleFlight 检测到当前会话已有请求在执行时触发，返回忙状态提示
-        onBusy: () => {
-          writeSse(res, { type: "error", error: "指令正在运行中，请稍后" });
-        },
       });
+      if (result.status === "busy") {
+        writeNamedSse(res, "error", {
+          error: result.message,
+          systemError: false,
+        });
+      } else if (result.status === "failed") {
+        writeNamedSse(res, "error", {
+          error: result.message,
+          systemError: true,
+          code: result.code,
+          detail: result.detail,
+        });
+      }
     } catch (error) {
       // 异常处理：统一记录日志，区分模型不可用错误和其他运行时错误
       const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error(`[chat] ${runtimeError.message}`, error);
-      if (error instanceof ModelUnavailableError) {
-        // 模型服务不可用时，发送结构化错误事件（包含 provider/model 信息）
-        writeNamedSse(res, "error", {
-          error: error.message,
-          provider: error.provider,
-          model: error.model,
-          detail: error.detail,
-        });
-        return;
-      }
       // 其他错误发送通用 error 事件
-      writeSse(res, { type: "error", error: runtimeError.message });
+      writeNamedSse(res, "error", {
+        error: runtimeError.message,
+        systemError: true,
+      });
     } finally {
       // 清理：注销当前活跃响应，取消所有待审批，发送流结束标记并关闭连接
       approvalManager.clearActiveRes();

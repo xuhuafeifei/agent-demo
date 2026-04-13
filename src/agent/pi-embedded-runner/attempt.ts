@@ -182,7 +182,7 @@ export async function createRuntimeAgentSession(params: {
   provider: string;
   apiKey?: string;
   thinkingLevel?: ThinkingLevel;
-  tenantId?: string;
+  tenantId: string;
 }): Promise<AgentSession> {
   const {
     model,
@@ -193,7 +193,7 @@ export async function createRuntimeAgentSession(params: {
     provider,
     apiKey,
     thinkingLevel,
-    tenantId = "default",
+    tenantId,
   } = params;
 
   const sessionManager = SessionManager.open(sessionFile, sessionDir);
@@ -224,14 +224,14 @@ export async function createRuntimeAgentSession(params: {
       Parameters<typeof createAgentSession>[0]
     >["customTools"],
   });
-  
+
   // 调试：打印会话中的工具名称
   const sessionTools = (session as any).state?.tools || [];
   if (Array.isArray(sessionTools)) {
-    const toolNames = sessionTools.map((t: any) => t.name || 'unknown');
-    attemptLogger.info(`session active tools: [${toolNames.join(', ')}]`);
+    const toolNames = sessionTools.map((t: any) => t.name || "unknown");
+    attemptLogger.info(`session active tools: [${toolNames.join(", ")}]`);
   }
-  
+
   return session;
 }
 
@@ -248,7 +248,7 @@ export async function runEmbeddedPiAgent(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
   needsCompression?: boolean; // 是否需要压缩会话的标记
-}): Promise<{ finalText: string }> {
+}): Promise<string> {
   const { session, message, onEvent, needsCompression = false } = params;
   let latestAssistantText = "";
 
@@ -384,10 +384,8 @@ export async function runEmbeddedPiAgent(params: {
           `api=${messageWithStopReason.api ?? "unknown"}, ` +
           `error=${detail}`,
       );
-      wrappedOnEvent({
-        type: "error",
-        error: detail,
-      });
+      // 错误统一通过异常链路处理，不再发送流式 error 事件。
+      // runWithSingleFlight 会把异常封装为 failed 返回给各渠道。
     }
 
     switch (event.type) {
@@ -488,7 +486,7 @@ export async function runEmbeddedPiAgent(params: {
 
   try {
     await session.prompt(message);
-    return { finalText: latestAssistantText };
+    return latestAssistantText;
   } finally {
     unsubscribe();
   }

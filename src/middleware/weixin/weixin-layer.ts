@@ -131,17 +131,6 @@ async function processBotBucket(
     channel: "weixin",
     tenantId: bot.tenantId, // 关键：将微信 bot 的 tenantId 传入 Agent，实现租户级隔离
     module: "main",
-    onEvent: () => {},
-    onBusy: async () => {
-      // 当同一租户有正在运行的 Agent 请求时触发（单飞机制），告知用户等待
-      await ilinkSendText({
-        baseUrl: bot.baseUrl,
-        token: bot.token,
-        toUserId: from,
-        text: "正在处理上一条消息，请稍候",
-        contextToken: bot.contextToken || undefined,
-      });
-    },
     onAccepted: async () => {
       // 请求被 Agent 接收后发送确认回执，避免用户重复发送
       try {
@@ -160,8 +149,26 @@ async function processBotBucket(
     },
   });
 
-  // 检查 Agent 执行结果：非 completed 状态则不发送回复
-  if (result.status !== "completed") return;
+  if (result.status === "busy") {
+    await ilinkSendText({
+      baseUrl: bot.baseUrl,
+      token: bot.token,
+      toUserId: from,
+      text: result.message,
+      contextToken: bot.contextToken || undefined,
+    });
+    return;
+  }
+  if (result.status === "failed") {
+    await ilinkSendText({
+      baseUrl: bot.baseUrl,
+      token: bot.token,
+      toUserId: from,
+      text: `处理指令时发生错误: ${result.message}（系统异常）`,
+      contextToken: bot.contextToken || undefined,
+    });
+    return;
+  }
   // 将 Agent 最终生成的文本回复给用户，若无内容则发送默认回复"好的"
   const out = (result.finalText ?? "").trim() || "好的";
   await ilinkSendText({

@@ -49,7 +49,7 @@ export function buildSystemPrompt(input: BuildSystemPromptInput): string {
   const workspace = nonEmptyOrFallback(input.workspace, "N/A");
   const toolings = nonEmptyListOrFallback(input.toolings, ["N/A"]);
   const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
-  const channel = normalizeChannel(input.channel);
+  const channel = input.channel;
   const tenantId = input.tenantId;
   return `## who you are
 ${soul}

@@ -345,6 +345,15 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
         // watch-dog 不透传流式事件（静默执行，只在结束时获取最终结果）
       },
     });
+    if (result.status === "busy") {
+      return { status: "failed", errorMessage: result.message };
+    }
+    if (result.status === "failed") {
+      return {
+        status: "failed",
+        errorMessage: `${result.message}（系统异常）`,
+      };
+    }
     const finalText = result.finalText?.trim() || "任务已执行完成。";
 
     // 若不需要通知，直接返回成功（Agent 已执行完毕，但不推送结果）

@@ -323,28 +323,6 @@ export async function startQQLayer(): Promise<void> {
           channel: "qq",
           tenantId,
           module: "main",
-          // onEvent: AI 处理过程中的事件回调
-          // 当发生错误时，向用户发送错误提示信息
-          onEvent: (event) => {
-            if (event.type === "error" && event.error) {
-              qqLogger.error(`QQ 消息处理错误: ${event.error}`);
-              void sendC2CMessage({
-                accessToken: currentToken,
-                openid: userOpenId,
-                content: `处理指令时发生错误: ${event.error}`,
-                replyToMessageId: inboundMessageId,
-              });
-            }
-          },
-          // onBusy: 当 AI 正在处理其他请求时（单例飞行），通知用户稍后再试
-          onBusy: async () => {
-            await sendC2CMessage({
-              accessToken: currentToken,
-              openid: userOpenId,
-              content: "指令正在运行中，请稍后",
-              replyToMessageId: inboundMessageId,
-            });
-          },
           // onAccepted: AI 已接受该请求，通知用户已收到
           onAccepted: async () => {
             await sendC2CMessage({
@@ -355,8 +333,24 @@ export async function startQQLayer(): Promise<void> {
             });
           },
         }).then(async (result) => {
-          // AI 处理完成，将最终结果发送给用户
-          if (result.status !== "completed") return;
+          if (result.status === "busy") {
+            await sendC2CMessage({
+              accessToken: currentToken,
+              openid: userOpenId,
+              content: result.message,
+              replyToMessageId: inboundMessageId,
+            });
+            return;
+          }
+          if (result.status === "failed") {
+            await sendC2CMessage({
+              accessToken: currentToken,
+              openid: userOpenId,
+              content: `处理指令时发生错误: ${result.message}（系统异常）`,
+              replyToMessageId: inboundMessageId,
+            });
+            return;
+          }
           const finalText = result.finalText?.trim() || "已处理完成";
           await sendC2CMessage({
             accessToken: currentToken,

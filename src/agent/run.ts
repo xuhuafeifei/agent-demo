@@ -6,10 +6,7 @@ import {
 } from "./pi-embedded-runner/attempt.js";
 import { createCacheTrace } from "./utils/cache-trace.js";
 import type { RuntimeStreamEvent } from "./utils/events.js";
-import {
-  loadSessionIndexEntry,
-  resolveSessionDir,
-} from "./session/index.js";
+import { loadSessionIndexEntry, resolveSessionDir } from "./session/index.js";
 import {
   SessionManager,
   type SessionMessageEntry,
@@ -51,6 +48,22 @@ export class ModelUnavailableError extends Error {
     this.detail = params.detail;
   }
 }
+
+export type AgentRunResult =
+  | { status: "busy"; message: string; systemError: false }
+  | {
+      status: "success";
+      finalText: string;
+      message: string;
+      systemError: false;
+    }
+  | {
+      status: "failed";
+      message: string;
+      systemError: true;
+      code?: string;
+      detail?: string;
+    };
 
 /**
  * 打印当前租户的运行时路径信息（调试用）
@@ -113,7 +126,8 @@ export function getHistory(tenantId: string): Array<{
   );
   // 取最近 20 条
   const recent = filtered.slice(-DEFAULT_HISTORY_LIMIT);
-  const history: Array<{ role: string; content: string; timestamp?: number }> = [];
+  const history: Array<{ role: string; content: string; timestamp?: number }> =
+    [];
   // 伪造时间戳：基于当前时间倒推，每条间隔 1 秒
   const baseTimestamp = Date.now() - recent.length * 1000;
 
@@ -215,14 +229,18 @@ export async function getReplyFromAgent(params: {
   channel: AgentChannel;
   tenantId: string;
   sessionKey: string;
-}): Promise<{ finalText: string }> {
+}): Promise<string> {
   // 刷新配置缓存，确保使用最新的模型配置
   refreshFgbgUserConfigCache();
 
   const { message, onEvent, channel, tenantId, sessionKey } = params;
 
   // 准备运行时环境：模型选择、workspace 创建、session 初始化
-  const prepared = await prepareBeforeGetReply({ tenantId, sessionKey, channel });
+  const prepared = await prepareBeforeGetReply({
+    tenantId,
+    sessionKey,
+    channel,
+  });
 
   const modelRef = prepared.modelRef;
   const model = prepared.model;
@@ -268,7 +286,7 @@ export async function getReplyFromAgent(params: {
     provider: prepared.normalizedProvider,
     apiKey: prepared.apiKey,
     thinkingLevel: prepared.thinkingLevel,
-    tenantId,
+    tenantId: tenantId,
   });
 
   // 从 session 历史剪枝生成对话上下文字
@@ -341,7 +359,7 @@ export async function getReplyFromAgent(params: {
   try {
     emitContextSnapshot("before_prompt");
     // 执行嵌入式 PI agent
-    const runResult = await runEmbeddedPiAgent({
+    const finalText = await runEmbeddedPiAgent({
       session,
       message,
       onEvent: (event) => emit(event),
@@ -350,17 +368,19 @@ export async function getReplyFromAgent(params: {
     trace.recordStage("request:end");
     emit({ type: "done" });
     trace.logTimeline("done");
-    return runResult;
+    return finalText;
   } catch (error) {
     trace.recordStage("request:end");
     const message = error instanceof Error ? error.message : "服务器内部错误";
     agentLogger.error(`[agent] request failed: ${message}`, error);
-    emit({ type: "error", error: message });
     trace.logTimeline("error");
-    return { finalText: "" };
+    throw error;
   } finally {
     // 通知 memory 系统 session 文件已变更，触发增量索引
-    getMemoryIndexManager(tenantId).onMemorySourceChanged("session", prepared.sessionFile);
+    getMemoryIndexManager(tenantId).onMemorySourceChanged(
+      "session",
+      prepared.sessionFile,
+    );
     // 释放 session 资源
     session.dispose();
   }
@@ -378,40 +398,81 @@ export { getAllRunningAgentStates };
  * @param params.channel 当前渠道
  * @param params.message 用户消息
  * @param params.onEvent 流式事件回调
- * @param params.onBusy 同一 agentId 正在运行时的回调
  * @param params.onAccepted 成功获取锁（开始执行）时的回调
  */
 export async function runWithSingleFlight(params: {
   message: string;
-  onEvent: (event: RuntimeStreamEvent) => void;
-  onBusy?: () => void | Promise<void>;
+  onEvent?: (event: RuntimeStreamEvent) => void;
   onAccepted?: () => void | Promise<void>;
   tenantId: string;
   module: string;
   watchDogTaskId?: string;
   channel: AgentChannel;
-}): Promise<{ status: "busy" | "completed"; finalText: string }> {
-  const { message, onEvent, onBusy, onAccepted, tenantId, module: mod, channel } = params;
+}): Promise<AgentRunResult> {
+  const {
+    message,
+    onEvent,
+    onAccepted,
+    tenantId,
+    module: mod,
+    channel,
+  } = params;
+  const emitEvent = onEvent ?? (() => {});
 
   // 锁 key 由 module + tenantId 组成，不同 module 的同租户 agent 可并发
   const agentId = `agent:${mod}:${tenantId}`;
   const sessionKey = `session:${mod}:${tenantId}`;
 
   if (!tryAcquireAgent(agentId, tenantId, channel)) {
-    await onBusy?.();
-    return { status: "busy", finalText: "" };
+    return {
+      status: "busy",
+      message: "指令正在运行中，请稍后",
+      systemError: false,
+    };
   }
 
-  await onAccepted?.();
   try {
-    const result = await getReplyFromAgent({
+    await onAccepted?.();
+    const finalText = await getReplyFromAgent({
       message,
-      onEvent,
+      onEvent: emitEvent,
       channel,
       tenantId,
       sessionKey,
     });
-    return { status: "completed", finalText: result.finalText };
+    return {
+      status: "success",
+      finalText,
+      message: finalText,
+      systemError: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "服务器内部错误";
+    agentLogger.error(`[agent] singleFlight failed: ${message}`, error);
+    // model异常
+    if (error instanceof ModelUnavailableError) {
+      const detail = [
+        error.provider ? `provider=${error.provider}` : "",
+        error.model ? `model=${error.model}` : "",
+        error.detail ? `detail=${error.detail}` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+      return {
+        status: "failed",
+        message,
+        systemError: true,
+        code: "MODEL_UNAVAILABLE",
+        detail: detail || undefined,
+      };
+    }
+    // 系统内部异常
+    return {
+      status: "failed",
+      message,
+      systemError: true,
+      code: "INTERNAL_ERROR",
+    };
   } finally {
     releaseAgent(agentId);
   }

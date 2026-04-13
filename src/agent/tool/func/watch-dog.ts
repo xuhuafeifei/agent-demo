@@ -43,7 +43,13 @@ const blacklistPeriodsSchema = Type.Optional(
   ),
 );
 
-const listTasksParams = Type.Object({});
+const listTasksParams = Type.Object({
+  tenantId: Type.String({
+    minLength: 1,
+    description:
+      'Tenant ID for permission check and data isolation. Read from your system prompt "Channel" chapter.',
+  }),
+});
 type ListTasksInput = Static<typeof listTasksParams>;
 
 type ListTasksOutput = {
@@ -68,6 +74,11 @@ const runTaskParams = Type.Object({
     minLength: 1,
     description: "Scheduled task name (task_schedule.task_name).",
   }),
+  tenantId: Type.String({
+    minLength: 1,
+    description:
+      'Tenant ID for permission check and routing. Read from your system prompt "Channel" chapter.',
+  }),
 });
 type RunTaskInput = Static<typeof runTaskParams>;
 
@@ -76,6 +87,11 @@ const deleteTaskParams = Type.Object({
     minLength: 1,
     description:
       "The name of the task to delete. It is recommended to list task schedules first before deleting.",
+  }),
+  tenantId: Type.String({
+    minLength: 1,
+    description:
+      'Tenant ID for permission check and routing. Read from your system prompt "Channel" chapter.',
   }),
 });
 type DeleteTaskInput = Static<typeof deleteTaskParams>;
@@ -126,27 +142,23 @@ const createReminderTaskParams = Type.Object({
       description: "Timezone. Defaults to Asia/Shanghai.",
     }),
   ),
-  channels: Type.Optional(
-    Type.Array(
-      Type.Union([
-        Type.Literal("qq"),
-        Type.Literal("weixin"),
-        Type.Literal("web"),
-      ]),
-      {
-        minItems: 1,
-        description:
-          "Notification channels. Defaults to [qq]. Prefer weixin when current channel is WeChat; web is kept for backward compatibility.",
-      },
-    ),
-  ),
-  tenantId: Type.Optional(
-    Type.String({
-      minLength: 1,
+  channels: Type.Array(
+    Type.Union([
+      Type.Literal("qq"),
+      Type.Literal("weixin"),
+      Type.Literal("web"),
+    ]),
+    {
+      minItems: 1,
       description:
-        'Tenant ID for routing the reminder to the correct bot account. Read from your system prompt "Channel" chapter. If not found, use "default".',
-    }),
+        "Required notification channels. Read from your system prompt '## Channel' chapter.",
+    },
   ),
+  tenantId: Type.String({
+    minLength: 1,
+    description:
+      'Required tenant ID for routing the reminder to the correct bot account. Read from your system prompt "Channel" chapter.',
+  }),
   taskName: Type.Optional(
     Type.String({
       minLength: 1,
@@ -193,20 +205,23 @@ const createAgentTaskParams = Type.Object({
         "Whether to notify the user with execution results. Defaults to false.",
     }),
   ),
-  channels: Type.Optional(
-    Type.Array(
-      Type.Union([
-        Type.Literal("qq"),
-        Type.Literal("weixin"),
-        Type.Literal("web"),
-      ]),
-      {
-        minItems: 1,
-        description:
-          "Effective when notify=true. Defaults to [qq]. Prefer weixin for WeChat scenarios; web is kept for backward compatibility.",
-      },
-    ),
+  channels: Type.Array(
+    Type.Union([
+      Type.Literal("qq"),
+      Type.Literal("weixin"),
+      Type.Literal("web"),
+    ]),
+    {
+      minItems: 1,
+      description:
+        "Required notification channels. Read from your system prompt '## Channel' chapter.",
+    },
   ),
+  tenantId: Type.String({
+    minLength: 1,
+    description:
+      'Required tenant ID for routing and permission checks. Read from your system prompt "Channel" chapter.',
+  }),
   mode: Type.Optional(
     Type.Union([Type.Literal("evolve"), Type.Literal("analyze_then_notify")], {
       description: "Agent task mode. Defaults to evolve.",
@@ -241,10 +256,16 @@ function validateTaskTenant(params: {
     return { ok: false, message: "tenantId 不能为空" };
   }
   if (params.channels.includes("qq") && !getQQBotByTenantId(tid)) {
-    return { ok: false, message: `tenantId=${tid} 未绑定 QQ 账号，无法创建提醒任务` };
+    return {
+      ok: false,
+      message: `tenantId=${tid} 未绑定 QQ 账号，无法创建提醒任务`,
+    };
   }
   if (params.channels.includes("weixin") && !getWeixinBotByTenantId(tid)) {
-    return { ok: false, message: `tenantId=${tid} 未绑定 weixin 账号，无法创建提醒任务` };
+    return {
+      ok: false,
+      message: `tenantId=${tid} 未绑定 weixin 账号，无法创建提醒任务`,
+    };
   }
   return { ok: true };
 }
@@ -254,19 +275,19 @@ function validateTaskTenant(params: {
  * default 租户可查看全部任务，其他租户只能查看自己的任务。
  * @param tenantId 当前租户 ID
  */
-export function createListTasksTool(tenantId: string): ToolDefinition<
-  typeof listTasksParams,
-  ToolDetails<ListTasksOutput>
-> {
+export function createListTasksTool(
+  tenantId: string,
+): ToolDefinition<typeof listTasksParams, ToolDetails<ListTasksOutput>> {
   return {
     name: "listTaskSchedules",
     label: "List Task Schedules",
     description:
       "List task_schedule entries. Default tenant sees all tasks; other tenants see only their own.",
     parameters: listTasksParams,
-    execute: async (_id, _params: ListTasksInput) => {
+    execute: async (_id, params: ListTasksInput) => {
+      const tid = params.tenantId.trim();
       try {
-        const rows = await listTasksByTenant(tenantId);
+        const rows = await listTasksByTenant(tid);
         const tasks = rows.map((row) => ({
           task_name: row.task_name,
           task_type: row.task_type,
@@ -306,10 +327,9 @@ export function createListTasksTool(tenantId: string): ToolDefinition<
  * default 租户可触发任意任务，其他租户只能触发自己的任务。
  * @param tenantId 当前租户 ID
  */
-export function createRunTaskTool(tenantId: string): ToolDefinition<
-  typeof runTaskParams,
-  ToolDetails<{ ok: boolean }>
-> {
+export function createRunTaskTool(
+  tenantId: string,
+): ToolDefinition<typeof runTaskParams, ToolDetails<{ ok: boolean }>> {
   return {
     name: "runTaskByName",
     label: "Run Task By Name",
@@ -317,6 +337,17 @@ export function createRunTaskTool(tenantId: string): ToolDefinition<
       "Manually execute a task by task_name immediately. Default tenant can run any task; others can only run their own.",
     parameters: runTaskParams,
     execute: async (_id, params: RunTaskInput) => {
+      const tid = params.tenantId.trim();
+      if (tid === undefined || tid === "" || tid === null) {
+        return errResult(
+          "tenantId 不能为空，请从 system prompt ## Channel 中查看并获取",
+          {
+            code: "INVALID_ARGUMENT",
+            message:
+              "tenantId required, read from system prompt 'Channel' chapter",
+          },
+        );
+      }
       const taskName = params.task_name.trim();
       if (!taskName) {
         return errResult("task_name 不能为空", {
@@ -325,7 +356,7 @@ export function createRunTaskTool(tenantId: string): ToolDefinition<
         });
       }
       try {
-        const result = await runTaskByNameNowForTenant(taskName, tenantId);
+        const result = await runTaskByNameNowForTenant(taskName, tid);
         if (result === "not_found") {
           return errResult(`未找到任务或缺少 handler：${taskName}`, {
             code: "NOT_FOUND",
@@ -354,10 +385,9 @@ export function createRunTaskTool(tenantId: string): ToolDefinition<
 /**
  * 删除调度任务（建议配合“删除后重建”修改任务）
  */
-export function createDeleteTaskTool(tenantId: string): ToolDefinition<
-  typeof deleteTaskParams,
-  ToolDetails<{ ok: boolean }>
-> {
+export function createDeleteTaskTool(
+  tenantId: string,
+): ToolDefinition<typeof deleteTaskParams, ToolDetails<{ ok: boolean }>> {
   return {
     name: "deleteTaskByName",
     label: "Delete Task By Name",
@@ -365,6 +395,7 @@ export function createDeleteTaskTool(tenantId: string): ToolDefinition<
       "Delete a scheduled task by task_name. Default tenant can delete any task; others can only delete their own.",
     parameters: deleteTaskParams,
     execute: async (_id, params: DeleteTaskInput) => {
+      const tid = params.tenantId.trim();
       const taskName = params.task_name.trim();
       if (!taskName) {
         return errResult("task_name 不能为空", {
@@ -373,7 +404,7 @@ export function createDeleteTaskTool(tenantId: string): ToolDefinition<
         });
       }
       try {
-        const result = await deleteTaskByNameForTenant(taskName, tenantId);
+        const result = await deleteTaskByNameForTenant(taskName, tid);
         if (result === "not_found") {
           return errResult(`未找到任务：${taskName}`, {
             code: "NOT_FOUND",
@@ -417,7 +448,9 @@ export function createGetNowTool(): ToolDefinition<
   };
 }
 
-export function createReminderTaskTool(tenantId: string): ToolDefinition<
+export function createReminderTaskTool(
+  tenantId: string,
+): ToolDefinition<
   typeof createReminderTaskParams,
   ToolDetails<{ task_name: string; task_type: string; next_run_time: string }>
 > {
@@ -431,9 +464,7 @@ export function createReminderTaskTool(tenantId: string): ToolDefinition<
       const content = params.content.trim();
       const scheduleType = params.scheduleType;
       const timezone = params.timezone?.trim() || "Asia/Shanghai";
-      const channels = (
-        params.channels && params.channels.length > 0 ? params.channels : ["qq"]
-      ) as Array<"qq" | "weixin" | "web">;
+      const channels = params.channels as Array<"qq" | "weixin" | "web">;
       const taskName = params.taskName?.trim() || makeTaskName("reminder");
       let nextRunTime: string;
       let scheduleKind: "once" | "cron";
@@ -487,17 +518,7 @@ export function createReminderTaskTool(tenantId: string): ToolDefinition<
         channels,
         timezone,
       };
-      // tenantId 用于在执行时路由到对应 bot 账号；优先取工具参数，回落到当前租户
-      const tid = params.tenantId?.trim() || tenantId;
-      if (!tid) {
-        return errResult(
-          '必须提供 tenantId，从你的 system prompt "Channel" 章节获取。如果找不到，填写 default',
-          {
-            code: "INVALID_ARGUMENT",
-            message: "tenantId required, read from system prompt 'Channel' chapter. fallback: 'default'",
-          },
-        );
-      }
+      const tid = params.tenantId.trim();
       const tenantValidation = validateTaskTenant({ tenantId: tid, channels });
       if (!tenantValidation.ok) {
         return errResult(tenantValidation.message, {
@@ -520,7 +541,7 @@ export function createReminderTaskTool(tenantId: string): ToolDefinition<
           timezone,
           next_run_time: nextRunTime,
           status: "pending",
-          tenant_id: tenantId,
+          tenant_id: tid,
         });
         return okResult(`已创建提醒任务 ${taskName}`, {
           task_name: taskName,
@@ -538,7 +559,9 @@ export function createReminderTaskTool(tenantId: string): ToolDefinition<
   };
 }
 
-export function createAgentTaskTool(tenantId: string): ToolDefinition<
+export function createAgentTaskTool(
+  tenantId: string,
+): ToolDefinition<
   typeof createAgentTaskParams,
   ToolDetails<{ task_name: string; task_type: string; next_run_time: string }>
 > {
@@ -553,11 +576,9 @@ export function createAgentTaskTool(tenantId: string): ToolDefinition<
       const scheduleType = params.scheduleType;
       const timezone = params.timezone?.trim() || "Asia/Shanghai";
       const notify = params.notify === true;
-      const channels = (
-        params.channels && params.channels.length > 0 ? params.channels : ["qq"]
-      ) as Array<"qq" | "weixin" | "web">;
+      const channels = params.channels as Array<"qq" | "weixin" | "web">;
       const mode = params.mode ?? "evolve";
-      const taskTenantId = tenantId.trim();
+      const taskTenantId = params.tenantId.trim();
       const taskName =
         params.taskName?.trim() ||
         params.title?.trim() ||
