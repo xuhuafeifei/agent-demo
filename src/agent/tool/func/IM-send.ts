@@ -87,7 +87,7 @@ export function createIMSendTool(
       }
       if (params.currentChannel !== runtimeChannel) {
         return errResult(
-          `currentChannel 不匹配：expected=${runtimeChannel}, got=${params.currentChannel}。请重新阅读 system prompt 的 ## Channel 章节与用户最新指令，重新理解当前 Channel 以及 sendToChannel/sendToTenantId 后再重试。`,
+          `当前 channel 应为 ${runtimeChannel}，模型错误理解为 ${params.currentChannel}。请重新阅读 system prompt 的 ## Channel 与用户最新指令，重新判断 sendToChannel/sendToTenantId 后再重试。`,
           {
             code: "INVALID_ARGUMENT",
             message:
@@ -97,7 +97,7 @@ export function createIMSendTool(
       }
       if (currentTenantId !== runtimeTenantId) {
         return errResult(
-          `currentTenantId 不匹配：expected=${runtimeTenantId}, got=${currentTenantId}。请重新阅读 system prompt 的 ## Channel 章节与用户最新指令，重新理解当前 tenantId 以及 sendToChannel/sendToTenantId 后再重试。`,
+          `当前 tenantId 应为 ${runtimeTenantId}，模型错误理解为 ${currentTenantId}。请重新阅读 system prompt 的 ## Channel 与用户最新指令，重新判断 sendToChannel/sendToTenantId 后再重试。`,
           {
             code: "INVALID_ARGUMENT",
             message:
