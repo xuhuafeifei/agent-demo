@@ -255,6 +255,7 @@ export async function runEmbeddedPiAgent(params: {
     params;
   let latestAssistantText = "";
   let latestModelError: string | undefined;
+  let wasAborted = false;
 
   // 打印当前 Session 文件路径
   attemptLogger.info(
@@ -393,6 +394,9 @@ export async function runEmbeddedPiAgent(params: {
       // 错误统一通过异常链路处理，不再发送流式 error 事件。
       // runWithSingleFlight 会把异常封装为 failed 返回给各渠道。
     }
+    if (messageWithStopReason?.stopReason === "aborted") {
+      wasAborted = true;
+    }
 
     switch (event.type) {
       case "agent_end":
@@ -495,6 +499,13 @@ export async function runEmbeddedPiAgent(params: {
     const finalText = latestAssistantText.trim();
     if (finalText) {
       return finalText;
+    }
+    if (wasAborted) {
+      throw new Error(
+        latestModelError
+          ? `Request was aborted. Last model error: ${latestModelError}`
+          : "Request was aborted",
+      );
     }
     if (latestModelError) {
       throw new Error(latestModelError);
