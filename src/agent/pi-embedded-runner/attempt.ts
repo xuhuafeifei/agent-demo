@@ -18,6 +18,7 @@ import { enrichProviderErrorMessage } from "../model-error-hints.js";
 import { createToolBundle } from "../tool/tool-bundle.js";
 import { getFilterContextToolNames } from "../tool/tool-bundle.js";
 import { toolReturnedFailure } from "../tool/utils/tool-result-ui.js";
+import { updateAgentHeartbeatFromEvent } from "../agent-state.js";
 
 const attemptLogger = getSubsystemConsoleLogger("attempt");
 
@@ -248,8 +249,10 @@ export async function runEmbeddedPiAgent(params: {
   message: string;
   onEvent: (event: RuntimeStreamEvent) => void;
   needsCompression?: boolean; // 是否需要压缩会话的标记
+  agentId: string;
 }): Promise<string> {
-  const { session, message, onEvent, needsCompression = false } = params;
+  const { session, message, onEvent, needsCompression = false, agentId } =
+    params;
   let latestAssistantText = "";
   let latestModelError: string | undefined;
 
@@ -307,6 +310,7 @@ export async function runEmbeddedPiAgent(params: {
   }
 
   const wrappedOnEvent = (event: RuntimeStreamEvent) => {
+    updateAgentHeartbeatFromEvent(agentId, event);
     attemptLogger.debug(`event.type=${event.type}`);
     onEvent(event);
   };

@@ -26,6 +26,9 @@ import {
   getAllRunningAgentStates,
   tryAcquireAgent,
   releaseAgent,
+  bindAgentSession,
+  getAgentStateById,
+  abortAgentRun,
 } from "./agent-state.js";
 import { formatChinaIso } from "../watch-dog/time.js";
 import { getFilterContextToolNames } from "./tool/tool-bundle.js";
@@ -229,11 +232,12 @@ export async function getReplyFromAgent(params: {
   channel: AgentChannel;
   tenantId: string;
   sessionKey: string;
+  agentId: string;
 }): Promise<string> {
   // 刷新配置缓存，确保使用最新的模型配置
   refreshFgbgUserConfigCache();
 
-  const { message, onEvent, channel, tenantId, sessionKey } = params;
+  const { message, onEvent, channel, tenantId, sessionKey, agentId } = params;
 
   // 准备运行时环境：模型选择、workspace 创建、session 初始化
   const prepared = await prepareBeforeGetReply({
@@ -288,6 +292,8 @@ export async function getReplyFromAgent(params: {
     thinkingLevel: prepared.thinkingLevel,
     tenantId: tenantId,
   });
+  // 绑定到agent-state. 当前 agent 主运行的容器
+  bindAgentSession(agentId, session);
 
   // 从 session 历史剪枝生成对话上下文字
   const chatHistoryText = pruneSessionChat(getSessionMessageEntrys(tenantId));
@@ -364,6 +370,7 @@ export async function getReplyFromAgent(params: {
       message,
       onEvent: (event) => emit(event),
       needsCompression,
+      agentId,
     });
     trace.recordStage("request:end");
     emit({ type: "done" });
@@ -423,6 +430,26 @@ export async function runWithSingleFlight(params: {
   const agentId = `agent:${mod}:${tenantId}`;
   const sessionKey = `session:${mod}:${tenantId}`;
 
+  // 特殊指令：-stop 仅用于终止当前 agentId 的运行，不走正常单飞执行流程。
+  if (message.trim() === "-stop") {
+    const state = getAgentStateById(agentId);
+    if (!state) {
+      return {
+        status: "success",
+        finalText: "",
+        message: "当前没有正在运行的任务",
+        systemError: false,
+      };
+    }
+    abortAgentRun(agentId, "stopped by -stop command");
+    return {
+      status: "success",
+      finalText: "",
+      message: "已发送停止指令",
+      systemError: false,
+    };
+  }
+
   if (!tryAcquireAgent(agentId, tenantId, channel)) {
     return {
       status: "busy",
@@ -439,6 +466,7 @@ export async function runWithSingleFlight(params: {
       channel,
       tenantId,
       sessionKey,
+      agentId,
     });
     return {
       status: "success",
@@ -466,12 +494,18 @@ export async function runWithSingleFlight(params: {
         detail: detail || undefined,
       };
     }
+    const normalized = message.toLowerCase();
+    const isAborted =
+      normalized.includes("request was aborted") ||
+      normalized.includes("aborted") ||
+      normalized.includes("idle too long") ||
+      normalized.includes("stopped by -stop command");
     // 系统内部异常
     return {
       status: "failed",
-      message,
+      message: isAborted ? `任务已中断：${message}` : message,
       systemError: true,
-      code: "INTERNAL_ERROR",
+      code: isAborted ? "AGENT_ABORTED" : "INTERNAL_ERROR",
     };
   } finally {
     releaseAgent(agentId);
