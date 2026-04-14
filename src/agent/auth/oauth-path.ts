@@ -30,9 +30,9 @@ export function getAuthProfilePath(): string {
 export function readAuthProfile(): AuthProfile {
   const filePath = getAuthProfilePath();
   try {
-    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as AuthProfile;
     if (raw && typeof raw === "object" && "profiles" in raw) {
-      return raw as AuthProfile;
+      return raw;
     }
   } catch {
     // 文件不存在或解析失败，返回默认结构

@@ -1,3 +1,5 @@
+import type { TextContent, ThinkingContent, ToolCall } from "@mariozechner/pi-ai";
+
 /**
  * 从 session 的 .jsonl 原始内容中提取高价值对话文本，用于 memory 索引。
  * 只保留：
@@ -19,7 +21,7 @@ export function extractSessionDialogueText(rawJsonl: string): string {
       type?: string;
       message?: {
         role?: string;
-        content?: unknown[] | string;
+        content?: (TextContent | ThinkingContent | ToolCall)[] | string;
       };
     };
     try {
@@ -41,13 +43,12 @@ export function extractSessionDialogueText(rawJsonl: string): string {
       const texts: string[] = [];
       if (Array.isArray(message.content)) {
         for (const block of message.content) {
-          const b = block as { type?: string; text?: string };
           if (
-            b.type === "text" &&
-            typeof b.text === "string" &&
-            b.text.trim()
+            block.type === "text" &&
+            typeof block.text === "string" &&
+            block.text.trim()
           ) {
-            texts.push(b.text.trim());
+            texts.push(block.text.trim());
           }
         }
       } else if (message.content !== undefined) {
@@ -65,10 +66,9 @@ export function extractSessionDialogueText(rawJsonl: string): string {
     if (role === "assistant" && Array.isArray(message.content)) {
       const texts: string[] = [];
       for (const block of message.content) {
-        const b = block as { type?: string; text?: string };
         // 只保留 text 类型的块
-        if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
-          texts.push(b.text.trim());
+        if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+          texts.push(block.text.trim());
         }
       }
       if (texts.length > 0) {

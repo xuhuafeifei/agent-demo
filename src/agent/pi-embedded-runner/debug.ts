@@ -1,7 +1,9 @@
+import type { TextContent, ThinkingContent, ToolCall } from "@mariozechner/pi-ai";
+
 type AssistantMessageEvent = {
   type?: string;
   delta?: string;
-  partial?: { content?: unknown[] };
+  partial?: { content?: (TextContent | ThinkingContent | ToolCall)[] };
 };
 
 // debug function
