@@ -10,6 +10,7 @@ import type {
   AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel, AgentMessage } from "@mariozechner/pi-agent-core";
+import type { TextContent, ThinkingContent, ToolCall } from "@mariozechner/pi-ai";
 import type { RuntimeStreamEvent } from "../utils/events.js";
 import path from "node:path";
 import type { RuntimeModel } from "../../types.js";
@@ -49,16 +50,16 @@ function getToolDisplayName(toolName: string): string {
 type AssistantMessageEvent = {
   type?: string;
   delta?: string;
-  partial?: { content?: unknown[] };
+  partial?: { content?: (TextContent | ThinkingContent | ToolCall)[] };
 };
 
-function extractAssistantText(content: unknown[] | undefined): string {
-  if (!content || !Array.isArray(content)) return "";
+function extractAssistantText(content: (TextContent | ThinkingContent | ToolCall)[] | undefined): string {
+  if (!content) return "";
 
   // 仅拼接文本块，忽略 thinking/tool 等非文本内容。
-  return (content as { type?: string; text?: string }[])
-    .filter((item) => item.type === "text")
-    .map((item) => item.text || "")
+  return content
+    .filter((item): item is TextContent => item.type === "text")
+    .map((item) => item.text)
     .join("");
 }
 
@@ -83,7 +84,7 @@ function truncateToolResults(
     const message = msg as {
       role?: string;
       toolName?: string;
-      content?: string | unknown[];
+      content?: string | (TextContent | ThinkingContent | ToolCall)[];
     };
 
     // 1. 处理 toolResult 类型的消息
@@ -99,16 +100,15 @@ function truncateToolResults(
           }
         } else if (Array.isArray(message.content)) {
           truncatedMsg.content = message.content.map((block) => {
-            const b = block as { type?: string; text?: string };
             if (
-              b.type === "text" &&
-              b.text &&
-              b.text.length > maxContentLength
+              block.type === "text" &&
+              block.text &&
+              block.text.length > maxContentLength
             ) {
               return {
-                ...b,
+                ...block,
                 text:
-                  b.text.slice(0, maxContentLength) +
+                  block.text.slice(0, maxContentLength) +
                   "\n\n... [Content truncated]",
               };
             }
@@ -124,32 +124,24 @@ function truncateToolResults(
     if (message.role === "assistant" && Array.isArray(message.content)) {
       const truncatedMsg = { ...message };
       truncatedMsg.content = message.content.map((block) => {
-        const b = block as {
-          type?: string;
-          thinking?: string;
-          text?: string;
-          name?: string;
-          arguments?: Record<string, unknown>;
-        };
-
         // 截断 thinking 块
         if (
-          b.type === "thinking" &&
-          b.thinking &&
-          b.thinking.length > maxContentLength
+          block.type === "thinking" &&
+          block.thinking &&
+          block.thinking.length > maxContentLength
         ) {
           return {
-            ...b,
+            ...block,
             thinking:
-              b.thinking.slice(0, maxContentLength) +
+              block.thinking.slice(0, maxContentLength) +
               "\n\n... [Thinking truncated]",
           };
         }
 
         // 截断 toolCall 的 arguments
-        if (b.type === "toolCall" && b.arguments) {
+        if (block.type === "toolCall" && block.arguments) {
           const truncatedArgs: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(b.arguments)) {
+          for (const [key, value] of Object.entries(block.arguments)) {
             if (typeof value === "string" && value.length > maxContentLength) {
               // 字符串值超过阈值，截断
               truncatedArgs[key] =
@@ -160,7 +152,7 @@ function truncateToolResults(
             }
           }
           return {
-            ...b,
+            ...block,
             arguments: truncatedArgs,
           };
         }
@@ -321,7 +313,7 @@ export async function runEmbeddedPiAgent(params: {
   };
 
   type AssistantSessionEvent = AgentSessionEvent & {
-    message: { role?: string; content?: unknown[] };
+    message: { role?: string; content?: (TextContent | ThinkingContent | ToolCall)[] };
   };
 
   const isAssistantMessageEvent = (
@@ -430,7 +422,7 @@ export async function runEmbeddedPiAgent(params: {
       }
       case "message_end": {
         if (!isAssistantMessageEvent(event)) break;
-        const messageData = event.message as { content?: unknown[] };
+        const messageData = event.message as { content?: (TextContent | ThinkingContent | ToolCall)[] };
         const finalText = extractAssistantText(messageData.content);
         if (finalText) latestAssistantText = finalText;
         wrappedOnEvent({

@@ -67,8 +67,8 @@ function loadSessionIndex(tenantId: string): SessionIndex {
   const indexPath = resolveSessionIndexPath(tenantId);
   try {
     const raw = fs.readFileSync(indexPath, "utf-8");
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" ? (parsed as SessionIndex) : {};
+    const parsed = JSON.parse(raw) as SessionIndex;
+    return parsed;
   } catch {
     return {};
   }

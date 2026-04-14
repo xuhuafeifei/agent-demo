@@ -18,6 +18,7 @@ import {
   readWorkspaceSoul,
   readWorkspaceUserinfoSummary,
 } from "./workspace.js";
+import type { TextContent, ThinkingContent, ToolCall } from "@mariozechner/pi-ai";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { resolveTenantWorkspaceDir } from "../utils/app-path.js";
 import { createToolBundle } from "./tool/tool-bundle.js";
@@ -137,16 +138,15 @@ export function getHistory(tenantId: string): Array<{
   recent.forEach((msg, idx) => {
     const raw = msg.message as {
       role?: string;
-      content?: unknown[];
+      content?: (TextContent | ThinkingContent | ToolCall)[];
       toolName?: string;
     };
     // 从复合消息中提取文本部分
     const textParts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
-        const b = block as { type?: string; text?: string };
-        if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) {
-          textParts.push(b.text.trim());
+        if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
+          textParts.push(block.text.trim());
         }
       }
     }
@@ -191,7 +191,7 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
     const msg = messages[i];
     const raw = msg.message as {
       role?: string;
-      content?: unknown[];
+      content?: (TextContent | ThinkingContent | ToolCall)[];
       toolName?: string;
     };
     const role = raw.role ?? "unknown";
@@ -203,9 +203,8 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
     const parts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
-        const b = block as { type?: string; text?: string };
-        if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) {
-          parts.push(b.text.trim());
+        if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
+          parts.push(block.text.trim());
         }
       }
     }
