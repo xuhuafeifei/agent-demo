@@ -7,10 +7,9 @@
  * - 工具核心代码保持干净，不关心配置读取、审批、路径检查
  *
  * 执行顺序固定（不受注册顺序影响）：
- *   1. shellPrecheck         — 命令白名单 + 元字符拦截
- *   2. pathCheck             — 路径合法性校验
- *   3. channelRuntimeAssert  — 通道/租户一致性
- *   4. approval              — 用户审批（必须在所有校验通过后）
+ *   1. pathCheck             — 路径合法性校验
+ *   2. channelRuntimeAssert  — 通道/租户一致性
+ *   3. approval              — 用户审批（必须在所有校验通过后）
  */
 
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
@@ -18,17 +17,12 @@ import type { AgentChannel } from "../../channel-policy.js";
 import { assertRuntimeChannelTenantMatch } from "../utils/channel-runtime-assert.js";
 import { errResult } from "../tool-result.js";
 import { checkPathSafety } from "./path-checker.js";
-import { shellPrecheck } from "./shell-precheck.js";
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
 import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "./tool-security.resolve.js";
 
 // ===== 检查规格定义 =====
-
-export interface ShellPrecheckSpec {
-  type: "shellPrecheck";
-}
 
 export interface PathCheckSpec {
   type: "pathCheck";
@@ -49,7 +43,6 @@ export interface ChannelRuntimeAssertSpec {
 }
 
 export type ToolCheckSpec =
-  | ShellPrecheckSpec
   | PathCheckSpec
   | ApprovalSpec
   | ChannelRuntimeAssertSpec;
@@ -58,7 +51,7 @@ export type ToolCheckSpec =
 
 /**
  * 为工具实例织入安全检查 wrapper。
- * 检查按固定顺序执行：shellPrecheck → pathCheck → channelRuntimeAssert → approval
+ * 检查按固定顺序执行：pathCheck → channelRuntimeAssert → approval
  */
 export function wrapToolWithCheck(
   tool: ToolDefinition<any, any>,
@@ -72,10 +65,7 @@ export function wrapToolWithCheck(
 
   const originalExecute = tool.execute.bind(tool);
 
-  // 按阶段分组（注册顺序无关） 为什么是 [] ?
-  const shellPrechecks = checks.filter(
-    (c) => c.type === "shellPrecheck",
-  ) as ShellPrecheckSpec[];
+  // 这里保留数组：同一阶段允许注册多条规则，用于校验多个参数（例如 path、targetPath）。
   const pathChecks = checks.filter(
     (c) => c.type === "pathCheck",
   ) as PathCheckSpec[];
@@ -94,12 +84,7 @@ export function wrapToolWithCheck(
   return {
     ...tool,
     execute: async (toolCallId, params, signal, onUpdate, ctx) => {
-      // Phase 1: shell 预检
-      for (const _ of shellPrechecks) {
-        await shellPrecheck(params.command, cwd, config());
-      }
-
-      // Phase 2: 路径检查
+      // Phase 1: 路径检查
       for (const spec of pathChecks) {
         const filePath = params[spec.param];
         if (!filePath) continue;
@@ -112,7 +97,7 @@ export function wrapToolWithCheck(
         }
       }
 
-      // Phase 3: 通道运行时一致性
+      // Phase 2: 通道运行时一致性
       for (const spec of channelAsserts) {
         const declaredChannel = params[spec.channelParam];
         const declaredTenantId = params[spec.tenantParam];
@@ -131,7 +116,7 @@ export function wrapToolWithCheck(
         }
       }
 
-      // Phase 4: 审批（必须在所有校验通过后）
+      // Phase 3: 审批（必须在所有校验通过后）
       for (const spec of approvals) {
         if (requiresApproval(tool.name, config().approval)) {
           const approved = await requestApprovalWithDescription(

@@ -135,7 +135,7 @@ function formatSubResult(
 
 /**
  * 创建 bash 工具。
- * 校验（shellPrecheck）由 createToolBundle 的 security wrapper 自动织入。
+ * 校验（shellPrecheck）在工具内部执行。
  * 本工具负责：拆分串联命令 → 逐个校验 → 逐个执行 → 拼接结果。
  */
 export function createBashTool(
