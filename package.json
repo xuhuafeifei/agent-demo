@@ -6,6 +6,7 @@
   "scripts": {
     "web:dev": "vite --config web/vite.config.mjs",
     "web:build": "vite build --config web/vite.config.mjs",
+    "web:build:prod-fast": "vite build --config web/vite.config.mjs",
     "generate-js-dts": "node scripts/generate-js-dts.js",
     "qwen-auth": "tsc && node dist/scripts/qwen-oauth-login.js",
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
@@ -13,6 +14,7 @@
     "test:read-tool": "tsc && node --test test/read-tool.test.mjs",
     "test:workspace-frontmatter": "tsc && node --test test/workspace-frontmatter.test.mjs",
     "build": "npm run web:build && tsc",
+    "build:prod-fast": "npm run web:build:prod-fast && tsc -p tsconfig.prod.json",
     "dev:debug": "npm run web:build && NODE_DEBUG=memory,agent tsc && node scripts/require-runtime.mjs && node dist/server.js",
     "dev:inspect": "npm run web:build && NODE_DEBUG=memory,agent tsc && node --inspect scripts/require-runtime.mjs && node --inspect dist/server.js",
     "start": "node scripts/require-runtime.mjs && node dist/server.js",

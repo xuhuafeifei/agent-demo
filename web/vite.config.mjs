@@ -54,5 +54,7 @@ export default defineConfig({
     cssCodeSplit: true,
     // 启用 sourcemap (可选，生产环境可关闭)
     sourcemap: false,
+    // 生产构建关闭 gzip size 统计，加快收尾阶段
+    reportCompressedSize: false,
   },
 });
