@@ -2,21 +2,7 @@
  * 工具装配（Tool Bundle）
  *
  * 核心职责：将「配置」转换为「运行时工具实例 + 说明文案」。
- *
- * tenantId 的完整流转链路：
- * 1. 调用方（如 session 管理器）传入 tenantId → createToolBundle(cwd, tenantId)
- * 2. createToolBundle 读取用户配置（readFgbgUserConfig）和安全配置（resolveToolSecurityConfig）
- * 3. 根据 securityConfig.enabledTools 从 TOOL_CATALOG 中筛选出允许的工具名
- * 4. 对每个工具名，调用 TOOL_CATALOG[name].factory(cwd, tenantId, channel, agentId) 实例化
- * 5. 工具内部闭包持有 tenantId，用于：
- *    - 解析租户专属的文件路径（如 workspace/memory/、workspace/skills/）
- *    - 获取该租户的 agent 运行状态（如 IM channel：qq/weixin）
- *    - 路由 bot 账号（不同租户可能绑定不同 bot）
- *
- * 按租户组装工具的机制：
- * - 不同租户调用 createToolBundle 时，传入各自的 (cwd, tenantId)
- * - 同一工具工厂函数会为不同租户产出不同实例，实例间完全隔离
- * - enabledTools 也按租户配置差异化，因此不同租户看到的工具集合可能不同
+ * 安全检查通过 checks 声明式注册，由 security-wrapper 统一织入。
  */
 
 import { readFgbgUserConfig } from "../../config/index.js";
@@ -24,11 +10,7 @@ import { resolveToolSecurityConfig } from "./security/tool-security.resolve.js";
 import type { ToolMode } from "./security/constants.js";
 import { TOOL_CATALOG, type RuntimeToolDefinition } from "./tool-catalog.js";
 import type { AgentChannel } from "../channel-policy.js";
-import {
-  assertRuntimeChannelTenantMatch,
-  CHANNEL_RUNTIME_MISMATCH_HINT_IM_SEND,
-  CHANNEL_RUNTIME_MISMATCH_HINT_REMINDER,
-} from "./utils/channel-runtime-assert.js";
+import { wrapToolWithCheck } from "./security/security-wrapper.js";
 
 function toolingDescriptionFromTool(
   tool: RuntimeToolDefinition,
@@ -37,77 +19,6 @@ function toolingDescriptionFromTool(
   const d = tool.description.trim();
   if (d) return d;
   return fallbackName;
-}
-
-const CHANNEL_RUNTIME_ASSERT_TOOL_NAMES = new Set([
-  "createReminderTask",
-  "sendIMMessage",
-]);
-
-/**
- * 在装配阶段为依赖「当前 Channel 上下文」的工具统一做 currentChannel/currentTenantId 与运行时一致性校验，
- * 避免在各工具 execute 内重复 assert。
- *
- * 核心设计理念：
- * - 拦截器模式：对工具的 execute 方法进行装饰
- * - 统一校验：将通道/租户匹配逻辑从各个工具中抽取出来，避免代码重复
- * - 安全防护：确保工具执行时的上下文与创建时的上下文一致，防止跨租户/跨通道访问
- *
- * @param tool 需要被包装的原始工具实例
- * @param runtimeChannel 运行时的通道类型（web/qq/weixin），来自 createToolBundle 调用时的上下文
- * @param runtimeTenantId 运行时的租户ID，来自 createToolBundle 调用时的上下文
- * @returns 包装后的工具实例，包含一致性校验逻辑
- */
-function wrapToolWithChannelRuntimeAssert(
-  tool: RuntimeToolDefinition,
-  runtimeChannel: AgentChannel,
-  runtimeTenantId: string,
-): typeof tool {
-  // 仅对需要进行通道校验的工具进行包装，避免不必要的性能开销
-  if (!CHANNEL_RUNTIME_ASSERT_TOOL_NAMES.has(tool.name)) {
-    return tool;
-  }
-
-  // 保存原始 execute 方法的引用，用于校验通过后的实际执行
-  const originalExecute = tool.execute.bind(tool);
-
-  // 返回装饰后的工具实例
-  return {
-    ...tool,
-    execute: async (toolCallId, params, signal, onUpdate, ctx) => {
-      // 将 params 转换为泛型对象，方便访问可能包含的通道/租户信息
-      const record = params as Record<string, unknown>;
-      const declaredChannel = record.currentChannel;
-      const declaredTenantId = record.currentTenantId;
-
-      // 只有当参数中包含完整的 currentChannel 和 currentTenantId 时才进行校验
-      if (
-        typeof declaredChannel === "string" &&
-        typeof declaredTenantId === "string"
-      ) {
-        // 根据工具名称选择对应的不匹配提示信息，提供更精准的错误反馈
-        const hint =
-          tool.name === "sendIMMessage"
-            ? CHANNEL_RUNTIME_MISMATCH_HINT_IM_SEND
-            : CHANNEL_RUNTIME_MISMATCH_HINT_REMINDER;
-
-        // 执行一致性校验
-        const assertion = assertRuntimeChannelTenantMatch({
-          declaredChannel: declaredChannel as AgentChannel,
-          declaredTenantId: declaredTenantId.trim(),
-          runtimeChannel,
-          runtimeTenantId: runtimeTenantId.trim(),
-          mismatchHint: hint,
-        });
-
-        // 如果校验失败，直接返回错误信息，不再执行原始方法
-        if (assertion) return assertion;
-      }
-
-      // 校验通过，执行原始工具逻辑
-      return originalExecute(toolCallId, params, signal, onUpdate, ctx);
-    },
-  };
 }
 
 /**
@@ -145,18 +56,30 @@ export function createToolBundle(
 
   // 3. 从 enabledTools 中过滤出已在 TOOL_CATALOG 注册的有效工具名
   const enabledToolNames = securityConfig.enabledTools.filter(
-    (name): name is string =>
-      typeof name === "string" && name in TOOL_CATALOG,
+    (name): name is string => typeof name === "string" && name in TOOL_CATALOG,
   );
 
   // 4. 为每个工具名调用工厂函数，传入 (cwd, tenantId, channel, agentId) 生成实例
-  const tools = enabledToolNames.map((name) =>
-    wrapToolWithChannelRuntimeAssert(
-      TOOL_CATALOG[name].factory(cwd, tenantId, channel, agentId),
-      channel,
-      tenantId,
-    ),
-  );
+  //    然后自动织入安全检查 wrapper（如果 catalog 注册了 checks）
+  const tools = enabledToolNames.map((name) => {
+    const entry = TOOL_CATALOG[name];
+    let tool = entry.factory(cwd, tenantId, channel, agentId);
+
+    // AOP 织入：所有 checks（安全检查 + 通道运行时校验）
+    if (entry.checks && entry.checks.length > 0) {
+      tool = wrapToolWithCheck(
+        tool,
+        entry.checks,
+        cwd,
+        tenantId,
+        channel,
+        agentId,
+      );
+    }
+
+    return tool;
+  });
+
   // 5. 与 Pi 一致：说明文案取自工具实例上的 description（单源）
   const toolings = tools.map((tool, i) =>
     toolingDescriptionFromTool(tool, enabledToolNames[i] ?? "tool"),

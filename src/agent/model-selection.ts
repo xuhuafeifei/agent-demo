@@ -32,7 +32,7 @@ export async function selectModelForRuntime(): Promise<{
     const preferredKey = `${normalizeProviderId(preferred.provider)}/${preferred.model}`;
     const preferredModel = modelMap[preferredKey];
     if (preferredModel) {
-      logger.debug("Selected preferred model: %s", preferredKey);
+      logger.info("Selected preferred model: %s", preferredKey);
       return { modelRef: preferred, model: preferredModel };
     }
     logger.warn("Preferred model not found: %s", preferredKey);

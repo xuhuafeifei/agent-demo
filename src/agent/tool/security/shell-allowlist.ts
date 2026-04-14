@@ -41,6 +41,61 @@ export interface ShellCommandProfile {
 
 // ===== 独立校验函数（可自由组合） =====
 
+/**
+ * 从命令字符串中提取所有命令根（basename），逐一校验。
+ * 解决 `echo hello && rm -rf /` 只检查 echo 的漏洞。
+ */
+/**
+ * 检查命令链中的所有命令是否都在允许列表中
+ *
+ * 解决了对串联命令（如 `echo hello && rm -rf /`）只检查第一个命令的安全漏洞。
+ * 当命令包含 && 或 || 操作符时，每个命令段都需要单独进行检查。
+ *
+ * 工作原理：
+ * 1. 首先将完整命令字符串按 && 和 || 操作符分割成多个命令段
+ * 2. 对每个命令段进行修剪和过滤空字符串
+ * 3. 使用 shell-quote 库解析命令段，处理各种 shell 语法（如引号、转义等）
+ * 4. 提取每个命令段的命令名（basename）
+ * 5. 检查命令名是否在允许列表中
+ *
+ * 使用场景：
+ * 主要用于包含 `&&` 或 `||` 操作符的串联命令，确保每个子命令都是安全的
+ *
+ * @param ctx 预检查上下文，包含完整的命令字符串
+ * @throws Error 如果命令链中的任何命令不在允许列表中
+ */
+export function checkAllCommandsInChain(ctx: PrecheckContext): void {
+  // 按 && 和 || 分割命令链，提取各个命令段
+  const segments = ctx.command.split(/\s*&&\s*|\s*\|\|\s*/);
+
+  // 遍历每个命令段进行单独检查
+  for (const segment of segments) {
+    const trimmed = segment.trim();
+    if (!trimmed) continue;
+
+    // 解析命令段，处理引号、转义等 shell 语法
+    const parsed = parse(trimmed);
+    const tokens: string[] = [];
+
+    // 遍历解析结果，提取字符串形式的令牌
+    for (const token of parsed) {
+      if (typeof token === "string") {
+        tokens.push(token);
+      } else if (typeof token === "object" && "pattern" in token) {
+        tokens.push(token.pattern);
+      }
+    }
+
+    // 提取命令名的 basename（如 `./script.sh` 提取为 `script.sh`）
+    const segmentBasename = path.basename(tokens[0]);
+
+    // 检查命令是否在允许列表中
+    if (!SHELL_ALLOWLIST.has(segmentBasename)) {
+      throw new Error(`串联命令中的 '${segmentBasename}' 不在允许列表中`);
+    }
+  }
+}
+
 /** 2. 危险元字符检查 */
 const ALLOWED_COMBINED = ["&&", "||"];
 const DANGEROUS_METACHARACTERS = /;|\$\(|`|>|<|&|\|/;

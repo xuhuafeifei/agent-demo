@@ -343,6 +343,7 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
     setShowApiKey,
     testingConnection,
     connectionResult,
+    setConnectionResult,
     qwenAuthBusy,
     qwenAuthHint,
     qwenCredentialMode,

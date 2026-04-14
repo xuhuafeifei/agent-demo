@@ -38,12 +38,18 @@ import {
   createReminderTaskTool,
   createRunTaskTool,
 } from "./func/watch-dog.js";
-import { createShellExecuteTool } from "./func/shell-execute.js";
+import { createBashTool } from "./func/bash.js";
+import { createEditTool } from "./func/edit.js";
 import { createIMSendTool } from "./func/IM-send.js";
 import { createWebSearchTool } from "./func/web-search.js";
 import { createWebFetchTool } from "./func/web-fetch.js";
 import type { AgentChannel } from "../channel-policy.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolCheckSpec } from "./security/security-wrapper.js";
+import {
+  CHANNEL_RUNTIME_MISMATCH_HINT_IM_SEND,
+  CHANNEL_RUNTIME_MISMATCH_HINT_REMINDER,
+} from "./utils/channel-runtime-assert.js";
 
 export type RuntimeToolDefinition = ToolDefinition<any, any>;
 
@@ -55,27 +61,11 @@ type ToolFactory = (
   agentId: string,
 ) => RuntimeToolDefinition;
 
-/** 工具目录条目：仅工厂；说明见各 create*Tool 返回的 `description` */
-type ToolEntry = { factory: ToolFactory };
-
-/**
- * read 工具条目 —— readFile(path, offset?, limit?)
- * 注意：read 不使用 cwd（用 _cwd 表示），因为 tenantId 已足够定位文件路径
- * readFile 是兼容别名，实际工具名为 read
- */
-const readToolEntry: ToolEntry = {
-  factory: (_cwd, tenantId, channel, agentId) =>
-    createReadTool(tenantId, channel, agentId),
-};
-
-/**
- * write 工具条目 —— writeFile(path, content)
- * 使用 cwd 进行路径安全检查（防止写入 workspace 外部），使用 tenantId 路由 bot 通知
- * writeFile 是兼容别名，实际工具名为 write
- */
-const writeToolEntry: ToolEntry = {
-  factory: (cwd, tenantId, channel, agentId) =>
-    createWriteTool(cwd, tenantId, channel, agentId),
+/** 工具目录条目：工厂函数 + 可选的安全检查规格 */
+type ToolEntry = {
+  factory: ToolFactory;
+  /** 安全检查规格，createToolBundle 装配时自动织入 */
+  checks?: ToolCheckSpec[];
 };
 
 /**
@@ -83,8 +73,30 @@ const writeToolEntry: ToolEntry = {
  */
 export const TOOL_CATALOG: Record<string, ToolEntry> = {
   // ===== 文件操作 =====
-  read: readToolEntry,
-  write: writeToolEntry,
+  read: {
+    factory: (_cwd, tenantId, channel, agentId) =>
+      createReadTool(tenantId, channel, agentId),
+    checks: [
+      { type: "pathCheck", param: "path" },
+      { type: "approval", param: "path", description: "读取文件" },
+    ],
+  },
+  write: {
+    factory: (cwd, tenantId, channel, agentId) =>
+      createWriteTool(cwd, tenantId, channel, agentId),
+    checks: [
+      { type: "pathCheck", param: "path" },
+      { type: "approval", param: "path", description: "写入文件" },
+    ],
+  },
+  edit: {
+    factory: (cwd, tenantId, channel, agentId) =>
+      createEditTool(tenantId, channel, agentId),
+    checks: [
+      { type: "pathCheck", param: "path" },
+      { type: "approval", param: "path", description: "编辑文件" },
+    ],
+  },
 
   // ===== 知识管理（tenantId 用于定位租户专属的知识库路径） =====
   memorySearch: {
@@ -115,6 +127,14 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   createReminderTask: {
     factory: (_cwd, tenantId, channel, _agentId) =>
       createReminderTaskTool(tenantId, channel),
+    checks: [
+      {
+        type: "channelRuntimeAssert",
+        channelParam: "currentChannel",
+        tenantParam: "currentTenantId",
+        mismatchHint: CHANNEL_RUNTIME_MISMATCH_HINT_REMINDER,
+      },
+    ],
   },
   createAgentTask: {
     // todo: 这个任务干啥的完全忘了，以后调研一下
@@ -133,16 +153,27 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
       createCompactContextTool(tenantId),
   },
 
-  // ===== 系统执行（tenantId 用于 shell 执行的权限控制和日志归属） =====
-  shellExecute: {
+  // ===== 系统执行（tenantId 用于 bash 执行的权限控制和日志归属） =====
+  bash: {
     factory: (_cwd, tenantId, channel, agentId) =>
-      createShellExecuteTool(tenantId, channel, agentId),
+      createBashTool(tenantId, channel, agentId),
+    checks: [
+      { type: "approval", param: "command", description: "执行命令" },
+    ],
   },
 
   // ===== IM 通信（tenantId 用于路由到对应 bot 账号和 channel） =====
   sendIMMessage: {
     factory: (_cwd, tenantId, channel, _agentId) =>
       createIMSendTool(tenantId, channel),
+    checks: [
+      {
+        type: "channelRuntimeAssert",
+        channelParam: "currentChannel",
+        tenantParam: "currentTenantId",
+        mismatchHint: CHANNEL_RUNTIME_MISMATCH_HINT_IM_SEND,
+      },
+    ],
   },
 
   // ===== 网络工具 =====

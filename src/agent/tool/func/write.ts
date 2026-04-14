@@ -1,15 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { enforceTextSizeLimit } from "../utils/file-utils.js";
-import { checkPathSafety } from "../security/path-checker.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
-import { readFgbgUserConfig } from "../../../config/index.js";
-import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
-import { requiresApproval } from "../tool-approval.js";
-import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
 import type { AgentChannel } from "../../channel-policy.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
@@ -27,72 +23,41 @@ type WriteOutput = {
 };
 
 /**
+ * 将路径展开为实际文件系统路径。
+ * Node.js 不原生支持 ~ 展开，这里手动处理。
+ */
+function expandPath(inputPath: string): string {
+  if (inputPath.startsWith("~")) {
+    return path.resolve(os.homedir(), inputPath.slice(inputPath.startsWith("~/") || inputPath.startsWith("~\\") ? 2 : 1));
+  }
+  return path.resolve(inputPath);
+}
+
+/**
  * 创建文件写入工具。
- * @param workspace 租户 workspace 目录（用于路径安全检查）
- * @param tenantId 租户 ID
- * @param channel 当前运行渠道（审批等显式传入，便于测试）
- * @param _agentId 运行实例键，预留与 agent-state 对齐，当前未使用
+ * 安全检查（路径校验 + 审批）由 createToolBundle 的 security wrapper 自动织入。
+ * 本工具只负责写入文件（含内容大小限制）。
  */
 export function createWriteTool(
-  workspace: string,
+  _workspace: string,
   tenantId: string,
   channel: AgentChannel,
   _agentId: string,
 ): ToolDefinition<typeof writeParameters, ToolDetails<WriteOutput>> {
   void _agentId;
+  void tenantId;
+  void channel;
+
   return {
     name: "write",
     label: "Write",
     description:
       "writeFile(path, content) - write file content (safe, text-only)",
     parameters: writeParameters,
-    execute: async (
-      _toolCallId,
-      params: WriteInput,
-      _signal,
-      _onUpdate,
-      _ctx,
-    ) => {
+    execute: async (_toolCallId, params: WriteInput, _signal, _onUpdate) => {
       const started = Date.now();
 
-      // 1. 路径安全检查
-      const pathCheck = await checkPathSafety(
-        params.path,
-        workspace,
-        readFgbgUserConfig().toolSecurity,
-      );
-      if (!pathCheck.allowed) {
-        return errResult(pathCheck.reason || "路径不允许访问", {
-          code: "PATH_OUT_OF_WORKSPACE",
-          message: pathCheck.reason || "路径不允许访问",
-        });
-      }
-
-      const filePath = pathCheck.realPath;
-
-      // 2. 审批检查（如果配置要求）
-      const config = readFgbgUserConfig();
-      const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
-      if (requiresApproval("write", securityConfig.approval)) {
-        const approved = await requestApprovalWithDescription(
-          "write",
-          { path: params.path, contentLength: params.content.length },
-          `写入文件: ${params.path} (${params.content.length} 字符)`,
-          {
-            channel,
-            unapprovableStrategy: securityConfig.unapprovableStrategy,
-            timeoutMs: securityConfig.approval.timeoutMs,
-          },
-        );
-        if (!approved) {
-          return errResult("用户拒绝或超时", {
-            code: "USER_REJECTED",
-            message: "用户拒绝或超时",
-          });
-        }
-      }
-
-      // 3. 内容大小限制
+      // 内容大小限制（工具特有的业务逻辑）
       if (!enforceTextSizeLimit(params.content)) {
         return errResult("写入内容过大，超过 1MB 限制", {
           code: "INVALID_ARGUMENT",
@@ -101,6 +66,9 @@ export function createWriteTool(
       }
 
       try {
+        // 路径已在 wrapper 中校验过，这里只做 ~ 展开和 resolve
+        const filePath = expandPath(params.path);
+
         // 确保目录存在
         await fs.mkdir(path.dirname(filePath), {
           recursive: true,
@@ -121,7 +89,7 @@ export function createWriteTool(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        toolLogger.warn(`tool=write path=${filePath} error=${message}`);
+        toolLogger.warn(`tool=write path=${params.path} error=${message}`);
         return errResult(`写入失败: ${message}`, {
           code: "IO_ERROR",
           message,

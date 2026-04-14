@@ -1,18 +1,15 @@
 import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { exists } from "../utils/file-utils.js";
-import { checkPathSafety } from "../security/path-checker.js";
 import {
   isTextFile,
   getFileTypeRejectReason,
 } from "../security/file-type-checker.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
-import { readFgbgUserConfig } from "../../../config/index.js";
-import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
-import { requiresApproval } from "../tool-approval.js";
-import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
 import { resolveTenantWorkspaceDir } from "../../../utils/app-path.js";
 import type { AgentChannel } from "../../channel-policy.js";
 
@@ -34,9 +31,8 @@ type ReadOutput = {
 
 /**
  * 创建文件读取工具。
- * @param tenantId 租户 ID，用于解析工作区路径
- * @param channel 当前运行渠道（审批显式传入）
- * @param _agentId 运行实例键，预留扩展，当前未使用
+ * 安全检查（路径校验 + 审批）由 createToolBundle 的 security wrapper 自动织入。
+ * 本工具只负责读取文件内容（含文本文件门控）。
  */
 export function createReadTool(
   tenantId: string,
@@ -44,6 +40,7 @@ export function createReadTool(
   _agentId: string,
 ): ToolDefinition<typeof readParameters, ToolDetails<ReadOutput>> {
   void _agentId;
+  void channel;
   // 租户 workspace 目录，作为路径安全检查的根目录
   const workspace = resolveTenantWorkspaceDir(tenantId);
 
@@ -53,53 +50,14 @@ export function createReadTool(
     description:
       "readFile(path, offset?, limit?) - read text from file (safe, text-only)",
     parameters: readParameters,
-    execute: async (
-      _toolCallId,
-      params: ReadInput,
-      _signal,
-      _onUpdate,
-      _ctx,
-    ) => {
+    execute: async (_toolCallId, params: ReadInput, _signal, _onUpdate) => {
       const started = Date.now();
 
-      // 1. 路径安全检查
-      const pathCheck = await checkPathSafety(
-        params.path,
-        workspace,
-        readFgbgUserConfig().toolSecurity,
-      );
-      if (!pathCheck.allowed) {
-        return errResult(pathCheck.reason || "路径不允许访问", {
-          code: "PATH_OUT_OF_WORKSPACE",
-          message: pathCheck.reason || "路径不允许访问",
-        });
-      }
+      // 路径已在 wrapper 中校验过，这里只做 ~ 展开和 resolve
+      const filePath = params.path.startsWith("~")
+        ? path.resolve(os.homedir(), params.path.slice(2))
+        : path.resolve(params.path);
 
-      const filePath = pathCheck.realPath;
-
-      // 2. 审批检查（如果配置要求）
-      const config = readFgbgUserConfig();
-      const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
-      if (requiresApproval("read", securityConfig.approval)) {
-        const approved = await requestApprovalWithDescription(
-          "read",
-          { path: params.path },
-          `读取文件: ${params.path}`,
-          {
-            channel,
-            unapprovableStrategy: securityConfig.unapprovableStrategy,
-            timeoutMs: securityConfig.approval.timeoutMs,
-          },
-        );
-        if (!approved) {
-          return errResult("用户拒绝或超时", {
-            code: "USER_REJECTED",
-            message: "用户拒绝或超时",
-          });
-        }
-      }
-
-      // 3. 文件存在性检查
       if (!(await exists(filePath))) {
         return errResult(`文件不存在: ${params.path}`, {
           code: "NOT_FOUND",
@@ -107,7 +65,7 @@ export function createReadTool(
         });
       }
 
-      // 4. 文本文件门控：仅允许读取文本文件
+      // 文本文件门控：仅允许读取文本文件
       const isText = await isTextFile(filePath);
       if (!isText) {
         const reason = getFileTypeRejectReason(filePath);

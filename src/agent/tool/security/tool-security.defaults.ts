@@ -10,6 +10,7 @@ export const DEFAULT_GUARD_CONFIG: ToolSecurityConfig = {
   enabledTools: [
     "read",
     "write",
+    "edit",
     "memorySearch",
     "persistKnowledge",
     "sendIMMessage",
@@ -21,6 +22,7 @@ export const DEFAULT_GUARD_CONFIG: ToolSecurityConfig = {
     "listTaskSchedules",
     "runTaskByName",
     "deleteTaskByName",
+    "bash",
     "webSearch",
     "webFetch",
   ],
@@ -32,7 +34,7 @@ export const DEFAULT_GUARD_CONFIG: ToolSecurityConfig = {
   },
   approval: {
     enabled: true,
-    requireApprovalFor: ["read", "write", "shellExecute"],
+    requireApprovalFor: ["read", "write", "edit", "bash"],
     timeoutMs: 5 * 60 * 1000, // 5 分钟
   },
   unapprovableStrategy: "skip",
@@ -44,6 +46,7 @@ export const DEFAULT_SAFETY_CONFIG: ToolSecurityConfig = {
   enabledTools: [
     "read",
     "write",
+    "edit",
     "memorySearch",
     "persistKnowledge",
     "sendIMMessage",
@@ -60,7 +63,7 @@ export const DEFAULT_SAFETY_CONFIG: ToolSecurityConfig = {
   },
   approval: {
     enabled: true,
-    requireApprovalFor: ["read", "write"],
+    requireApprovalFor: ["read", "write", "edit"],
     timeoutMs: 5 * 60 * 1000,
   },
   unapprovableStrategy: "reject",
@@ -72,6 +75,7 @@ export const DEFAULT_YOLO_CONFIG: ToolSecurityConfig = {
   enabledTools: [
     "read",
     "write",
+    "edit",
     "memorySearch",
     "persistKnowledge",
     "sendIMMessage",
@@ -79,7 +83,7 @@ export const DEFAULT_YOLO_CONFIG: ToolSecurityConfig = {
     "createReminderTask",
     "createAgentTask",
     "compactContext",
-    "shellExecute",
+    "bash",
     "getNow",
     "listTaskSchedules",
     "runTaskByName",
