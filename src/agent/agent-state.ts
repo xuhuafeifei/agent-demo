@@ -24,11 +24,11 @@ const HEARTBEAT_RELEASE_FALLBACK_MS = 30 * 60_000; // 30 minutes
 export type AgentPhase = "init" | "model" | "tool";
 
 /**
- * 单个租户的 agent 运行时状态。
- * 同一租户同时只能有一个 agent 在执行（单飞锁）。
+ * 单个 agent 实例的运行时状态（与 runningAgents 的一条记录对应）。
+ * 单飞粒度是 agentId（module + tenantId），不是 tenantId：同一 tenantId 可同时存在多条（不同 module）。
  */
 export type AgentState = {
-  /** 并发锁键，格式固定为 "agent:main:{tenantId}" */
+  /** 并发锁键，格式为 `agent:{module}:{tenantId}`，全局唯一 */
   agentId: string;
   /** agent 开始执行的时间戳（ms） */
   runningStartedAt: number;
@@ -89,14 +89,15 @@ function ensureHeartbeatScannerBound(): void {
 }
 
 /**
- * 获取指定租户当前的运行状态（按 tenantId 扫描，返回第一条匹配）。
- * 工具层只需 channel 信息，不需要精确匹配 module，故扫描即可。
+ * 按 tenantId 枚举运行中的实例（同一租户多 module 并发时会有多条）。
+ * 需要「当前这一次 run」的上下文时请用 `getAgentStateById(agentId)`，勿用本函数代替。
  */
-export function getAgentState(tenantId: string): AgentState | null {
+export function getAgentStatesForTenant(tenantId: string): AgentState[] {
+  const out: AgentState[] = [];
   for (const state of runningAgents.values()) {
-    if (state.tenantId === tenantId) return state;
+    if (state.tenantId === tenantId) out.push(state);
   }
-  return null;
+  return out;
 }
 
 /**

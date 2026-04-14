@@ -56,6 +56,7 @@ export function createCompactContextTool(
           thinkingLevel: prepared.thinkingLevel,
           tenantId,
           channel: "web",
+          agentId: `agent:main:${tenantId}`,
         });
 
         const compactionResult = await session.compact(

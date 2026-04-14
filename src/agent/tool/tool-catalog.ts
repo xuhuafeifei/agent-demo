@@ -47,11 +47,12 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 export type RuntimeToolDefinition = ToolDefinition<any, any>;
 
-/** 工具工厂函数签名：cwd 为租户 workspace 目录，tenantId 为租户 ID */
+/** 工具工厂函数签名：agentId 为本次运行实例键 `agent:{module}:{tenantId}`，与 agent-state 表一致 */
 type ToolFactory = (
   cwd: string,
   tenantId: string,
   channel: AgentChannel,
+  agentId: string,
 ) => RuntimeToolDefinition;
 
 /** 工具目录条目：仅工厂；说明见各 create*Tool 返回的 `description` */
@@ -63,7 +64,8 @@ type ToolEntry = { factory: ToolFactory };
  * readFile 是兼容别名，实际工具名为 read
  */
 const readToolEntry: ToolEntry = {
-  factory: (_cwd, tenantId) => createReadTool(tenantId),
+  factory: (_cwd, tenantId, channel, agentId) =>
+    createReadTool(tenantId, channel, agentId),
 };
 
 /**
@@ -72,7 +74,8 @@ const readToolEntry: ToolEntry = {
  * writeFile 是兼容别名，实际工具名为 write
  */
 const writeToolEntry: ToolEntry = {
-  factory: (cwd, tenantId) => createWriteTool(cwd, tenantId),
+  factory: (cwd, tenantId, channel, agentId) =>
+    createWriteTool(cwd, tenantId, channel, agentId),
 };
 
 /**
@@ -85,59 +88,69 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
 
   // ===== 知识管理（tenantId 用于定位租户专属的知识库路径） =====
   memorySearch: {
-    factory: (_cwd, tenantId) => createMemorySearchTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) =>
+      createMemorySearchTool(tenantId),
   },
   persistKnowledge: {
-    factory: (_cwd, tenantId) => createPersistKnowledgeTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) =>
+      createPersistKnowledgeTool(tenantId),
   },
   loadSkill: {
-    factory: (_cwd, tenantId) => createLoadSkillTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) =>
+      createLoadSkillTool(tenantId),
   },
 
   // ===== 任务调度（tenantId 用于区分任务归属，非 default 租户只能操作自己的任务） =====
   listTaskSchedules: {
-    factory: (_cwd, tenantId) => createListTasksTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) =>
+      createListTasksTool(tenantId),
   },
   runTaskByName: {
-    factory: (_cwd, tenantId) => createRunTaskTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) => createRunTaskTool(tenantId),
   },
   deleteTaskByName: {
-    factory: (_cwd, tenantId) => createDeleteTaskTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) =>
+      createDeleteTaskTool(tenantId),
   },
   createReminderTask: {
-    factory: (_cwd, tenantId, channel) => createReminderTaskTool(tenantId, channel),
+    factory: (_cwd, tenantId, channel, _agentId) =>
+      createReminderTaskTool(tenantId, channel),
   },
   createAgentTask: {
     // todo: 这个任务干啥的完全忘了，以后调研一下
-    factory: (_cwd, tenantId) => createAgentTaskTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) =>
+      createAgentTaskTool(tenantId),
   },
 
   // ===== 工具类 =====
   getNow: {
-    factory: () => createGetNowTool(),
+    factory: (_cwd, _tenantId, _channel, _agentId) => createGetNowTool(),
   },
 
   // ===== 上下文管理 =====
   compactContext: {
-    factory: (_cwd, tenantId) => createCompactContextTool(tenantId),
+    factory: (_cwd, tenantId, _channel, _agentId) =>
+      createCompactContextTool(tenantId),
   },
 
   // ===== 系统执行（tenantId 用于 shell 执行的权限控制和日志归属） =====
   shellExecute: {
-    factory: (_cwd, tenantId) => createShellExecuteTool(tenantId),
+    factory: (_cwd, tenantId, channel, agentId) =>
+      createShellExecuteTool(tenantId, channel, agentId),
   },
 
   // ===== IM 通信（tenantId 用于路由到对应 bot 账号和 channel） =====
   sendIMMessage: {
-    factory: (_cwd, tenantId, channel) => createIMSendTool(tenantId, channel),
+    factory: (_cwd, tenantId, channel, _agentId) =>
+      createIMSendTool(tenantId, channel),
   },
 
   // ===== 网络工具 =====
   webSearch: {
-    factory: () => createWebSearchTool(),
+    factory: (_cwd, _tenantId, _channel, _agentId) => createWebSearchTool(),
   },
   webFetch: {
-    factory: () => createWebFetchTool(),
+    factory: (_cwd, _tenantId, _channel, _agentId) => createWebFetchTool(),
   },
 };
 

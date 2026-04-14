@@ -186,6 +186,8 @@ export async function createRuntimeAgentSession(params: {
   thinkingLevel?: ThinkingLevel;
   tenantId: string;
   channel: AgentChannel;
+  /** 与本次运行一致的 agent 主键，装配工具时透传 */
+  agentId: string;
 }): Promise<AgentSession> {
   const {
     model,
@@ -198,6 +200,7 @@ export async function createRuntimeAgentSession(params: {
     thinkingLevel,
     tenantId,
     channel,
+    agentId,
   } = params;
 
   const sessionManager = SessionManager.open(sessionFile, sessionDir);
@@ -212,7 +215,7 @@ export async function createRuntimeAgentSession(params: {
     path.join(agentDir, "models.json"),
   );
   modelRegistry.refresh();
-  const toolBundle = createToolBundle(cwd, tenantId, channel);
+  const toolBundle = createToolBundle(cwd, tenantId, channel, agentId);
 
   const { session } = await createAgentSession({
     model,

@@ -7,7 +7,7 @@
  * 1. 调用方（如 session 管理器）传入 tenantId → createToolBundle(cwd, tenantId)
  * 2. createToolBundle 读取用户配置（readFgbgUserConfig）和安全配置（resolveToolSecurityConfig）
  * 3. 根据 securityConfig.enabledTools 从 TOOL_CATALOG 中筛选出允许的工具名
- * 4. 对每个工具名，调用 TOOL_CATALOG[name].factory(cwd, tenantId, channel) 实例化
+ * 4. 对每个工具名，调用 TOOL_CATALOG[name].factory(cwd, tenantId, channel, agentId) 实例化
  * 5. 工具内部闭包持有 tenantId，用于：
  *    - 解析租户专属的文件路径（如 workspace/memory/、workspace/skills/）
  *    - 获取该租户的 agent 运行状态（如 IM channel：qq/weixin）
@@ -125,16 +125,18 @@ export type ToolBundle = {
 /**
  * 根据当前配置为给定 cwd 和 tenantId 生成工具实例与说明文案。
  *
- * tenantId 流转过程：
- *   传入 → 筛选 enabledTools → 对每个工具调用 factory(cwd, tenantId) → 工具闭包持有 tenantId
+ * tenantId / channel / agentId 由调用方显式传入，便于测试；agentId 与 agent-state 主键一致，工具内可按需使用。
  *
  * @param cwd 租户 workspace 目录（用于文件路径安全检查，防止越权访问）
- * @param tenantId 租户 ID（用于工具内部路由 agent 状态和 bot 账号）
+ * @param tenantId 租户 ID（用于工具内部路由 bot 账号等）
+ * @param channel 当前运行渠道
+ * @param agentId 运行实例键 `agent:{module}:{tenantId}`，装配时传入供工具闭包预留
  */
 export function createToolBundle(
   cwd: string,
   tenantId: string,
   channel: AgentChannel,
+  agentId: string,
 ): ToolBundle {
   // 1. 读取用户配置（包含 enabledTools 等安全策略）
   const config = readFgbgUserConfig();
@@ -147,11 +149,10 @@ export function createToolBundle(
       typeof name === "string" && name in TOOL_CATALOG,
   );
 
-  // 4. 为每个工具名调用工厂函数，传入 (cwd, tenantId) 生成实例
-  //    工具内部通过闭包持有 tenantId，后续调用时可访问租户专属资源
+  // 4. 为每个工具名调用工厂函数，传入 (cwd, tenantId, channel, agentId) 生成实例
   const tools = enabledToolNames.map((name) =>
     wrapToolWithChannelRuntimeAssert(
-      TOOL_CATALOG[name].factory(cwd, tenantId, channel),
+      TOOL_CATALOG[name].factory(cwd, tenantId, channel, agentId),
       channel,
       tenantId,
     ),

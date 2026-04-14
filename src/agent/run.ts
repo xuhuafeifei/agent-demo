@@ -295,6 +295,7 @@ export async function getReplyFromAgent(params: {
     thinkingLevel: prepared.thinkingLevel,
     tenantId: tenantId,
     channel: channel,
+    agentId,
   });
   // 绑定到agent-state. 当前 agent 主运行的容器
   bindAgentSession(agentId, session);
@@ -310,7 +311,8 @@ export async function getReplyFromAgent(params: {
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
     chatHistory: chatHistoryText,
     workspace: resolveTenantWorkspaceDir(tenantId),
-    toolings: createToolBundle(prepared.cwd, tenantId, channel).toolings,
+    toolings: createToolBundle(prepared.cwd, tenantId, channel, agentId)
+      .toolings,
     skillsMeta: getSkillManager(tenantId).getMetaPromptText(),
     channel: channel,
     // tenantId 作为 channel 的上下文信息写入 system prompt，供工具参数填写参考

@@ -14,7 +14,7 @@ import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js"
 import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
 import { resolveTenantWorkspaceDir } from "../../../utils/app-path.js";
-import { getAgentState } from "../../agent-state.js";
+import type { AgentChannel } from "../../channel-policy.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -34,11 +34,16 @@ type ReadOutput = {
 
 /**
  * 创建文件读取工具。
- * @param tenantId 租户 ID，用于解析工作区路径和获取当前渠道（审批用）
+ * @param tenantId 租户 ID，用于解析工作区路径
+ * @param channel 当前运行渠道（审批显式传入）
+ * @param _agentId 运行实例键，预留扩展，当前未使用
  */
 export function createReadTool(
   tenantId: string,
+  channel: AgentChannel,
+  _agentId: string,
 ): ToolDefinition<typeof readParameters, ToolDetails<ReadOutput>> {
+  void _agentId;
   // 租户 workspace 目录，作为路径安全检查的根目录
   const workspace = resolveTenantWorkspaceDir(tenantId);
 
@@ -76,8 +81,6 @@ export function createReadTool(
       const config = readFgbgUserConfig();
       const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
       if (requiresApproval("read", securityConfig.approval)) {
-        // 从当前租户的 agent 状态中获取渠道信息
-        const channel = getAgentState(tenantId)?.channel ?? "web";
         const approved = await requestApprovalWithDescription(
           "read",
           { path: params.path },
