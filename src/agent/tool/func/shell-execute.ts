@@ -1,11 +1,11 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import path from "node:path";
+import os from "node:os";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
-import { preExecuteCheck } from "../security/shell-precheck.js";
+import { shellPrecheck } from "../security/shell-precheck.js";
 import { SENSITIVE_ENV_PATTERNS } from "../security/constants.js";
 import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "../security/tool-security.resolve.js";
@@ -15,44 +15,6 @@ import type { AgentChannel } from "../../channel-policy.js";
 
 const toolLogger = getSubsystemConsoleLogger("shell-execute");
 const promisifiedExecFile = promisify(execFile);
-
-/**
- * 解析命令行为可执行文件路径 + 参数数组
- * 跨平台：返回 basename，由 execFile 通过 PATH 解析
- */
-function parseCommand(command: string): { file: string; args: string[] } {
-  // 简单解析：第一个 token 是命令，其余是参数
-  const parts: string[] = [];
-  let current = "";
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  for (let i = 0; i < command.length; i++) {
-    const char = command[i];
-
-    if (char === "'" && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-    } else if (char === '"' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-    } else if (char === " " && !inSingleQuote && !inDoubleQuote) {
-      if (current) {
-        parts.push(current);
-        current = "";
-      }
-    } else {
-      current += char;
-    }
-  }
-
-  if (current) {
-    parts.push(current);
-  }
-
-  return {
-    file: parts[0] || "",
-    args: parts.slice(1),
-  };
-}
 
 /** 脱敏环境变量输出（过滤敏感键） */
 function sanitizeEnvOutput(envStr: string): string {
@@ -113,8 +75,8 @@ type ShellExecuteOutput = {
 /**
  * 创建安全的 shell 执行工具
  * 特性：
- * - 白名单命令（basename 匹配）
- * - 禁止 Shell 元字符（无管道、链式命令）
+ * - 白名单命令（basename 匹配 + mayHavePathArgs 标记）
+ * - 路径参数自动校验（checkPathSafety）
  * - 跨平台：使用 execFile 而非 exec，避免 shell 注入
  * - 超时限制（默认 30 秒）
  * - 环境变量脱敏
@@ -153,12 +115,15 @@ export function createShellExecuteTool(
 
         toolLogger.debug(`Pre-checking command: ${command}`);
 
-        // 1. 预检（白名单、元字符、网络）
-        await preExecuteCheck(command, { network: false });
-
-        // 2. 审批检查（如果配置要求）
+        // 1. 获取安全配置
         const config = readFgbgUserConfig();
         const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
+        const workspace = process.cwd();
+
+        // 2. 预检（白名单验证 + 路径安全检查），返回解析后的命令和参数
+        const precheck = await shellPrecheck(command, workspace, securityConfig);
+
+        // 3. 审批检查（如果配置要求）
         if (requiresApproval("shellExecute", securityConfig.approval)) {
           const approved = await requestApprovalWithDescription(
             "shellExecute",
@@ -178,17 +143,19 @@ export function createShellExecuteTool(
           }
         }
 
-        // 3. 解析命令
-        const { file, args } = parseCommand(command);
+        toolLogger.debug(`Executing via bash -c: ${precheck.command} ${precheck.args.join(" ")}`);
 
-        toolLogger.debug(`Executing: ${file} ${args.join(" ")}`);
-
-        // 4. 执行（使用 execFile 避免 shell 注入）
-        const { stdout, stderr } = await promisifiedExecFile(file, args, {
-          timeout: 30000, // 30 秒超时
-          signal,
-          env: process.env, // 继承当前环境变量
-        });
+        // 4. 执行（使用 bash -c 以支持环境变量展开）
+        const commandToRun = `${precheck.command} ${precheck.args.join(" ")}`.trim();
+        const { stdout, stderr } = await promisifiedExecFile(
+          os.platform() === "win32" ? "cmd.exe" : "bash",
+          os.platform() === "win32" ? ["/c", commandToRun] : ["-c", commandToRun],
+          {
+            timeout: 30000, // 30 秒超时
+            signal,
+            env: process.env, // 继承当前环境变量
+          },
+        );
 
         // 5. 脱敏输出
         const sanitizedStdout = sanitizeEnvOutput(stdout.trim());

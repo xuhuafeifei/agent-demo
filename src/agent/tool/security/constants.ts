@@ -159,94 +159,7 @@ export const BINARY_EXTENSIONS = new Set([
   ".map",
 ]);
 
-// ==================== Shell 命令白名单 ====================
-
-/**
- * 初版 Shell 命令白名单（basename）
- * 跨平台：macOS/Linux 通过 PATH 解析，Windows 需额外处理
- */
-export const SHELL_ALLOWLIST = new Set([
-  // 文件与文本
-  "cat",
-  "head",
-  "tail",
-  "wc",
-  "sort",
-  "uniq",
-  "grep",
-
-  // 路径与目录
-  "pwd",
-  "ls",
-  "dirname",
-  "basename",
-  "find",
-  "tree",
-
-  // 运行时与包管理
-  "node",
-  "npm",
-  "npx",
-  "corepack",
-  "pnpm",
-  "yarn",
-
-  // 版本控制
-  "git",
-
-  // 系统与调试信息
-  "uname",
-  "hostname",
-  "date",
-  "whoami",
-  "which",
-  "where",
-  "type",
-  "command",
-
-  // 其它安全小工具
-  "echo",
-  "printf",
-  "test",
-  "[",
-  "sleep",
-  "true",
-  "false",
-  "jq", // JSON 处理
-
-  // 网络（受限）
-  "curl",
-  "wget", // 后续可按需移除
-]);
-
-/** 明确禁止的危险命令 */
-export const SHELL_DENYLIST = new Set([
-  "rm",
-  "dd",
-  "mkfs",
-  "mkfs.ext4",
-  "mkfs.vfat",
-  "ssh",
-  "scp",
-  "sftp",
-  "sudo",
-  "su",
-  "chmod",
-  "chown",
-  "chgrp",
-  "kill",
-  "killall",
-  "pkill",
-  "reboot",
-  "shutdown",
-  "halt",
-  "poweroff",
-  "iptables",
-  "ufw",
-  "firewall-cmd",
-]);
-
-/** 环境变量中常见的敏感键模式（用于脱敏） */
+// ==================== 环境变量中常见的敏感键模式（用于脱敏） ====================
 export const SENSITIVE_ENV_PATTERNS = [
   "API_KEY",
   "SECRET",
@@ -391,16 +304,3 @@ export const MODE_TOOL_SETS: Record<ToolMode, { tools: string[] }> = {
     ],
   },
 };
-
-// ==================== Shell 元字符检测 ====================
-
-/** 初版禁止的 Shell 元字符（防止管道、子 shell、链式命令） */
-export const SHELL_METACHARACTERS_REGEX = /[|;&`$(){}<>!\\]/;
-
-/**
- * 检测命令是否包含危险的 Shell 元字符
- * 初版直接拒绝包含这些字符的命令
- */
-export function containsShellMetacharacters(command: string): boolean {
-  return SHELL_METACHARACTERS_REGEX.test(command);
-}
