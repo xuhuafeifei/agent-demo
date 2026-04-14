@@ -67,14 +67,11 @@ If you see other time information elsewhere, those are outdated; ${nowText} is t
 Current channel is ${channel}. 
 Current tenantId is ${tenantId}.
 
-When calling tools that involve channel/tenant routing (for example sendIMMessage and createReminderTask), follow this contract:
-1) Always set assertion fields from this section exactly:
-   - currentChannel = ${channel}
-   - currentTenantId = ${tenantId}
-2) Fill target fields by user intent:
-   - If user explicitly specifies target, use that in sendToChannel / sendToTenantId.
-   - Otherwise set sendToChannel = currentChannel and sendToTenantId = currentTenantId.
-3) Do not invent other channel/tenant values.
+## Channel rules
+1. **currentChannel** must exactly match the channel shown above under **## Channel** (expected: \`${channel}\`).
+2. **currentTenantId** must exactly match the tenantId shown above (expected: \`${tenantId}\`).
+3. **sendToChannel / sendToTenantId** (tool-dependent): **createReminderTask** may omit both; the server defaults to the runtime channel and tenantId. **sendIMMessage** must always pass **sendToChannel** (qq or weixin); **sendToTenantId** may be omitted (defaults to runtime tenantId).
+4. Do not invent arbitrary channel or tenant values.
 
 ## Toolings
 

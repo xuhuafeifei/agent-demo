@@ -1,8 +1,19 @@
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+import { Type, type Static } from "@sinclair/typebox";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { prepareBeforeGetReply } from "../../pre-run.js";
 import { createRuntimeAgentSession } from "../../pi-embedded-runner/attempt.js";
+import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 
 const logger = getSubsystemConsoleLogger("compact-tool");
+const compactContextParameters = Type.Object({});
+type CompactContextInput = Static<typeof compactContextParameters>;
+type CompactContextOutput = {
+  message: string;
+  summary: string;
+  tokensBefore: number;
+  firstKeptEntryId: string;
+};
 
 /**
  * 创建会话压缩工具。
@@ -10,17 +21,19 @@ const logger = getSubsystemConsoleLogger("compact-tool");
  *
  * @param tenantId 租户 ID，用于定位租户 session 文件
  */
-export function createCompactContextTool(tenantId: string) {
+export function createCompactContextTool(
+  tenantId: string,
+): ToolDefinition<
+  typeof compactContextParameters,
+  ToolDetails<CompactContextOutput>
+> {
   return {
     name: "compactContext",
+    label: "Compact Context",
     description:
-      "Compress session context when the conversation is too long to reduce token usage.",
-    parameters: {
-      type: "object",
-      properties: {},
-      required: [],
-    },
-    async execute() {
+      "compactContext() — compress session context to reduce token usage.",
+    parameters: compactContextParameters,
+    async execute(_toolCallId: string, _params: CompactContextInput) {
       logger.info("开始压缩会话上下文");
 
       try {
@@ -53,26 +66,24 @@ export function createCompactContextTool(tenantId: string) {
           `压缩完成: 原 Token 数 ${compactionResult.tokensBefore}，保留内容从 ${compactionResult.firstKeptEntryId} 开始`,
         );
 
-        return {
-          content: `会话上下文压缩成功！压缩前 Token 数: ${compactionResult.tokensBefore}`,
-          details: {
+        return okResult(
+          `会话上下文压缩成功！压缩前 Token 数: ${compactionResult.tokensBefore}`,
+          {
             message: "会话上下文已成功压缩",
             summary: compactionResult.summary,
             tokensBefore: compactionResult.tokensBefore,
             firstKeptEntryId: compactionResult.firstKeptEntryId,
           },
-        };
-      } catch (error) {
-        logger.error(
-          `压缩会话上下文失败: ${error instanceof Error ? error.message : "未知错误"}`,
         );
-        return {
-          content: `压缩会话上下文失败: ${error instanceof Error ? error.message : "未知错误"}`,
-          details: {
-            error: error instanceof Error ? error.message : "未知错误",
-          },
-          isError: true,
-        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "未知错误";
+        logger.error(
+          `压缩会话上下文失败: ${message}`,
+        );
+        return errResult(`压缩会话上下文失败: ${message}`, {
+          code: "INTERNAL_ERROR",
+          message,
+        });
       }
     },
   };

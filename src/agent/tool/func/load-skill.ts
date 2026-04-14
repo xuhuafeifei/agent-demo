@@ -56,7 +56,7 @@ export function createLoadSkillTool(tenantId: string): ToolDefinition<
     name: "loadSkill",
     label: "Load Skill",
     description:
-      "Load SKILL.md by skill directory name. Searches tenant workspace/skills/ first, then shared/skills/.",
+      "loadSkill(skillDir) — load SKILL.md from tenant workspace/skills/<skillDir>/ or shared/skills/<skillDir>/.",
     parameters: loadSkillParameters,
     execute: async (
       _toolCallId,

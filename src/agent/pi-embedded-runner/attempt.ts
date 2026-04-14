@@ -224,9 +224,7 @@ export async function createRuntimeAgentSession(params: {
     agentDir,
     thinkingLevel: thinkingLevel,
     // 自定义工具通过 customTools 传入，框架会自动覆盖内置同名工具
-    customTools: toolBundle.tools as NonNullable<
-      Parameters<typeof createAgentSession>[0]
-    >["customTools"],
+    customTools: toolBundle.tools,
   });
 
   // 调试：打印会话中的工具名称

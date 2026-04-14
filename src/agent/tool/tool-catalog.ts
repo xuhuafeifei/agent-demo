@@ -2,9 +2,11 @@
  * 工具目录（Tool Catalog）—— 静态注册表
  *
  * 核心职责：
- * - 集中定义「系统中有哪些工具」的静态映射表：名称 → { factory, description }
+ * - 集中定义「系统中有哪些工具」的静态映射表：名称 → factory
  * - 这是唯一的「工具注册点」，新增工具只需在此处添加条目
  * - 不读取任何配置，仅定义「有什么」和「怎么实例化」
+ * - 工具说明文案（description）只在各工具工厂返回的 ToolDefinition 中维护一份，
+ *   createToolBundle 会从实例上读取并写入 system prompt ## Toolings
  *
  * 工具按功能类别组织：
  * - 文件操作：read、write
@@ -15,7 +17,7 @@
  * - IM 通信：sendIMMessage
  *
  * tenantId 对工具行为的影响：
- * - 大多数工具接收 tenantId 后，用于限定操作范围（如只访问该租户的 workspace）
+ * - 大多数工具接收 tenantId 后，用于限定操作范围（只访问该租户的 workspace）
  * - IM 工具根据 tenantId 路由到对应的 bot 账号和 channel
  * - 任务调度工具根据 tenantId 区分任务归属（非 default 租户只能操作自己的任务）
  * - 部分工具忽略 cwd（用 _cwd 表示），因为只依赖 tenantId 即可
@@ -41,16 +43,19 @@ import { createIMSendTool } from "./func/IM-send.js";
 import { createWebSearchTool } from "./func/web-search.js";
 import { createWebFetchTool } from "./func/web-fetch.js";
 import type { AgentChannel } from "../channel-policy.js";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+
+export type RuntimeToolDefinition = ToolDefinition<any, any>;
 
 /** 工具工厂函数签名：cwd 为租户 workspace 目录，tenantId 为租户 ID */
 type ToolFactory = (
   cwd: string,
   tenantId: string,
   channel: AgentChannel,
-) => unknown;
+) => RuntimeToolDefinition;
 
-/** 工具目录条目：包含工厂函数和说明文案 */
-type ToolEntry = { factory: ToolFactory; description: string };
+/** 工具目录条目：仅工厂；说明见各 create*Tool 返回的 `description` */
+type ToolEntry = { factory: ToolFactory };
 
 /**
  * read 工具条目 —— readFile(path, offset?, limit?)
@@ -59,7 +64,6 @@ type ToolEntry = { factory: ToolFactory; description: string };
  */
 const readToolEntry: ToolEntry = {
   factory: (_cwd, tenantId) => createReadTool(tenantId),
-  description: "readFile(path, offset?, limit?) - read text from file (safe, text-only)",
 };
 
 /**
@@ -69,21 +73,10 @@ const readToolEntry: ToolEntry = {
  */
 const writeToolEntry: ToolEntry = {
   factory: (cwd, tenantId) => createWriteTool(cwd, tenantId),
-  description: "writeFile(path, content) - write file content (safe, text-only)",
 };
 
 /**
- * 工具目录：名称 → 工厂函数 + 描述
- *
- * 这是「有哪些工具、怎么实例化」的静态表，不读配置。
- * 每个工具条目包含：
- *   - factory(cwd, tenantId)：实例化工具，返回工具对象
- *   - description：工具用法说明，用于 system prompt
- *
- * tenantId 影响说明：
- *   - 使用 tenantId 的工具：限定操作范围、路由 bot 账号、区分任务归属
- *   - 忽略 cwd 的工具（_cwd）：只依赖 tenantId 即可工作
- *   - 完全无参数的工具：如 getNow，与租户无关
+ * 工具目录：名称 → 工厂函数
  */
 export const TOOL_CATALOG: Record<string, ToolEntry> = {
   // ===== 文件操作 =====
@@ -93,76 +86,58 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   // ===== 知识管理（tenantId 用于定位租户专属的知识库路径） =====
   memorySearch: {
     factory: (_cwd, tenantId) => createMemorySearchTool(tenantId),
-    description: "memorySearch(query, topKFts?, topKVector?, topN?) - retrieve recent memory",
   },
   persistKnowledge: {
     factory: (_cwd, tenantId) => createPersistKnowledgeTool(tenantId),
-    description:
-      "persistKnowledge - discriminated by type: memory → workspace/memory/*.md; userinfo → workspace/userinfo/*.md; skill → workspace/skills/<path>/SKILL.md",
   },
   loadSkill: {
     factory: (_cwd, tenantId) => createLoadSkillTool(tenantId),
-    description:
-      "loadSkill(skillDir) - load SKILL.md from tenant workspace/skills/<skillDir>/ or shared/skills/<skillDir>/",
   },
 
   // ===== 任务调度（tenantId 用于区分任务归属，非 default 租户只能操作自己的任务） =====
   listTaskSchedules: {
     factory: (_cwd, tenantId) => createListTasksTool(tenantId),
-    description: "listTaskSchedules() - list task_schedule entries (default sees all; others see own)",
   },
   runTaskByName: {
     factory: (_cwd, tenantId) => createRunTaskTool(tenantId),
-    description: "runTaskByName(task_name) - set task to pending and next_run_time=now to trigger it immediately",
   },
   deleteTaskByName: {
     factory: (_cwd, tenantId) => createDeleteTaskTool(tenantId),
-    description: "deleteTaskByName(task_name) - delete scheduled task (default can delete any; others only own)",
   },
   createReminderTask: {
     factory: (_cwd, tenantId, channel) => createReminderTaskTool(tenantId, channel),
-    description:
-      "createReminderTask(content, scheduleType, currentChannel, currentTenantId, sendToChannel, sendToTenantId, runAt?, cron?, timezone?, taskName?) - create execute_reminder task",
   },
-  createAgentTask: { // todo: 这个任务干啥的完全忘了，以后调研一下
+  createAgentTask: {
+    // todo: 这个任务干啥的完全忘了，以后调研一下
     factory: (_cwd, tenantId) => createAgentTaskTool(tenantId),
-    description:
-      "createAgentTask(goal, scheduleType, runAt?, cron?, timezone?, notify?, channels?, mode?, title?, taskName?) - create execute_agent scheduled task",
   },
 
   // ===== 工具类 =====
   getNow: {
-    factory: () => createGetNowTool(), // 无状态工具，不需要 cwd 或 tenantId
-    description: "getNow(timezone?) - get current time as ISO and unix ms",
+    factory: () => createGetNowTool(),
   },
 
   // ===== 上下文管理 =====
   compactContext: {
     factory: (_cwd, tenantId) => createCompactContextTool(tenantId),
-    description: "compactContext() - compress session context to reduce size",
   },
 
   // ===== 系统执行（tenantId 用于 shell 执行的权限控制和日志归属） =====
   shellExecute: {
     factory: (_cwd, tenantId) => createShellExecuteTool(tenantId),
-    description: "shellExecute(command) - execute whitelisted shell command securely",
   },
 
   // ===== IM 通信（tenantId 用于路由到对应 bot 账号和 channel） =====
   sendIMMessage: {
     factory: (_cwd, tenantId, channel) => createIMSendTool(tenantId, channel),
-    description:
-      "sendIMMessage(currentChannel, currentTenantId, sendToChannel, sendToTenantId, content) - send text to phone IM user",
   },
 
   // ===== 网络工具 =====
   webSearch: {
     factory: () => createWebSearchTool(),
-    description: "webSearch(query, limit?) - search the web for information",
   },
   webFetch: {
     factory: () => createWebFetchTool(),
-    description: "webFetch(url, prompt) - fetch and extract content from a URL",
   },
 };
 

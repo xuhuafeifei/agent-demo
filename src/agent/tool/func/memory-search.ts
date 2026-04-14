@@ -52,7 +52,7 @@ export function createMemorySearchTool(tenantId: string): ToolDefinition<
     name: "memorySearch",
     label: "Memory Search",
     description:
-      "Search relevant memory chunks from indexed workspace/session.",
+      "memorySearch(query, topKFts?, topKVector?, topN?) — retrieve recent memory from indexed workspace/session.",
     parameters: memorySearchParameters,
     execute: async (
       _toolCallId,

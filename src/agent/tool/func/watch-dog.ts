@@ -1,3 +1,29 @@
+/**
+ * watch-dog 工具集：调度任务管理
+ *
+ * 提供：
+ * - 展示调度任务列表
+ * - 运行调度任务
+ * - 删除调度任务
+ * - 获取当前时间
+ * - 创建提醒任务
+ * - 创建智能任务
+ *
+ * 注意：
+ * - 所有工具都依赖于当前 Channel 上下文，因此需要传入 tenantId 和 channel
+ * - 所有工具都依赖于系统 prompt 的 ## Channel 章节，因此需要传入 tenantId 和 channel
+ * - 所有工具都依赖于系统 prompt 的 ## Channel 章节，因此需要传入 tenantId 和 channel
+ *
+ * 需要强调的是，当前系统设计并未进行current Channel, current TenantId的权限校验
+ * 换句话说，default tenantId可以给所有人创建调度任务. other tenantId也可以为 default 创建调度任务
+ *
+ * 为什么这么设计，其中一个比较重要的考量是业务场景
+ * 当前项目是一个个人项目，你不会让一个不熟悉的人接入当前项目. 话句话说，接入的人应该是你信任的。因此不进行更强的权限校验
+ *
+ * 如果后续要做，可以通过current runtime tenantId进行权限校验。该参数在 tool 创建的时候传入，因此可以进行更强的权限校验
+ * 例如，只有 default tenantId 可以给所有人创建调度任务，其他 tenantId 只能给自己创建调度任务
+ *
+ */
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
@@ -10,11 +36,13 @@ import {
 import { runTaskByNameNowForTenant } from "../../../watch-dog/watch-dog.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 import { formatChinaIso } from "../../../watch-dog/time.js";
-import { computeNextRunFromCron } from "../../../watch-dog/cron.js";
 import { formatBlacklistPresetLines } from "../../../watch-dog/blacklist-presets.js";
 import { getQQBotByTenantId } from "../../../middleware/qq/qq-account.js";
 import { getWeixinBotByTenantId } from "../../../middleware/weixin/weixin-account.js";
 import type { AgentChannel } from "../../channel-policy.js";
+import { tryResolveScheduleFields } from "../utils/schedule-resolve.js";
+import { CHANNEL_TOOL_PARAM_DESC } from "../utils/channel-tool-param-desc.js";
+import { reminderTaskChannelParamProperties } from "../utils/channel-tool-params.schema.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
 
@@ -47,8 +75,7 @@ const blacklistPeriodsSchema = Type.Optional(
 const listTasksParams = Type.Object({
   tenantId: Type.String({
     minLength: 1,
-    description:
-      'Tenant ID for permission check and data isolation. Read from your system prompt "Channel" chapter.',
+    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForSessionTools,
   }),
 });
 type ListTasksInput = Static<typeof listTasksParams>;
@@ -77,8 +104,7 @@ const runTaskParams = Type.Object({
   }),
   tenantId: Type.String({
     minLength: 1,
-    description:
-      'Tenant ID for permission check and routing. Read from your system prompt "Channel" chapter.',
+    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForSessionTools,
   }),
 });
 type RunTaskInput = Static<typeof runTaskParams>;
@@ -91,8 +117,7 @@ const deleteTaskParams = Type.Object({
   }),
   tenantId: Type.String({
     minLength: 1,
-    description:
-      'Tenant ID for permission check and routing. Read from your system prompt "Channel" chapter.',
+    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForSessionTools,
   }),
 });
 type DeleteTaskInput = Static<typeof deleteTaskParams>;
@@ -143,31 +168,7 @@ const createReminderTaskParams = Type.Object({
       description: "Timezone. Defaults to Asia/Shanghai.",
     }),
   ),
-  currentChannel: Type.Union(
-    [Type.Literal("web"), Type.Literal("qq"), Type.Literal("weixin")],
-    {
-      description:
-        "Current runtime channel from system prompt '## Channel' section. Must exactly match runtime current channel.",
-    },
-  ),
-  currentTenantId: Type.String({
-    minLength: 1,
-    description:
-      'Current runtime tenantId from system prompt "## Channel" section. Must exactly match runtime current tenantId.',
-  }),
-  sendToChannel: Type.Union([
-    Type.Literal("qq"),
-    Type.Literal("weixin"),
-    Type.Literal("web"),
-  ], {
-    description:
-      "Target channel for reminder delivery. If user specifies target channel, use it; otherwise use currentChannel.",
-  }),
-  sendToTenantId: Type.String({
-    minLength: 1,
-    description:
-      'Target tenantId for reminder routing. If user specifies target tenantId, use it; otherwise use currentTenantId.',
-  }),
+  ...reminderTaskChannelParamProperties,
   taskName: Type.Optional(
     Type.String({
       minLength: 1,
@@ -228,8 +229,7 @@ const createAgentTaskParams = Type.Object({
   ),
   tenantId: Type.String({
     minLength: 1,
-    description:
-      'Required tenant ID for routing and permission checks. Priority: user-specified tenantId > current tenantId in system prompt "Channel" chapter.',
+    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForAgentTask,
   }),
   mode: Type.Optional(
     Type.Union([Type.Literal("evolve"), Type.Literal("analyze_then_notify")], {
@@ -468,7 +468,7 @@ export function createReminderTaskTool(
     name: "createReminderTask",
     label: "Create Reminder Task",
     description:
-      "Create execute_reminder scheduled task with fixed reminder content.",
+      "createReminderTask(content, scheduleType, currentChannel, currentTenantId, sendToChannel?, sendToTenantId?, runAt?, cron?, timezone?, taskName?) — create execute_reminder. currentChannel/currentTenantId must match system prompt ## Channel (enforced when registering tools). If sendToChannel or sendToTenantId is omitted, the server defaults to the runtime channel and runtime tenantId.",
     parameters: createReminderTaskParams,
     execute: async (_id, params: CreateReminderTaskInput) => {
       const content = params.content.trim();
@@ -476,82 +476,24 @@ export function createReminderTaskTool(
       const timezone = params.timezone?.trim() || "Asia/Shanghai";
       const runtimeChannel = channel;
       const runtimeTenantId = tenantId.trim();
-      const currentTenantId = params.currentTenantId.trim();
-      const sendToTenantId = params.sendToTenantId.trim();
-      if (params.currentChannel !== runtimeChannel) {
-        return errResult(
-          `当前 channel 应为 ${runtimeChannel}，模型错误理解为 ${params.currentChannel}。请重新阅读 system prompt 的 ## Channel 与用户最新指令，重新判断 sendToChannel/sendToTenantId 后再重试。`,
-          {
-            code: "INVALID_ARGUMENT",
-            message:
-              "currentChannel mismatch; re-check system prompt Channel and user intent before retry",
-          },
-        );
-      }
-      if (currentTenantId !== runtimeTenantId) {
-        return errResult(
-          `当前 tenantId 应为 ${runtimeTenantId}，模型错误理解为 ${currentTenantId}。请重新阅读 system prompt 的 ## Channel 与用户最新指令，重新判断 sendToChannel/sendToTenantId 后再重试。`,
-          {
-            code: "INVALID_ARGUMENT",
-            message:
-              "currentTenantId mismatch; re-check system prompt Channel and user intent before retry",
-          },
-        );
-      }
-      if (!sendToTenantId) {
-        return errResult("sendToTenantId 不能为空", {
-          code: "INVALID_ARGUMENT",
-          message: "sendToTenantId required",
-        });
-      }
-      const channels = [params.sendToChannel] as Array<"qq" | "weixin" | "web">;
-      const taskName = params.taskName?.trim() || makeTaskName("reminder");
-      let nextRunTime: string;
-      let scheduleKind: "once" | "cron";
-      let scheduleExpr: string;
 
-      if (scheduleType === "once") {
-        const runAt = params.runAt?.trim() || "";
-        const ts = Date.parse(runAt);
-        if (!runAt || Number.isNaN(ts)) {
-          return errResult("once 需要合法 runAt（ISO 时间）", {
-            code: "INVALID_ARGUMENT",
-            message: "invalid runAt",
-          });
-        }
-        if (ts <= Date.now()) {
-          return errResult("once 的 runAt 必须晚于当前时间", {
-            code: "INVALID_ARGUMENT",
-            message: "runAt must be in the future",
-          });
-        }
-        nextRunTime = formatChinaIso(new Date(ts));
-        scheduleKind = "once";
-        scheduleExpr = nextRunTime;
-      } else {
-        const cron = params.cron?.trim() || "";
-        if (!cron) {
-          return errResult("cron 需要合法 cron 表达式（5 段）", {
-            code: "INVALID_ARGUMENT",
-            message: "invalid cron",
-          });
-        }
-        scheduleKind = "cron";
-        scheduleExpr = `0 ${cron.replace(/\s+/g, " ").trim()}`;
-        try {
-          nextRunTime = computeNextRunFromCron({
-            cron: scheduleExpr,
-            timezone,
-          });
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          return errResult(`cron 表达式不合法: ${message}`, {
-            code: "INVALID_ARGUMENT",
-            message,
-          });
-        }
+      const sendToChannelResolved = params.sendToChannel ?? runtimeChannel;
+      const sendToTenantId = params.sendToTenantId?.trim() || runtimeTenantId;
+      const channels = [sendToChannelResolved] as Array<
+        "qq" | "weixin" | "web"
+      >;
+      const taskName = params.taskName?.trim() || makeTaskName("reminder");
+
+      const scheduleResolved = tryResolveScheduleFields({
+        scheduleType,
+        runAt: params.runAt,
+        cron: params.cron,
+        timezone,
+      });
+      if (!scheduleResolved.ok) {
+        return errResult(scheduleResolved.text, scheduleResolved.error);
       }
+      const { nextRunTime, scheduleKind, scheduleExpr } = scheduleResolved;
 
       const payload: Record<string, unknown> = {
         content,
@@ -609,7 +551,7 @@ export function createAgentTaskTool(
     name: "createAgentTask",
     label: "Create Agent Task",
     description:
-      "Create execute_agent scheduled task for intelligent periodic work.",
+      "createAgentTask(goal, scheduleType, runAt?, cron?, timezone?, notify?, channels?, mode?, title?, taskName?) — create execute_agent scheduled task for periodic agent work.",
     parameters: createAgentTaskParams,
     execute: async (_id, params: CreateAgentTaskInput) => {
       const goal = params.goal.trim();
@@ -623,52 +565,17 @@ export function createAgentTaskTool(
         params.taskName?.trim() ||
         params.title?.trim() ||
         makeTaskName("agent_task");
-      let nextRunTime: string;
-      let scheduleKind: "once" | "cron";
-      let scheduleExpr: string;
 
-      if (scheduleType === "once") {
-        const runAt = params.runAt?.trim() || "";
-        const ts = Date.parse(runAt);
-        if (!runAt || Number.isNaN(ts)) {
-          return errResult("once 需要合法 runAt（ISO 时间）", {
-            code: "INVALID_ARGUMENT",
-            message: "invalid runAt",
-          });
-        }
-        if (ts <= Date.now()) {
-          return errResult("once 的 runAt 必须晚于当前时间", {
-            code: "INVALID_ARGUMENT",
-            message: "runAt must be in the future",
-          });
-        }
-        nextRunTime = formatChinaIso(new Date(ts));
-        scheduleKind = "once";
-        scheduleExpr = nextRunTime;
-      } else {
-        const cron = params.cron?.trim() || "";
-        if (!cron) {
-          return errResult("cron 需要合法 cron 表达式（5 段）", {
-            code: "INVALID_ARGUMENT",
-            message: "invalid cron",
-          });
-        }
-        scheduleKind = "cron";
-        scheduleExpr = `0 ${cron.replace(/\s+/g, " ").trim()}`;
-        try {
-          nextRunTime = computeNextRunFromCron({
-            cron: scheduleExpr,
-            timezone,
-          });
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          return errResult(`cron 表达式不合法: ${message}`, {
-            code: "INVALID_ARGUMENT",
-            message,
-          });
-        }
+      const scheduleResolved = tryResolveScheduleFields({
+        scheduleType,
+        runAt: params.runAt,
+        cron: params.cron,
+        timezone,
+      });
+      if (!scheduleResolved.ok) {
+        return errResult(scheduleResolved.text, scheduleResolved.error);
       }
+      const { nextRunTime, scheduleKind, scheduleExpr } = scheduleResolved;
 
       const payload: Record<string, unknown> = {
         goal,
