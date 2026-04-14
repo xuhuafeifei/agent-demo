@@ -17,6 +17,8 @@ export interface Message {
   timestamp: number;
 }
 
+export type ToolCallStatus = "running" | "completed" | "failed" | "expired";
+
 export interface ToolCall {
   id: string;
   toolCallId: string;
@@ -24,7 +26,7 @@ export interface ToolCall {
   title: string;
   input: string;
   result?: string;
-  status: string;
+  status: ToolCallStatus;
   detail: string;
   timestamp: number;
 }
@@ -96,11 +98,6 @@ export type WrappedMessage =
       data: PermissionTimelineItem;
       timestamp: number;
     };
-
-export interface SSEEvent {
-  event: SSEEventType;
-  data: Record<string, unknown>;
-}
 
 // ============================================================================
 // 供应商与模型

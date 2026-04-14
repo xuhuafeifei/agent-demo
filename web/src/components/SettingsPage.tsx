@@ -18,7 +18,7 @@ import {
   weixinSetPrimary,
   stopQqLayer,
   startQqLayerIfIdle,
-} from "../api/configApi";
+} from "../api/client";
 import MessageManager from "./Message";
 import { X } from "lucide-react";
 import {

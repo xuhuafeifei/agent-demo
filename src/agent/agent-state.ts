@@ -77,6 +77,7 @@ function scanAndReleaseZombieAgents(): void {
   }
 }
 
+// watch-dog心跳监听，扫描僵尸agent
 function ensureHeartbeatScannerBound(): void {
   if (heartbeatScannerBound) return;
   heartbeatScannerBound = true;

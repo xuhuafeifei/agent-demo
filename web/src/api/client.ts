@@ -4,11 +4,11 @@
  *
  * Usage:
  * ```typescript
- * const client = new ApiClient({ baseURL: '/api/v1' });
+ * const client = new ApiClient({ baseURL: '/api' });
  * const config = await client.config.getFgbg();
  * ```
  *
- * Note: Backend routes are mounted at /api/v1
+ * Note: Backend routes are mounted at /api
  */
 
 export type ApiSuccess<T> = {
@@ -125,7 +125,7 @@ export class ApiClient {
   readonly baseURL: string;
 
   constructor(options?: ApiClientOptions) {
-    this.baseURL = options?.baseURL || '/api/v1';
+    this.baseURL = options?.baseURL || '/api';
   }
 
   /**
@@ -159,6 +159,34 @@ export class ApiClient {
       request<{ config: FgbgConfig; metadata: ConfigMetadata }>(
         `${this.baseURL}/config/fgbg/reset`,
         { method: 'POST' }
+      ),
+
+    /**
+     * Reset specific config section
+     */
+    resetSection: (section: string) =>
+      request<{ message: string }>(
+        `${this.baseURL}/config/fgbg/reset/section`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ section }),
+        }
+      ),
+
+    /**
+     * Get configured providers
+     */
+    getConfiguredProviders: () =>
+      request<{ providers: any[] }>(
+        `${this.baseURL}/config/providers`
+      ),
+
+    /**
+     * Get supported model providers (builtin templates)
+     */
+    getSupportedModelProviders: () =>
+      request<{ providers: any[] }>(
+        `${this.baseURL}/config/builtin-templates`
       ),
 
     /**
@@ -214,8 +242,44 @@ export class ApiClient {
      */
     getDefaultProvider: () =>
       request<{ defaultProvider: any }>(
-        `${this.baseURL}/config/default-provider`
+        `${this.baseURL}/config/default`
       ),
+
+    /**
+     * Test model connection
+     */
+    testConnection: (params: Record<string, unknown>) =>
+      request<{ success: boolean; message?: string }>(
+        `${this.baseURL}/config/test-connection`,
+        {
+          method: 'POST',
+          body: JSON.stringify(params),
+        }
+      ),
+
+    /**
+     * Get Qwen Portal OAuth credentials
+     */
+    getQwenPortalCredentials: () =>
+      request<{ credentials: any }>(
+        `${this.baseURL}/config/qwen-portal/oauth/credentials`
+      ),
+
+    /**
+     * QQ layer control
+     */
+    qq: {
+      start: () =>
+        request<{ message?: string }>(
+          `${this.baseURL}/config/qq/start`,
+          { method: 'POST' }
+        ),
+      stop: () =>
+        request<{ message?: string }>(
+          `${this.baseURL}/config/qq/stop`,
+          { method: 'POST' }
+        ),
+    },
 
     /**
      * Invalidate logging config cache
@@ -264,6 +328,64 @@ export class ApiClient {
      */
     clear: () =>
       request<{ message: string }>(`${this.baseURL}/clear`, { method: 'POST' }),
+  };
+
+  /**
+   * Weixin (WeChat) API namespace
+   */
+  readonly weixin = {
+    /**
+     * Start WeChat login flow
+     */
+    loginStart: (tenantId: string) =>
+      request<{ sessionKey: string }>(
+        `${this.baseURL}/weixin/login/start`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ tenantId }),
+        }
+      ),
+
+    /**
+     * Poll login status
+     */
+    loginPoll: (sessionKey: string) =>
+      request<{ status: string; tenantId?: string }>(
+        `${this.baseURL}/weixin/login/poll`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ sessionKey }),
+        }
+      ),
+
+    /**
+     * Get account status
+     */
+    status: () =>
+      request<{ accounts: any[] }>(
+        `${this.baseURL}/weixin/status`
+      ),
+
+    /**
+     * Set primary tenant
+     */
+    setPrimary: (tenantId: string) =>
+      request<{ message: string }>(
+        `${this.baseURL}/weixin/primary`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ tenantId }),
+        }
+      ),
+
+    /**
+     * Unbind account
+     */
+    unbind: (tenantId: string) =>
+      request<{ message: string }>(
+        `${this.baseURL}/weixin/account/${encodeURIComponent(tenantId)}`,
+        { method: 'DELETE' }
+      ),
   };
 
   /**
@@ -323,3 +445,35 @@ export class ApiClient {
  * Default client instance.
  */
 export const api = new ApiClient();
+
+/**
+ * Convenience re-exports for direct function imports (mimics configApi.ts style)
+ * These wrap the api instance for easier migration.
+ */
+export const getFgbgConfig = () => api.config.getFgbg();
+export const patchFgbgConfig = (patch: Partial<FgbgConfig>) => api.config.patchFgbg(patch);
+export const resetFgbgConfig = () => api.config.resetFgbg();
+export const resetFgbgConfigSection = (section: string) => api.config.resetSection(section);
+export const testMemorySearchConfig = (memorySearch: any) => api.config.testMemorySearch(memorySearch);
+export const repairLocalMemorySearch = (memorySearch: any) => api.config.repairLocalMemorySearch(memorySearch);
+export const getProviderModels = (providerId: string) => api.config.getProviderModels(providerId);
+export const evictLoggingCache = () => api.config.evictLoggingCache();
+export const getSupportedModelProviders = () => api.config.getSupportedModelProviders();
+export const getConfiguredProviders = () => api.config.getConfiguredProviders();
+export const setPrimaryModel = (primary: string) => api.config.patchFgbg({ agents: { defaults: { model: { primary } } } });
+export const getPrimaryModel = () => api.config.getFgbg();
+export const getQwenPortalCredentials = () => api.config.getQwenPortalCredentials();
+export const getDefaultModelProvider = () => api.config.getDefaultProvider();
+export const testModelConnection = (params: Record<string, unknown>) => api.config.testConnection(params);
+export const getModelProviderInfo = () => api.config.getProviders();
+export const startQwenPortalOAuth = () => api.config.oauth.start();
+export const pollQwenPortalOAuth = (oauthSessionId: string) => api.config.oauth.poll(oauthSessionId);
+export const stopQqLayer = () => api.config.qq.stop();
+export const startQqLayerIfIdle = () => api.config.qq.start();
+export const getHistory = () => api.history.get();
+export const clearHistory = () => api.history.clear();
+export const weixinLoginStart = (tenantId: string) => api.weixin.loginStart(tenantId);
+export const weixinLoginPoll = (sessionKey: string) => api.weixin.loginPoll(sessionKey);
+export const weixinStatus = () => api.weixin.status();
+export const weixinSetPrimary = (tenantId: string) => api.weixin.setPrimary(tenantId);
+export const weixinUnbind = (tenantId: string) => api.weixin.unbind(tenantId);

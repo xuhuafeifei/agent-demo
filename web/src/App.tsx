@@ -7,10 +7,9 @@ import {
   MessageCircleMore,
   Settings,
 } from 'lucide-react';
-import type { ReactNode, ForwardRefExoticComponent } from 'react';
 import { useChatStore } from './store/chatStore';
 import { useSSEChat } from './hooks/useSSEChat';
-import { getHistory, clearHistory } from './api/configApi';
+import { getHistory } from './api/client';
 import Sidebar, { SIDEBAR_KEY, navItems, type NavItem } from './components/Sidebar';
 import Header from './components/Header';
 import ContextSnapshotDock from './components/ContextSnapshotDock';
@@ -47,8 +46,39 @@ export default function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const getAllMessages = useChatStore((state) => state.getAllMessages);
-  const allMessages: WrappedMessage[] = getAllMessages();
+  // 从 store 获取原始数据（使用稳定引用）
+  const messages = useChatStore((state) => state.messages);
+  const toolCalls = useChatStore((state) => state.toolCalls);
+  const permissionRequests = useChatStore((state) => state.permissionRequests);
+
+  // 使用 useMemo 合并和排序，避免每次渲染创建新数组
+  const allMessages: WrappedMessage[] = useMemo(() => {
+    const regularMessages: WrappedMessage[] = messages.map((msg) => ({
+      type: 'message' as const,
+      data: msg,
+      timestamp: msg.timestamp,
+    }));
+
+    const toolCallMessages: WrappedMessage[] = toolCalls.map((tool) => ({
+      type: 'tool_call' as const,
+      data: tool,
+      timestamp: tool.timestamp,
+    }));
+
+    const permissionMessages: WrappedMessage[] = permissionRequests.map(
+      (p) => ({
+        type: 'permission_request' as const,
+        data: p,
+        timestamp: p.timestamp,
+      })
+    );
+
+    return [
+      ...regularMessages,
+      ...toolCallMessages,
+      ...permissionMessages,
+    ].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  }, [messages, toolCalls, permissionRequests]);
 
   const isStreaming = useChatStore((state) => state.isStreaming);
   const isThinking = useChatStore((state) => state.isThinking);

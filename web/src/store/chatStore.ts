@@ -48,7 +48,6 @@ interface ChatStore {
     toolUseId: string,
     status: Extract<PermissionRequestStatus, 'approved' | 'denied'>
   ) => void;
-  getAllMessages: () => WrappedMessage[];
   clearMessages: () => void;
 }
 
@@ -348,39 +347,6 @@ export const useChatStore = create<ChatStore>((set, get) => {
             : p
         ),
       }));
-    },
-
-    /**
-     * 获取所有消息（包括 ToolCall、审批）并按时间戳排序 - VSCode 方式
-     */
-    getAllMessages: (): WrappedMessage[] => {
-      const { messages, toolCalls, permissionRequests } = get();
-
-      const regularMessages: WrappedMessage[] = messages.map((msg) => ({
-        type: 'message',
-        data: msg,
-        timestamp: msg.timestamp,
-      }));
-
-      const toolCallMessages: WrappedMessage[] = toolCalls.map((tool) => ({
-        type: 'tool_call',
-        data: tool,
-        timestamp: tool.timestamp,
-      }));
-
-      const permissionMessages: WrappedMessage[] = permissionRequests.map(
-        (p) => ({
-          type: 'permission_request' as const,
-          data: p,
-          timestamp: p.timestamp,
-        })
-      );
-
-      return [
-        ...regularMessages,
-        ...toolCallMessages,
-        ...permissionMessages,
-      ].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
     },
 
     /**

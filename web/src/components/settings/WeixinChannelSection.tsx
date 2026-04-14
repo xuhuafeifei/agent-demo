@@ -5,7 +5,7 @@ import {
   weixinLoginPoll,
   weixinStatus,
   weixinUnbind,
-} from "../../api/configApi";
+} from "../../api/client";
 import MessageManager from "../Message";
 
 /** iLink 常返回裸 base64，img 需要 data URL 或绝对地址 */

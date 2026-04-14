@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { Copy, Check, ChevronUp, ChevronDown } from "lucide-react";
-import { renderMarkdown, copyText } from "../utils/markdown";
+import { ChevronUp, ChevronDown } from "lucide-react";
+import { renderMarkdown } from "../utils/markdown";
 import type {
   Message,
   ToolCall,
@@ -10,6 +10,7 @@ import type {
 import type { RefObject } from "react";
 import { useChatStore } from "../store/chatStore";
 import { api } from "../api/client";
+import CopyButton from "./CopyButton";
 
 export type { WrappedMessage };
 
@@ -36,8 +37,6 @@ function AssistantMessage({
   content: string;
   streaming: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-
   return (
     <article className="message assistant">
       <div className="llm-response">
@@ -46,19 +45,7 @@ function AssistantMessage({
           dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
         />
         <div className="copy-wrap">
-          <button
-            className={`copy-btn ${copied ? "copied" : ""}`}
-            type="button"
-            aria-label="复制内容"
-            onClick={async () => {
-              const ok = await copyText(content);
-              if (!ok) return;
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 2000);
-            }}
-          >
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-          </button>
+          <CopyButton content={content} />
         </div>
       </div>
     </article>
@@ -188,25 +175,11 @@ function ToolCallCard({ toolCall }: { toolCall: ToolCall }) {
  * 用户消息组件
  */
 function UserMessage({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false);
-
   return (
     <article className="message user">
       <div className="user-bubble">{content}</div>
       <div className="copy-wrap">
-        <button
-          className={`copy-btn ${copied ? "copied" : ""}`}
-          type="button"
-          aria-label="复制内容"
-          onClick={async () => {
-            const ok = await copyText(content);
-            if (!ok) return;
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
-          }}
-        >
-          {copied ? <Check size={16} /> : <Copy size={16} />}
-        </button>
+        <CopyButton content={content} />
       </div>
     </article>
   );
@@ -446,11 +419,4 @@ function MessageList({
   );
 }
 
-export {
-  AssistantMessage,
-  ThinkingMessage,
-  ToolCallCard,
-  UserMessage,
-  PermissionRequestCard,
-};
 export default MessageList;

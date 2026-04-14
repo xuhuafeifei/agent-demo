@@ -15,6 +15,7 @@ interface SSEPayload {
   kind?: string;
   toolName?: string;
   title?: string;
+  input?: string;
   args?: Record<string, unknown>;
   status?: string;
   detail?: string;
@@ -120,7 +121,7 @@ export function useSSEChat() {
             input:
               payload.input ||
               (payload.args ? JSON.stringify(payload.args, null, 2) : "-"),
-            status: payload.status || "running",
+            status: (payload.status as any) || "running",
             detail: payload.detail || "进行中...",
             timestamp: payload.timestamp ?? Date.now(),
           });
@@ -130,7 +131,7 @@ export function useSSEChat() {
           const id = payload.toolCallId || payload.id || "";
           console.log("[SSE] tool_call_update received:", payload);
           updateToolCall(id, {
-            status: payload.status,
+            status: payload.status as any,
             detail: payload.detail,
             result: payload.content,
             ...(typeof payload.title === "string"

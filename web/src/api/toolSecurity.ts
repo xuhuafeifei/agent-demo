@@ -40,7 +40,7 @@ export const toolSecurityApi = {
     const res = await request<ToolSecurityResponse>(
       `${api.baseURL}/config/tool-security`,
     );
-    if (!res.success) throw new Error(res.error);
+    if (!res.success) throw new Error((res as ApiError).error);
     return res;
   },
 
@@ -55,7 +55,7 @@ export const toolSecurityApi = {
         body: JSON.stringify({ config }),
       },
     );
-    if (!res.success) throw new Error(res.error);
+    if (!res.success) throw new Error((res as ApiError).error);
     return res;
   },
 
@@ -67,7 +67,7 @@ export const toolSecurityApi = {
         method: "POST",
       },
     );
-    if (!res.success) throw new Error(res.error);
+    if (!res.success) throw new Error((res as ApiError).error);
     return res;
   },
 
@@ -79,7 +79,7 @@ export const toolSecurityApi = {
       `${api.baseURL}/config/tool-security/import/${preset}`,
       { method: "POST" },
     );
-    if (!res.success) throw new Error(res.error);
+    if (!res.success) throw new Error((res as ApiError).error);
     return res;
   },
 };

@@ -48,15 +48,11 @@ export default defineConfig({
         },
       },
     },
-    // 启用压缩
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true, // 生产环境移除 console
-        drop_debugger: true,
-      },
-    },
+    // 使用 esbuild 替代 Terser，构建速度提升 10-20x
+    minify: 'esbuild',
     // 启用 CSS 代码分割
     cssCodeSplit: true,
+    // 启用 sourcemap (可选，生产环境可关闭)
+    sourcemap: false,
   },
 });

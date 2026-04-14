@@ -1,5 +1,4 @@
-import React from 'react';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   AtSign,
   Paperclip,
@@ -10,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { RefObject, ReactNode } from 'react';
 import { useChatStore } from '../store/chatStore';
-import { getFgbgConfig, setPrimaryModel } from '../api/configApi';
+import { getFgbgConfig, setPrimaryModel } from '../api/client';
 import { getProviderIcon, getProviderName } from './settings/settingsUtils';
 import type { ComponentType } from 'react';
 import ContextUsageIndicator from './ContextUsageIndicator';

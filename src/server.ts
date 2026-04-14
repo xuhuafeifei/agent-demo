@@ -35,10 +35,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(publicDir));
 
+// Mount API routes
 app.use("/api", createWebLayer());
-// Mount v1 API path (recommended for frontend consumption)
-app.use("/api/v1", createWebLayer());
-// Keep /api as backward compatibility alias
 
 function startServer(port: number) {
   const isDefaultPort = port === PORT;
