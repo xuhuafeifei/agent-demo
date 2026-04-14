@@ -168,6 +168,7 @@ const createReminderTaskParams = Type.Object({
       description: "Timezone. Defaults to Asia/Shanghai.",
     }),
   ),
+  // 展开 reminderTaskChannelParamProperties 中的字段
   ...reminderTaskChannelParamProperties,
   taskName: Type.Optional(
     Type.String({
