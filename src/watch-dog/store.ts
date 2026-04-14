@@ -41,6 +41,12 @@ export type TaskDetailRow = {
   executor: string | null;
 };
 
+/** 系统内置任务名：禁止删除，前后端一致校验 */
+export const PROTECTED_TASK_NAMES = new Set<string>([
+  "cleanup_logs",
+  "one_minute_heartbeat",
+]);
+
 export type NewTaskInput = {
   task_name: string;
   task_type: string;
@@ -384,7 +390,8 @@ export async function getTaskByName(
 export async function deleteTaskByNameForTenant(
   taskName: string,
   tenantId: string,
-): Promise<"ok" | "not_found" | "forbidden"> {
+): Promise<"ok" | "not_found" | "forbidden" | "protected"> {
+  if (PROTECTED_TASK_NAMES.has(taskName)) return "protected";
   const database = await getDb();
   return serialExecutor.execute(async () => {
     const selectStmt = database.prepare(
@@ -404,6 +411,110 @@ export async function deleteTaskByNameForTenant(
       tenantId,
     );
     return "ok";
+  });
+}
+
+const TASK_SCHEDULE_SELECT_COLUMNS = `id, task_name, task_type, payload_text, status, attempts, last_error,
+              schedule_kind, schedule_expr, timezone,
+              create_time, update_time, next_run_time, started_at, finished_at, tenant_id`;
+
+/**
+ * 按主键读取任务（Web 管理用；调用方已确认权限）
+ */
+export async function getTaskScheduleById(
+  taskId: number,
+): Promise<TaskScheduleRow | null> {
+  const database = await getDb();
+  return serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `SELECT ${TASK_SCHEDULE_SELECT_COLUMNS}
+       FROM task_schedule WHERE id = ?`,
+    );
+    const row = stmt.get(taskId) as TaskScheduleRow | undefined;
+    return row ?? null;
+  });
+}
+
+/**
+ * 按明细 create_time 倒序分页；闭区间 [fromIso, toIso]
+ */
+export async function listTaskDetailsByCreateTime(params: {
+  taskId: number;
+  fromIso: string;
+  toIso: string;
+  limit: number;
+}): Promise<TaskDetailRow[]> {
+  const database = await getDb();
+  const cap = Math.max(1, Math.min(500, Math.floor(params.limit)));
+  return serialExecutor.execute(async () => {
+    const stmt = database.prepare(
+      `SELECT id, task_id, start_time, end_time, create_time, update_time, status, error_message, executor
+       FROM task_schedule_detail
+       WHERE task_id = ? AND create_time >= ? AND create_time <= ?
+       ORDER BY create_time DESC
+       LIMIT ?`,
+    );
+    return stmt.all(params.taskId, params.fromIso, params.toIso, cap) as TaskDetailRow[];
+  });
+}
+
+/**
+ * 仅更新 cron 任务的表达式，并重新计算 next_run_time（不改变 schedule_kind）
+ */
+export async function updateCronScheduleExprById(params: {
+  taskId: number;
+  scheduleExpr: string;
+  nextRunTimeIso: string;
+}): Promise<"ok" | "not_found" | "not_cron"> {
+  const database = await getDb();
+  return serialExecutor.execute(async () => {
+    const check = database
+      .prepare(`SELECT id, schedule_kind FROM task_schedule WHERE id = ?`)
+      .get(params.taskId) as { id: number; schedule_kind: string } | undefined;
+    if (!check) return "not_found";
+    if (check.schedule_kind !== "cron") return "not_cron";
+    const now = nowChinaIso();
+    database
+      .prepare(
+        `UPDATE task_schedule SET schedule_expr = ?, next_run_time = ?, update_time = ? WHERE id = ?`,
+      )
+      .run(params.scheduleExpr.trim(), params.nextRunTimeIso, now, params.taskId);
+    return "ok";
+  });
+}
+
+/**
+ * 非 cron 任务：只改 schedule_expr（一般为 once 的触发时间字符串），并同步 next_run_time
+ */
+export async function updateOnceScheduleExprById(params: {
+  taskId: number;
+  scheduleExpr: string;
+}): Promise<"ok" | "not_found" | "is_cron"> {
+  const database = await getDb();
+  return serialExecutor.execute(async () => {
+    const check = database
+      .prepare(`SELECT id, schedule_kind FROM task_schedule WHERE id = ?`)
+      .get(params.taskId) as { id: number; schedule_kind: string } | undefined;
+    if (!check) return "not_found";
+    if (check.schedule_kind === "cron") return "is_cron";
+    const expr = params.scheduleExpr.trim();
+    const now = nowChinaIso();
+    database
+      .prepare(
+        `UPDATE task_schedule SET schedule_expr = ?, next_run_time = ?, update_time = ? WHERE id = ?`,
+      )
+      .run(expr, expr, now, params.taskId);
+    return "ok";
+  });
+}
+
+/**
+ * 执行单条 UPDATE task_schedule ...（仅主表；由路由层做字符串校验）
+ */
+export async function execRawUpdateTaskSchedule(sql: string): Promise<void> {
+  const database = await getDb();
+  await serialExecutor.execute(async () => {
+    database.exec(sql);
   });
 }
 

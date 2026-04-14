@@ -6,6 +6,7 @@ import {
   Zap,
   MessageCircleMore,
   Settings,
+  CalendarClock,
 } from 'lucide-react';
 import { useChatStore } from './store/chatStore';
 import { useSSEChat } from './hooks/useSSEChat';
@@ -16,6 +17,7 @@ import ContextSnapshotDock from './components/ContextSnapshotDock';
 import MessageList from './components/MessageList';
 import InputArea from './components/InputArea';
 import SettingsPage from './components/SettingsPage';
+import TaskSchedulePage from './components/TaskSchedulePage';
 import { MessageContainer } from './components/Message';
 import type { WrappedMessage } from './types';
 import './styles.css';
@@ -27,7 +29,8 @@ import './styles/message.css';
 (navItems[2] as any).icon = FolderKanban;
 (navItems[3] as any).icon = Zap;
 (navItems[4] as any).icon = MessageCircleMore;
-(navItems[5] as any).icon = Settings;
+(navItems[5] as any).icon = CalendarClock;
+(navItems[6] as any).icon = Settings;
 
 const DESKTOP_BREAKPOINT = 1024;
 const MOBILE_BREAKPOINT = 768;
@@ -242,6 +245,8 @@ export default function App() {
           <main className="chat-main">
             {activeNav === 'setting' ? (
               <SettingsPage />
+            ) : activeNav === 'tasks' ? (
+              <TaskSchedulePage />
             ) : (
               <>
                 {activeNav === 'chat' ? (

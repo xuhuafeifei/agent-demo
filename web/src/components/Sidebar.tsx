@@ -16,6 +16,7 @@ export const navItems: NavItem[] = [
   { key: 'channel', label: '频道', icon: null },
   { key: 'instance', label: '实例', icon: null },
   { key: 'session', label: '会话', icon: null },
+  { key: 'tasks', label: '调度', icon: null },
   { key: 'setting', label: '设置', icon: null },
 ];
 

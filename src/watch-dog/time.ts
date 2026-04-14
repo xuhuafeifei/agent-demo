@@ -33,3 +33,28 @@ export function nowChinaIso(): string {
 export function addSecondsChinaIso(baseMs: number, seconds: number): string {
   return formatChinaIso(new Date(baseMs + seconds * 1000));
 }
+
+/**
+ * 中国时区（Asia/Shanghai）下「某个 UTC 时刻」对应的日历日的起止时间字符串。
+ * 用于按 `create_time` 等字段做闭区间过滤；与库中 +08:00 格式一致。
+ */
+export function chinaCalendarDayBoundsFromUtcMs(
+  utcMs: number,
+): { day: string; fromIso: string; toIso: string } {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = fmt.formatToParts(new Date(utcMs));
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  const day = `${y}-${m}-${d}`;
+  return {
+    day,
+    fromIso: `${day}T00:00:00.000+08:00`,
+    toIso: `${day}T23:59:59.999+08:00`,
+  };
+}
