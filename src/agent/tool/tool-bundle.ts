@@ -63,7 +63,7 @@ export function createToolBundle(
   //    然后自动织入安全检查 wrapper（如果 catalog 注册了 checks）
   const tools = enabledToolNames.map((name) => {
     const entry = TOOL_CATALOG[name];
-    let tool = entry.factory(cwd, tenantId, channel, agentId);
+    let tool = entry.factory(cwd, runtimeTenantId, channel, agentId);
 
     // AOP 织入：所有 checks（安全检查 + 通道运行时校验）
     if (entry.checks && entry.checks.length > 0) {

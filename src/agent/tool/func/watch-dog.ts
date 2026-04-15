@@ -11,233 +11,40 @@
  *
  * TIP: 工具已通过 AOP 增强进行鉴权, 在tool-catlog注册时统一注册鉴权字段，定义方只需关注业务逻辑
  */
-import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import {
   deleteTaskByNameForTenant,
   listTasksByTenant,
-  type TaskScheduleRow,
   upsertTaskSchedule,
 } from "../../../watch-dog/store.js";
 import { runTaskByNameNowForTenant } from "../../../watch-dog/watch-dog.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
-import { formatBlacklistPresetLines } from "../../../watch-dog/blacklist-presets.js";
 import { getQQBotByTenantId } from "../../../middleware/qq/qq-account.js";
 import { getWeixinBotByTenantId } from "../../../middleware/weixin/weixin-account.js";
 import type { AgentChannel } from "../../channel-policy.js";
 import { tryResolveScheduleFields } from "../utils/schedule-resolve.js";
-import { CHANNEL_TOOL_PARAM_DESC } from "../utils/channel-tool-param-desc.js";
-import { reminderTaskChannelParamProperties } from "../utils/channel-tool-params.schema.js";
+import type {
+  CreateAgentTaskInput,
+  CreateReminderTaskInput,
+  DeleteTaskInput,
+  GetNowInput,
+  GetNowOutput,
+  ListTasksInput,
+  ListTasksOutput,
+  RunTaskInput,
+  TaskChannel,
+} from "./watch-dog.param.type.js";
+import {
+  createAgentTaskParams,
+  createReminderTaskParams,
+  deleteTaskParams,
+  getNowParams,
+  listTasksParams,
+  runTaskParams,
+} from "./watch-dog.param.schema.js";
 
 const toolLogger = getSubsystemConsoleLogger("tool");
-
-const BLACKLIST_TOOL_PRESET_BLOCK = formatBlacklistPresetLines();
-
-const blacklistPeriodsSchema = Type.Optional(
-  Type.Array(
-    Type.Object({
-      type: Type.Literal("cron", {
-        description: 'Only "cron" is evaluated; other values are ignored.',
-      }),
-      content: Type.String({
-        minLength: 1,
-        description: [
-          "Unix 5-field cron (minute hour day-of-month month day-of-week), OR exact string match (after trim) to one preset cron below.",
-          "Model must copy a preset `cron` literally for preset semantics.",
-          "Presets:",
-          BLACKLIST_TOOL_PRESET_BLOCK,
-        ].join("\n"),
-      }),
-    }),
-    {
-      minItems: 1,
-      description:
-        "Optional: do not run business logic when current fire time matches any rule; cron schedules still advance next_run as usual.",
-    },
-  ),
-);
-
-const listTasksParams = Type.Object({
-  tenantId: Type.String({
-    minLength: 1,
-    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForSessionTools,
-  }),
-});
-type ListTasksInput = Static<typeof listTasksParams>;
-
-type ListTasksOutput = {
-  tasks: Array<
-    Pick<
-      TaskScheduleRow,
-      | "task_name"
-      | "task_type"
-      | "status"
-      | "next_run_time"
-      | "schedule_kind"
-      | "schedule_expr"
-      | "timezone"
-      | "attempts"
-      | "last_error"
-    >
-  >;
-};
-
-const runTaskParams = Type.Object({
-  task_name: Type.String({
-    minLength: 1,
-    description: "Scheduled task name (task_schedule.task_name).",
-  }),
-  tenantId: Type.String({
-    minLength: 1,
-    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForSessionTools,
-  }),
-});
-type RunTaskInput = Static<typeof runTaskParams>;
-
-const deleteTaskParams = Type.Object({
-  task_name: Type.String({
-    minLength: 1,
-    description:
-      "The name of the task to delete. It is recommended to list task schedules first before deleting.",
-  }),
-  tenantId: Type.String({
-    minLength: 1,
-    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForSessionTools,
-  }),
-});
-type DeleteTaskInput = Static<typeof deleteTaskParams>;
-
-const getNowParams = Type.Object({
-  timezone: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Timezone. Defaults to Asia/Shanghai.",
-    }),
-  ),
-});
-type GetNowInput = Static<typeof getNowParams>;
-
-type GetNowOutput = {
-  now_iso: string;
-  now_ms: number;
-  timezone: string;
-};
-
-const createReminderTaskParams = Type.Object({
-  content: Type.String({
-    minLength: 1,
-    description:
-      "Reminder content, for example: drink water, stand up and move, submit daily report.",
-  }),
-  scheduleType: Type.Union([Type.Literal("cron"), Type.Literal("once")], {
-    description:
-      "Schedule type: cron = recurring based on cron expression, once = run only once.",
-  }),
-  runAt: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description:
-        "Required when scheduleType=once. Execution time as a parseable datetime string.",
-    }),
-  ),
-  cron: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description:
-        "Required when scheduleType=cron. 5-field cron (min hour dom mon dow). The system will prepend second=0.",
-    }),
-  ),
-  timezone: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Timezone. Defaults to Asia/Shanghai.",
-    }),
-  ),
-  // 展开 reminderTaskChannelParamProperties 中的字段
-  ...reminderTaskChannelParamProperties,
-  taskName: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Optional task name. Auto-generated when omitted.",
-    }),
-  ),
-  blacklistPeriods: blacklistPeriodsSchema,
-});
-type CreateReminderTaskInput = Static<typeof createReminderTaskParams>;
-
-const createAgentTaskParams = Type.Object({
-  goal: Type.String({
-    minLength: 1,
-    description:
-      "Goal of the agent task, for example: organize recent conversations or summarize industry updates.",
-  }),
-  scheduleType: Type.Union([Type.Literal("cron"), Type.Literal("once")], {
-    description:
-      "Schedule type: cron = recurring based on cron expression, once = run only once.",
-  }),
-  runAt: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description:
-        "Required when scheduleType=once. Execution time as a parseable datetime string.",
-    }),
-  ),
-  cron: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description:
-        "Required when scheduleType=cron. 5-field cron (min hour dom mon dow). The system will prepend second=0.",
-    }),
-  ),
-  timezone: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Timezone. Defaults to Asia/Shanghai.",
-    }),
-  ),
-  notify: Type.Optional(
-    Type.Boolean({
-      description:
-        "Whether to notify the user with execution results. Defaults to false.",
-    }),
-  ),
-  channels: Type.Array(
-    Type.Union([
-      Type.Literal("qq"),
-      Type.Literal("weixin"),
-      Type.Literal("web"),
-    ]),
-    {
-      minItems: 1,
-      description:
-        "Required notification channels. Priority: user-specified channels > current channel in system prompt '## Channel' chapter.",
-    },
-  ),
-  tenantId: Type.String({
-    minLength: 1,
-    description: CHANNEL_TOOL_PARAM_DESC.tenantIdForAgentTask,
-  }),
-  mode: Type.Optional(
-    Type.Union([Type.Literal("evolve"), Type.Literal("analyze_then_notify")], {
-      description: "Agent task mode. Defaults to evolve.",
-    }),
-  ),
-  title: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Optional title used to generate a default task name.",
-    }),
-  ),
-  taskName: Type.Optional(
-    Type.String({
-      minLength: 1,
-      description: "Optional task name. Auto-generated when omitted.",
-    }),
-  ),
-  blacklistPeriods: blacklistPeriodsSchema,
-});
-type CreateAgentTaskInput = Static<typeof createAgentTaskParams>;
 
 function makeTaskName(prefix: string): string {
   return `${prefix}_${Date.now()}`;
@@ -245,7 +52,7 @@ function makeTaskName(prefix: string): string {
 
 function validateTaskTenant(params: {
   tenantId: string;
-  channels: Array<"qq" | "weixin" | "web">;
+  channels: TaskChannel[];
 }): { ok: true } | { ok: false; message: string } {
   const tid = params.tenantId.trim();
   if (!tid) {
@@ -466,9 +273,7 @@ export function createReminderTaskTool(
 
       const sendToChannelResolved = params.sendToChannel ?? runtimeChannel;
       const sendToTenantId = params.sendToTenantId?.trim() || runtimeTenantId;
-      const channels = [sendToChannelResolved] as Array<
-        "qq" | "weixin" | "web"
-      >;
+      const channels = [sendToChannelResolved] as TaskChannel[];
       const taskName = params.taskName?.trim() || makeTaskName("reminder");
 
       const scheduleResolved = tryResolveScheduleFields({
@@ -545,7 +350,7 @@ export function createAgentTaskTool(
       const scheduleType = params.scheduleType;
       const timezone = params.timezone?.trim() || "Asia/Shanghai";
       const notify = params.notify === true;
-      const channels = params.channels as Array<"qq" | "weixin" | "web">;
+      const channels = params.channels as TaskChannel[];
       const mode = params.mode ?? "evolve";
       const taskTenantId = params.tenantId.trim();
       const taskName =
