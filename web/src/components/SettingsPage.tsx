@@ -7,7 +7,7 @@ import {
 import MessageManager from "./Message";
 import { X } from "lucide-react";
 import { TABS } from "./settings/constants";
-import { deepDiff } from "./settings/settingsUtils";
+import { deepDiff, getProviderIcon, getProviderName } from "./settings/settingsUtils";
 import SetModelPage from "./settings/SetModelPage";
 import SetMemoryAndHeartPage from "./settings/SetMemoryAndHeartPage";
 import SetLoggingPage from "./settings/SetLoggingPage";
