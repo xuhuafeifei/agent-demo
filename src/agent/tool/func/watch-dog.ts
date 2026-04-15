@@ -35,7 +35,6 @@ import {
 } from "../../../watch-dog/store.js";
 import { runTaskByNameNowForTenant } from "../../../watch-dog/watch-dog.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
-import { formatChinaIso } from "../../../watch-dog/time.js";
 import { formatBlacklistPresetLines } from "../../../watch-dog/blacklist-presets.js";
 import { getQQBotByTenantId } from "../../../middleware/qq/qq-account.js";
 import { getWeixinBotByTenantId } from "../../../middleware/weixin/weixin-account.js";
@@ -452,7 +451,7 @@ export function createGetNowTool(): ToolDefinition<
     execute: async (_id, params: GetNowInput) => {
       const timezone = params.timezone?.trim() || "Asia/Shanghai";
       const nowMs = Date.now();
-      const nowIso = formatChinaIso(new Date(nowMs));
+      const nowIso = new Date(nowMs).toISOString();
       return okResult(nowIso, { now_iso: nowIso, now_ms: nowMs, timezone });
     },
   };
