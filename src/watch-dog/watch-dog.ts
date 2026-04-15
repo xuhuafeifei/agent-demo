@@ -4,7 +4,6 @@ import {
   getTaskByName,
   insertTaskDetail,
   listDueTasks,
-  markTaskRunning,
   upsertTaskSchedule,
   type TaskDetailStatus,
   type TaskScheduleRow,

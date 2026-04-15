@@ -408,36 +408,6 @@ export async function deleteTaskByNameForTenant(
 }
 
 /**
- * @deprecated 使用listDueTasks取代, 该方法是原子操作.
- * 标记任务为运行中状态
- * 更新状态为 running，设置开始时间，增加尝试次数
- * @param taskId - 任务 ID
- * @param startedAtIso - 开始时间的 ISO 字符串
- */
-export async function markTaskRunning(
-  taskId: number,
-  startedAtIso: string,
-): Promise<void> {
-  const database = await getDb();
-  await serialExecutor.execute(async () => {
-    const stmt = database.prepare(
-      `UPDATE task_schedule
-     SET status='running',
-         started_at=?,
-         update_time=?,
-         attempts=attempts+1
-     WHERE id=?`,
-    );
-    stmt.run(startedAtIso, startedAtIso, taskId);
-    storeLogger.info(
-      "mark task_schedule id=%s status=running started_at=%s",
-      taskId,
-      startedAtIso,
-    );
-  });
-}
-
-/**
  * 完成任务，更新最终状态
  *
  * 【执行跟踪机制】

@@ -9,20 +9,7 @@
  * - 创建提醒任务
  * - 创建智能任务
  *
- * 注意：
- * - 所有工具都依赖于当前 Channel 上下文，因此需要传入 tenantId 和 channel
- * - 所有工具都依赖于系统 prompt 的 ## Channel 章节，因此需要传入 tenantId 和 channel
- * - 所有工具都依赖于系统 prompt 的 ## Channel 章节，因此需要传入 tenantId 和 channel
- *
- * 需要强调的是，当前系统设计并未进行current Channel, current TenantId的权限校验
- * 换句话说，default tenantId可以给所有人创建调度任务. other tenantId也可以为 default 创建调度任务
- *
- * 为什么这么设计，其中一个比较重要的考量是业务场景
- * 当前项目是一个个人项目，你不会让一个不熟悉的人接入当前项目. 话句话说，接入的人应该是你信任的。因此不进行更强的权限校验
- *
- * 如果后续要做，可以通过current runtime tenantId进行权限校验。该参数在 tool 创建的时候传入，因此可以进行更强的权限校验
- * 例如，只有 default tenantId 可以给所有人创建调度任务，其他 tenantId 只能给自己创建调度任务
- *
+ * TIP: 工具已通过 AOP 增强进行鉴权, 在tool-catlog注册时统一注册鉴权字段，定义方只需关注业务逻辑
  */
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";

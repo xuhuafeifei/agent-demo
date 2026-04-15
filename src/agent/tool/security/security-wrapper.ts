@@ -9,7 +9,8 @@
  * 执行顺序固定（不受注册顺序影响）：
  *   1. pathCheck             — 路径合法性校验
  *   2. channelRuntimeAssert  — 通道/租户一致性
- *   3. approval              — 用户审批（必须在所有校验通过后）
+ *   3. tenantPermissionAssert — 指定 tenantId 的越权拦截
+ *   4. approval              — 用户审批（必须在所有校验通过后）
  */
 
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
@@ -21,6 +22,9 @@ import { requiresApproval } from "../tool-approval.js";
 import { requestApprovalWithDescription } from "../utils/approval-helpers.js";
 import { readFgbgUserConfig } from "../../../config/index.js";
 import { resolveToolSecurityConfig } from "./tool-security.resolve.js";
+import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
+
+const securityWrapperLogger = getSubsystemConsoleLogger("security-wrapper");
 
 // ===== 检查规格定义 =====
 
@@ -42,22 +46,29 @@ export interface ChannelRuntimeAssertSpec {
   mismatchHint: string;
 }
 
+export interface TenantPermissionAssertSpec {
+  type: "tenantPermissionAssert";
+  tenantParam: string;
+}
+
 export type ToolCheckSpec =
   | PathCheckSpec
   | ApprovalSpec
-  | ChannelRuntimeAssertSpec;
+  | ChannelRuntimeAssertSpec
+  | TenantPermissionAssertSpec;
 
-// ===== Wrapper =====
+// ===== AOP Wrapper =====
 
 /**
  * 为工具实例织入安全检查 wrapper。
- * 检查按固定顺序执行：pathCheck → channelRuntimeAssert → approval
+ * 检查按固定顺序执行：
+ * pathCheck → channelRuntimeAssert → tenantPermissionAssert → approval
  */
 export function wrapToolWithCheck(
   tool: ToolDefinition<any, any>,
   checks: ToolCheckSpec[],
   cwd: string,
-  tenantId: string,
+  runtimeTenantId: string,
   channel: AgentChannel,
   _agentId: string,
 ): ToolDefinition<any, any> {
@@ -72,6 +83,9 @@ export function wrapToolWithCheck(
   const channelAsserts = checks.filter(
     (c) => c.type === "channelRuntimeAssert",
   ) as ChannelRuntimeAssertSpec[];
+  const tenantPermissionAsserts = checks.filter(
+    (c) => c.type === "tenantPermissionAssert",
+  ) as TenantPermissionAssertSpec[];
   const approvals = checks.filter(
     (c) => c.type === "approval",
   ) as ApprovalSpec[];
@@ -109,14 +123,40 @@ export function wrapToolWithCheck(
             declaredChannel: declaredChannel as AgentChannel,
             declaredTenantId: declaredTenantId.trim(),
             runtimeChannel: channel,
-            runtimeTenantId: tenantId.trim(),
+            runtimeTenantId: runtimeTenantId.trim(),
             mismatchHint: spec.mismatchHint,
           });
           if (result) return result;
         }
       }
 
-      // Phase 3: 审批（必须在所有校验通过后）
+      // Phase 3: tenant 权限校验（禁止跨租户操作）
+      if ("default" === runtimeTenantId) {
+        securityWrapperLogger.info("默认租户，跳过 tenant 权限校验。");
+      } else {
+        // 非默认租户，进行 tenant 权限校验
+        for (const spec of tenantPermissionAsserts) {
+          const declaredTenantId = params[spec.tenantParam];
+          if (typeof declaredTenantId !== "string") continue;
+          const declaredTenantIdTrimmed = declaredTenantId.trim();
+          // 参数为空, 后续工具判断报错。当前AOP只判断是否越权
+          if (!declaredTenantIdTrimmed) continue;
+          if (declaredTenantIdTrimmed !== runtimeTenantId.trim()) {
+            // error 日志
+            securityWrapperLogger.error(
+              "禁止跨租户操作数据。 declaredTenantIdTrimmed=%s, runtimeTenantId=%s",
+              declaredTenantIdTrimmed,
+              runtimeTenantId,
+            );
+            return errResult(`禁止跨租户操作数据。`, {
+              code: "FORBIDDEN",
+              message: "tenantId mismatch; cross-tenant access is forbidden",
+            });
+          }
+        }
+      }
+
+      // Phase 4: 审批（必须在所有校验通过后）
       for (const spec of approvals) {
         if (requiresApproval(tool.name, config().approval)) {
           const approved = await requestApprovalWithDescription(

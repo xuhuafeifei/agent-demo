@@ -116,13 +116,16 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   listTaskSchedules: {
     factory: (_cwd, tenantId, _channel, _agentId) =>
       createListTasksTool(tenantId),
+    checks: [{ type: "tenantPermissionAssert", tenantParam: "tenantId" }],
   },
   runTaskByName: {
     factory: (_cwd, tenantId, _channel, _agentId) => createRunTaskTool(tenantId),
+    checks: [{ type: "tenantPermissionAssert", tenantParam: "tenantId" }],
   },
   deleteTaskByName: {
     factory: (_cwd, tenantId, _channel, _agentId) =>
       createDeleteTaskTool(tenantId),
+    checks: [{ type: "tenantPermissionAssert", tenantParam: "tenantId" }],
   },
   createReminderTask: {
     factory: (_cwd, tenantId, channel, _agentId) =>
@@ -134,12 +137,14 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
         tenantParam: "currentTenantId",
         mismatchHint: CHANNEL_RUNTIME_MISMATCH_HINT_REMINDER,
       },
+      { type: "tenantPermissionAssert", tenantParam: "sendToTenantId" },
     ],
   },
   createAgentTask: {
     // todo: 这个任务干啥的完全忘了，以后调研一下
     factory: (_cwd, tenantId, _channel, _agentId) =>
       createAgentTaskTool(tenantId),
+    checks: [{ type: "tenantPermissionAssert", tenantParam: "tenantId" }],
   },
 
   // ===== 工具类 =====
@@ -173,6 +178,7 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
         tenantParam: "currentTenantId",
         mismatchHint: CHANNEL_RUNTIME_MISMATCH_HINT_IM_SEND,
       },
+      { type: "tenantPermissionAssert", tenantParam: "sendToTenantId" },
     ],
   },
 

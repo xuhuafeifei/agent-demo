@@ -39,13 +39,13 @@ export type ToolBundle = {
  * tenantId / channel / agentId 由调用方显式传入，便于测试；agentId 与 agent-state 主键一致，工具内可按需使用。
  *
  * @param cwd 租户 workspace 目录（用于文件路径安全检查，防止越权访问）
- * @param tenantId 租户 ID（用于工具内部路由 bot 账号等）
+ * @param runtimeTenantId 租户 ID（用于工具内部路由 bot 账号等）
  * @param channel 当前运行渠道
  * @param agentId 运行实例键 `agent:{module}:{tenantId}`，装配时传入供工具闭包预留
  */
 export function createToolBundle(
   cwd: string,
-  tenantId: string,
+  runtimeTenantId: string,
   channel: AgentChannel,
   agentId: string,
 ): ToolBundle {
@@ -71,7 +71,7 @@ export function createToolBundle(
         tool,
         entry.checks,
         cwd,
-        tenantId,
+        runtimeTenantId,
         channel,
         agentId,
       );
