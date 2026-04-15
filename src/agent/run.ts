@@ -18,7 +18,11 @@ import {
   readWorkspaceSoul,
   readWorkspaceUserinfoSummary,
 } from "./workspace.js";
-import type { TextContent, ThinkingContent, ToolCall } from "@mariozechner/pi-ai";
+import type {
+  TextContent,
+  ThinkingContent,
+  ToolCall,
+} from "@mariozechner/pi-ai";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 import { resolveTenantWorkspaceDir } from "../utils/app-path.js";
 import { createToolBundle } from "./tool/tool-bundle.js";
@@ -145,7 +149,11 @@ export function getHistory(tenantId: string): Array<{
     const textParts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
-        if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
+        if (
+          block?.type === "text" &&
+          typeof block.text === "string" &&
+          block.text.trim()
+        ) {
           textParts.push(block.text.trim());
         }
       }
@@ -203,7 +211,11 @@ function pruneSessionChat(messages: SessionMessageEntry[]): string {
     const parts: string[] = [];
     if (Array.isArray(raw.content)) {
       for (const block of raw.content) {
-        if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
+        if (
+          block?.type === "text" &&
+          typeof block.text === "string" &&
+          block.text.trim()
+        ) {
           parts.push(block.text.trim());
         }
       }
@@ -285,16 +297,16 @@ export async function getReplyFromAgent(params: {
   // 创建运行时 agent session（包含工具链、模型配置、租户隔离）
   const session = await createRuntimeAgentSession({
     model: prepared.model!,
-    sessionDir: prepared.sessionDir,
-    sessionFile: prepared.sessionFile,
-    cwd: prepared.cwd,
-    agentDir: prepared.agentDir,
-    provider: prepared.normalizedProvider,
-    apiKey: prepared.apiKey,
-    thinkingLevel: prepared.thinkingLevel,
-    tenantId: tenantId,
-    channel: channel,
-    agentId,
+    sessionDir: prepared.sessionDir, // prepared.sessionDir 是租户 session 目录
+    sessionFile: prepared.sessionFile, // prepared.sessionFile 是租户 session 文件
+    cwd: prepared.cwd, // prepared.cwd 是租户 workspace 目录
+    agentDir: prepared.agentDir, // prepared.agentDir 是租户 agent 内部数据目录
+    provider: prepared.normalizedProvider, // prepared.normalizedProvider 是规范化后的 provider 名称
+    apiKey: prepared.apiKey, // prepared.apiKey 是模型 API Key
+    thinkingLevel: prepared.thinkingLevel, // prepared.thinkingLevel 是思考级别
+    tenantId: tenantId, // tenantId 是租户 ID
+    channel: channel, // channel 是渠道
+    agentId, // agentId 是 agent 主键
   });
   // 绑定到agent-state. 当前 agent 主运行的容器
   bindAgentSession(agentId, session);

@@ -194,6 +194,7 @@ function isPathLike(token: string): boolean {
   return false;
 }
 
+// 检测shell 指令携带的路径是否合法
 export async function checkPaths(ctx: PrecheckContext): Promise<void> {
   const pathCandidates = [...new Set(ctx.args.filter(isPathLike))];
   for (const rawPath of pathCandidates) {
