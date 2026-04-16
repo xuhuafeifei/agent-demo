@@ -23,9 +23,10 @@ let timer: NodeJS.Timeout | null = null;
 let loopRunning = false;
 
 function shouldAdvanceNextRun(
-  triggerBy?: "heartbeat" | "functionTool",
+  triggerBy?: "heartbeat" | "functionTool" | "manual",
 ): boolean {
-  return triggerBy !== "functionTool";
+  // 仅 heartbeat 推进 cron 的下一拍；工具触发与 Web 手动触发均不推进
+  return triggerBy === "heartbeat" || triggerBy === undefined;
 }
 
 /**
@@ -64,7 +65,7 @@ function toDetailStatus(result: HandlerResult): TaskDetailStatus {
 async function runSingleTask(
   task: TaskScheduleRow,
   handler: TaskHandler,
-  opts?: { triggerBy?: "heartbeat" | "functionTool" },
+  opts?: { triggerBy?: "heartbeat" | "functionTool" | "manual" },
 ): Promise<void> {
   const payload = parsePayload(task.payload_text);
   const config = getHeartbeatConfig();
@@ -87,7 +88,7 @@ async function runSingleTask(
   let finalStatus: TaskStatus;
 
   if (isCron) {
-    // heartbeat 触发才推进节拍；functionTool 不改 next_run_time
+    // heartbeat 触发才推进节拍；functionTool / manual 不改 next_run_time
     if (shouldAdvanceNextRun(opts?.triggerBy)) {
       nextRun = computeNextRunFromCron({
         cron: task.schedule_expr,
@@ -178,6 +179,7 @@ async function processTasks(
 export async function runTaskByNameNowForTenant(
   taskName: string,
   tenantId: string,
+  opts?: { triggerBy?: "functionTool" | "manual" },
 ): Promise<"ok" | "not_found" | "forbidden"> {
   // 用 "default" 身份查询，确保任务存在时能区分 "forbidden" 与 "not_found"
   const task = await getTaskByName(taskName, "default");
@@ -189,7 +191,8 @@ export async function runTaskByNameNowForTenant(
     logger.error("no handler for task_type=%s", task.task_type);
     return "not_found";
   }
-  await runSingleTask(task, handler, { triggerBy: "functionTool" });
+  const triggerBy = opts?.triggerBy ?? "functionTool";
+  await runSingleTask(task, handler, { triggerBy });
   return "ok";
 }
 

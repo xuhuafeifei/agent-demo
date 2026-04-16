@@ -11,6 +11,7 @@ import { createApprovalRouter } from "./router/approval-router.js";
 import { createToolSecurityRouter } from "./router/tool-security-router.js";
 import { createWeixinRouter } from "./router/weixin-router.js";
 import { createQQConfigRouter } from "./router/qq-config-router.js";
+import { createTaskScheduleRouter } from "./router/task-schedule-router.js";
 
 /**
  * Create the web layer router.
@@ -35,6 +36,7 @@ export function createWebLayer() {
   router.use("/config/qwen-portal/oauth", createOAuthRouter());
   router.use("/config/tool-security", createToolSecurityRouter());
   router.use("/weixin", createWeixinRouter());
+  router.use("/task-schedules", createTaskScheduleRouter());
 
   return router;
 }

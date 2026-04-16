@@ -220,6 +220,12 @@ export function createDeleteTaskTool(
             message: "该任务不属于当前租户",
           });
         }
+        if (result === "protected") {
+          return errResult(`系统任务不可删除：${taskName}`, {
+            code: "FORBIDDEN",
+            message: "系统内置任务禁止删除",
+          });
+        }
         return okResult(`任务 ${taskName} 已删除`, { ok: true });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
