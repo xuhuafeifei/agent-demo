@@ -9,9 +9,13 @@ import type { Message } from "@mariozechner/pi-ai";
 import { resolveSessionDir, resolveSessionIndexPath } from "./session-path.js";
 import type { SessionIndex, SessionIndexEntry } from "./types.js";
 import { getFilterContextToolNames } from "../tool/tool-bundle.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
 // 512 KB：超过此大小的 session 文件触发轮转
 const MAX_SESSION_FILE_SIZE = 512 * 1024;
+// 20 分钟：超过此空闲时间的 session 触发轮转
+const MAX_SESSION_IDLE_MS = 20 * 60 * 1000;
+const sessionLogger = getSubsystemConsoleLogger("session");
 
 type UserOrAssistantMessage = Extract<Message, { role: "user" | "assistant" }>;
 
@@ -103,6 +107,15 @@ function shouldRotateSessionFile(sessionFile: string): boolean {
   }
 }
 
+function shouldRotateByIdleTime(sessionFile: string): boolean {
+  try {
+    const stat = fs.statSync(sessionFile);
+    return Date.now() - stat.mtime.getTime() > MAX_SESSION_IDLE_MS;
+  } catch {
+    return true;
+  }
+}
+
 function createSessionEntry(params: {
   sessionKey: string;
   sessionId: string;
@@ -164,6 +177,12 @@ export function prepareBeforeSessionManager(params: {
     // 无已有会话，新建 SessionManager 并写入索引
     const manager = SessionManager.create(params.cwd, sessionDir);
     const sessionFile = ensureSessionFile(manager);
+    sessionLogger.info(
+      "[session] new session created, reason=missing_or_invalid_index tenantId=%s sessionKey=%s sessionId=%s",
+      tenantId,
+      params.sessionKey,
+      manager.getSessionId(),
+    );
     nextEntry = createSessionEntry({
       sessionKey: params.sessionKey,
       sessionId: manager.getSessionId(),
@@ -175,9 +194,11 @@ export function prepareBeforeSessionManager(params: {
     });
     shouldWrite = true;
   } else {
-    // 已有会话，检查文件大小是否超过 512KB 阈值
+    // 已有会话，检查文件大小是否超过 512KB 阈值或空闲超过 20 分钟
     const resolvedFile = path.resolve(existing.sessionFile);
-    if (shouldRotateSessionFile(resolvedFile)) {
+    const rotateBySize = shouldRotateSessionFile(resolvedFile);
+    const rotateByIdle = shouldRotateByIdleTime(resolvedFile);
+    if (rotateBySize || rotateByIdle) {
       // 会话文件过大，需要轮转：
       // 1. 打开旧 session，提取需要保留的历史消息（最多 10 条）
       // 2. 创建新 session，将历史消息复制过去
@@ -186,6 +207,15 @@ export function prepareBeforeSessionManager(params: {
       const messagesToPreserve = getMessagesToPreserve(oldManager);
       const manager = SessionManager.create(params.cwd, sessionDir);
       const sessionFile = ensureSessionFile(manager);
+      const rotateReason = rotateBySize && rotateByIdle ? "file_size_and_idle_timeout" : rotateBySize ? "file_size_limit_exceeded" : "idle_timeout_exceeded";
+      sessionLogger.info(
+        "[session] new session created, reason=%s tenantId=%s sessionKey=%s previousSessionId=%s sessionId=%s",
+        rotateReason,
+        tenantId,
+        params.sessionKey,
+        existing.sessionId,
+        manager.getSessionId(),
+      );
 
       // 将保留的消息追加到新 session 中
       for (const message of messagesToPreserve) {
