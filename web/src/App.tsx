@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MessageSquare,
-  ChartNoAxesCombined,
-  FolderKanban,
-  Zap,
-  MessageCircleMore,
   Settings,
   CalendarClock,
 } from 'lucide-react';
@@ -25,12 +21,8 @@ import './styles/message.css';
 
 // Attach icons to navItems
 (navItems[0] as any).icon = MessageSquare;
-(navItems[1] as any).icon = ChartNoAxesCombined;
-(navItems[2] as any).icon = FolderKanban;
-(navItems[3] as any).icon = Zap;
-(navItems[4] as any).icon = MessageCircleMore;
-(navItems[5] as any).icon = CalendarClock;
-(navItems[6] as any).icon = Settings;
+(navItems[1] as any).icon = CalendarClock;
+(navItems[2] as any).icon = Settings;
 
 const DESKTOP_BREAKPOINT = 1024;
 const MOBILE_BREAKPOINT = 768;

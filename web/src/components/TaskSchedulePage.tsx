@@ -1,4 +1,6 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ConfigProvider, Table } from 'antd';
+import type { TableColumnsType } from 'antd';
 import { request } from '../api/client';
 
 /** 与后端 `PROTECTED_TASK_NAMES` 一致：禁止删除、禁止改表达式 */
@@ -8,11 +10,14 @@ type TaskScheduleRow = {
   id: number;
   task_name: string;
   task_type: string;
+  task_type_label?: string;
   payload_text: string | null;
   schedule_kind: 'cron' | 'once';
+  schedule_kind_label?: string;
   schedule_expr: string;
   timezone: string;
   status: string;
+  status_label?: string;
   attempts: number;
   last_error: string | null;
   create_time: string;
@@ -52,10 +57,134 @@ type ConfirmState = {
 };
 
 const API_BASE = '/api/task-schedules';
+type ResizableColKey =
+  | 'id'
+  | 'task_name'
+  | 'tenant_id'
+  | 'task_type'
+  | 'schedule'
+  | 'status'
+  | 'next_run_time'
+  | 'payload'
+  | 'actions';
+
+type ResizeState = Record<ResizableColKey, number>;
+
+type ResizeCellProps = React.ThHTMLAttributes<HTMLTableCellElement> & {
+  resizeKey?: ResizableColKey;
+  onResizeStart?: (key: ResizableColKey, e: React.MouseEvent<HTMLSpanElement>) => void;
+};
+
+function ResizableHeaderCell({ resizeKey, onResizeStart, children, ...rest }: ResizeCellProps) {
+  return (
+    <th {...rest}>
+      {children}
+      {resizeKey && onResizeStart ? (
+        <span
+          className="task-sched-resizer"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onResizeStart(resizeKey, e);
+          }}
+        />
+      ) : null}
+    </th>
+  );
+}
 
 function formatDisplayTime(iso: string | null | undefined): string {
   if (!iso) return '-';
-  return iso.replace('T', ' ').slice(0, 19);
+  const normalized = iso.replace('T', ' ').replace(/\.\d{3}/, '');
+  if (normalized.length > 19) return normalized.slice(0, 19);
+  return normalized;
+}
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  execute_script: '脚本执行',
+  execute_reminder: '提醒任务',
+  execute_agent: 'Agent任务',
+  cleanup_logs: '日志清理',
+  one_minute_heartbeat: '一分钟心跳',
+};
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  pending: '待执行',
+  running: '执行中',
+  done: '已完成',
+  failed: '失败',
+  timeout: '超时',
+};
+
+const DETAIL_STATUS_LABELS: Record<string, string> = {
+  success: '成功',
+  failed: '失败',
+  timeout: '超时',
+  skipped: '跳过',
+};
+
+function getTaskTypeLabel(type: string) {
+  return TASK_TYPE_LABELS[type] || type;
+}
+function getTaskStatusLabel(status: string) {
+  return TASK_STATUS_LABELS[status] || status;
+}
+function getDetailStatusLabel(status: string) {
+  return DETAIL_STATUS_LABELS[status] || status;
+}
+function getScheduleKindLabel(kind: string) {
+  return kind === 'once' ? '运行一次' : 'cron调度';
+}
+
+function JsonHighlighter({ text }: { text: string }) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return <pre className="task-sched-json-pre">{text}</pre>;
+  }
+  return <pre className="task-sched-json-pre">{renderValue(parsed)}</pre>;
+}
+
+function renderValue(v: unknown, indent = 0): React.ReactNode {
+  const pad = '  '.repeat(indent);
+  if (v === null) return <span className="task-sched-json-null">null</span>;
+  if (typeof v === 'boolean') return <span className="task-sched-json-boolean">{String(v)}</span>;
+  if (typeof v === 'number') return <span className="task-sched-json-number">{String(v)}</span>;
+  if (typeof v === 'string') return <span className="task-sched-json-string">{JSON.stringify(v)}</span>;
+  if (Array.isArray(v)) {
+    if (v.length === 0) return <span>[]</span>;
+    return (
+      <>
+        {'[\n'}
+        {v.map((item, i) => (
+          <span key={i}>
+            {pad}{'  '}{renderValue(item, indent + 1)}
+            {i < v.length - 1 ? ',' : ''}
+            {'\n'}
+          </span>
+        ))}
+        {pad}{']'}
+      </>
+    );
+  }
+  const obj = v as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return <span>{'{}'}</span>;
+  return (
+    <>
+      {'{\n'}
+      {keys.map((k, i) => (
+        <span key={k}>
+          {pad}{'  '}<span className="task-sched-json-key">{JSON.stringify(k)}</span>{': '}
+          {renderValue(obj[k], indent + 1)}
+          {i < keys.length - 1 ? ',' : ''}
+          {'\n'}
+        </span>
+      ))}
+      {pad}{'}'}
+    </>
+  );
 }
 
 function todayShanghaiDateString(): string {
@@ -87,13 +216,56 @@ export default function TaskSchedulePage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>({ kind: null });
   const [toast, setToast] = useState('');
+  const [payloadModal, setPayloadModal] = useState<{ taskName: string; content: string } | null>(null);
+  const [colWidths, setColWidths] = useState<ResizeState>({
+    id: 84,
+    task_name: 180,
+    tenant_id: 100,
+    task_type: 120,
+    schedule: 204,
+    status: 100,
+    next_run_time: 170,
+    payload: 78,
+    actions: 92,
+  });
+  const resizeRef = useRef<{ key: ResizableColKey; startX: number; startWidth: number } | null>(null);
+
+  const handleResizeStart = useCallback(
+    (key: ResizableColKey, e: React.MouseEvent<HTMLSpanElement>) => {
+      resizeRef.current = {
+        key,
+        startX: e.clientX,
+        startWidth: colWidths[key],
+      };
+    },
+    [colWidths],
+  );
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { key, startX, startWidth } = resizeRef.current;
+      const delta = e.clientX - startX;
+      const next = Math.max(60, startWidth + delta);
+      setColWidths((prev) => ({ ...prev, [key]: next }));
+    };
+    const onMouseUp = () => {
+      resizeRef.current = null;
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
     setListError('');
     const res = await request<{ tasks: TaskScheduleRow[] }>(API_BASE);
     if (!res.success) {
-      setListError(res.error || '加载失败');
+      setListError((res as any).error || '加载失败');
       setTasks([]);
     } else {
       setTasks(res.tasks || []);
@@ -133,7 +305,7 @@ export default function TaskSchedulePage() {
       if (!res.success) {
         setDetailsByTask((d) => ({
           ...d,
-          [taskId]: { loading: false, error: res.error || '加载明细失败', rows: [] },
+          [taskId]: { loading: false, error: (res as any).error || '加载明细失败', rows: [] },
         }));
         return;
       }
@@ -155,10 +327,6 @@ export default function TaskSchedulePage() {
       void fetchDetails(expandedId);
     }
   }, [expandedId, fetchDetails]);
-
-  const toggleRow = (id: number) => {
-    setExpandedId((cur) => (cur === id ? null : id));
-  };
 
   const openSaveExprConfirm = (task: TaskScheduleRow) => {
     const draft = exprDraftById[task.id] ?? task.schedule_expr;
@@ -186,7 +354,7 @@ export default function TaskSchedulePage() {
     setBusyId(null);
     setConfirm({ kind: null });
     if (!res.success) {
-      setToast(res.error || '保存失败');
+      setToast((res as any).error || '保存失败');
       return;
     }
     setToast('已保存');
@@ -213,7 +381,7 @@ export default function TaskSchedulePage() {
     });
     setConfirm({ kind: null });
     if (!res.success) {
-      setToast(res.error || '触发失败');
+      setToast((res as any).error || '触发失败');
       return;
     }
     setToast('已触发');
@@ -237,7 +405,7 @@ export default function TaskSchedulePage() {
     });
     setConfirm({ kind: null });
     if (!res.success) {
-      setToast(res.error || '删除失败');
+      setToast((res as any).error || '删除失败');
       return;
     }
     setToast('已删除');
@@ -248,7 +416,7 @@ export default function TaskSchedulePage() {
   const copySql = async (path: string) => {
     const res = await request<{ sql: string }>(`${API_BASE}${path}`);
     if (!res.success) {
-      setToast(res.error || '获取 SQL 失败');
+      setToast((res as any).error || '获取 SQL 失败');
       return;
     }
     try {
@@ -265,7 +433,7 @@ export default function TaskSchedulePage() {
       taskId,
       sqlDraft: `-- 示例：UPDATE task_schedule SET schedule_expr = '0 */5 * * * *' WHERE id = ${taskId}\n`,
       message:
-        '仅允许单条 UPDATE task_schedule，且必须包含 WHERE id = <数字>。禁止修改 task_schedule_detail。',
+        '仅允许单条 UPDATE 主表语句，且必须包含 WHERE id = <数字>。禁止修改明细表。',
     });
   };
 
@@ -278,7 +446,7 @@ export default function TaskSchedulePage() {
     });
     setConfirm({ kind: null });
     if (!res.success) {
-      setToast(res.error || '执行失败');
+      setToast((res as any).error || '执行失败');
       return;
     }
     setToast('SQL 已执行');
@@ -292,12 +460,264 @@ export default function TaskSchedulePage() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  const columns: TableColumnsType<TaskScheduleRow> = [
+      {
+        title: '任务ID',
+        dataIndex: 'id',
+        key: 'id',
+        width: colWidths.id,
+        onHeaderCell: () => ({ resizeKey: 'id', onResizeStart: handleResizeStart }),
+      },
+      {
+        title: '名称',
+        dataIndex: 'task_name',
+        key: 'task_name',
+        width: colWidths.task_name,
+        onHeaderCell: () => ({ resizeKey: 'task_name', onResizeStart: handleResizeStart }),
+        render: (name: string) => (
+          <div className="task-sched-ellipsis" title={name}>
+            {name}
+          </div>
+        ),
+      },
+      {
+        title: '租户ID',
+        dataIndex: 'tenant_id',
+        key: 'tenant_id',
+        width: colWidths.tenant_id,
+        onHeaderCell: () => ({ resizeKey: 'tenant_id', onResizeStart: handleResizeStart }),
+      },
+      {
+        title: '类型',
+        key: 'task_type',
+        width: colWidths.task_type,
+        onHeaderCell: () => ({ resizeKey: 'task_type', onResizeStart: handleResizeStart }),
+        render: (_, row) => row.task_type_label || getTaskTypeLabel(row.task_type),
+      },
+      {
+        title: '调度',
+        key: 'schedule',
+        width: colWidths.schedule,
+        onHeaderCell: () => ({ resizeKey: 'schedule', onResizeStart: handleResizeStart }),
+        render: (_, row) => (
+          <div className="task-sched-schedule">
+            <div className="task-sched-schedule-kind">
+              {row.schedule_kind_label || getScheduleKindLabel(row.schedule_kind)}
+            </div>
+            <div className="task-sched-schedule-detail" title={row.schedule_expr}>
+              {row.schedule_kind === 'once'
+                ? `运行时间：${formatDisplayTime(row.schedule_expr)}`
+                : `cron表达式：${row.schedule_expr}`}
+            </div>
+          </div>
+        ),
+      },
+      {
+        title: '状态',
+        key: 'status',
+        width: colWidths.status,
+        onHeaderCell: () => ({ resizeKey: 'status', onResizeStart: handleResizeStart }),
+        render: (_, row) => row.status_label || getTaskStatusLabel(row.status),
+      },
+      {
+        title: '下次执行',
+        dataIndex: 'next_run_time',
+        key: 'next_run_time',
+        width: colWidths.next_run_time,
+        onHeaderCell: () => ({ resizeKey: 'next_run_time', onResizeStart: handleResizeStart }),
+        render: (value: string) => formatDisplayTime(value),
+      },
+      {
+        title: 'Payload',
+        key: 'payload',
+        width: colWidths.payload,
+        onHeaderCell: () => ({ resizeKey: 'payload', onResizeStart: handleResizeStart }),
+        render: (_, row) => (
+          <button
+            type="button"
+            className="task-sched-btn task-sched-icon-btn"
+            title="查看 Payload"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPayloadModal({ taskName: row.task_name, content: row.payload_text || '' });
+            }}
+          >
+            🔍
+          </button>
+        ),
+      },
+      {
+        title: '操作',
+        key: 'actions',
+        width: colWidths.actions,
+        fixed: 'right',
+        className: 'task-sched-col-actions',
+        onHeaderCell: () => ({ resizeKey: 'actions', onResizeStart: handleResizeStart }),
+        render: (_, row) => {
+          const isSystem = SYSTEM_TASK_NAMES.has(row.task_name);
+          return (
+            <div className="task-sched-actions" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="task-sched-btn task-sched-icon-btn primary"
+                title="立即执行"
+                aria-label="立即执行"
+                data-tooltip="立即执行"
+                onClick={() => openTriggerConfirm(row.task_name)}
+              >
+                ▶
+              </button>
+              {!isSystem ? (
+                <button
+                  type="button"
+                  className="task-sched-btn danger"
+                  onClick={() => openDeleteConfirm(row.task_name)}
+                >
+                  删除
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="task-sched-btn task-sched-icon-btn"
+                title="复制 INSERT SQL"
+                aria-label="复制 INSERT SQL"
+                data-tooltip="复制 INSERT SQL"
+                onClick={() => void copySql(`/${row.id}/sql-insert`)}
+              >
+                ＋
+              </button>
+              <button
+                type="button"
+                className="task-sched-btn task-sched-icon-btn"
+                title="复制 UPDATE SQL"
+                aria-label="复制 UPDATE SQL"
+                data-tooltip="复制 UPDATE SQL"
+                onClick={() => void copySql(`/${row.id}/sql-update`)}
+              >
+                ⎘
+              </button>
+              <button
+                type="button"
+                className="task-sched-btn task-sched-icon-btn"
+                title="执行 UPDATE SQL"
+                aria-label="执行 UPDATE SQL"
+                data-tooltip="执行 UPDATE SQL"
+                onClick={() => openExecSqlModal(row.id)}
+              >
+                ⚡
+              </button>
+            </div>
+          );
+        },
+      },
+    ];
+
+  const totalTableWidth =
+    colWidths.id +
+    colWidths.task_name +
+    colWidths.tenant_id +
+    colWidths.task_type +
+    colWidths.schedule +
+    colWidths.status +
+    colWidths.next_run_time +
+    colWidths.payload +
+    colWidths.actions +
+    64; // 展开列和边距补偿
+
+  const renderExpandedRow = (t: TaskScheduleRow) => {
+    const isSystem = SYSTEM_TASK_NAMES.has(t.task_name);
+    const detail = detailsByTask[t.id];
+    return (
+      <div>
+        <div className="task-sched-content-box">
+          {t.payload_text ? (
+            <div className="task-sched-content-line" title={t.payload_text}>
+              <strong>任务内容：</strong>
+              <span className="task-sched-ellipsis-inline">{t.payload_text}</span>
+            </div>
+          ) : null}
+          {t.last_error ? (
+            <div className="task-sched-content-line task-sched-content-error" title={t.last_error}>
+              <strong>最近错误：</strong>
+              <span className="task-sched-ellipsis-inline">{t.last_error}</span>
+            </div>
+          ) : null}
+        </div>
+        <strong>执行明细</strong>
+        {detail?.range ? (
+          <span className="task-sched-hint" style={{ marginLeft: 8 }}>
+            窗口 {formatDisplayTime(detail.range.fromIso)} — {formatDisplayTime(detail.range.toIso)}，最多 3 条
+          </span>
+        ) : null}
+        {detail?.loading ? <p>加载明细…</p> : null}
+        {detail?.error ? <div className="task-sched-err">{detail.error}</div> : null}
+        {!detail?.loading && detail?.rows?.length === 0 ? (
+          <p className="task-sched-hint">当日无明细</p>
+        ) : null}
+        {detail?.rows && detail.rows.length > 0 ? (
+          <table className="task-sched-detail-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>创建时间</th>
+                <th>开始时间</th>
+                <th>结束时间</th>
+                <th>执行状态</th>
+                <th>执行者</th>
+                <th>错误信息</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.rows.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.id}</td>
+                  <td>{formatDisplayTime(r.create_time)}</td>
+                  <td>{formatDisplayTime(r.start_time)}</td>
+                  <td>{formatDisplayTime(r.end_time)}</td>
+                  <td>{getDetailStatusLabel(r.status)}</td>
+                  <td>{r.executor ?? ''}</td>
+                  <td>{r.error_message ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+
+        {!isSystem ? (
+          <div className="task-sched-expr-edit">
+            <span>
+              {t.schedule_kind === 'cron'
+                ? '修改 Cron 表达式（5 或 6 段）'
+                : '修改单次触发时间'}
+            </span>
+            <input
+              value={exprDraftById[t.id] ?? t.schedule_expr}
+              onChange={(e) =>
+                setExprDraftById((prev) => ({ ...prev, [t.id]: e.target.value }))
+              }
+            />
+            <button
+              type="button"
+              className="task-sched-btn primary"
+              disabled={busyId === t.id}
+              onClick={() => openSaveExprConfirm(t)}
+            >
+              保存表达式…
+            </button>
+          </div>
+        ) : (
+          <p className="task-sched-hint">系统任务不可在此修改表达式</p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="task-sched-page">
       <h1>调度任务</h1>
       <p className="task-sched-hint">
-        主表来自 watch-dog（task_schedule）。展开行可查看当天明细（按 create_time 倒序，最多 3 条）。日期默认上海当天，可切换查看其它日。
-        明细不可编辑。系统任务（cleanup_logs、one_minute_heartbeat）不可删除、不可改表达式。
+        主表来自调度中心。展开行可查看当天执行明细（按创建时间倒序，最多 3 条）。日期默认上海当天，可切换查看其它日。
+        明细不可编辑。系统任务（日志清理、一分钟心跳）不可删除、不可改表达式。
       </p>
 
       <div className="task-sched-toolbar">
@@ -321,173 +741,57 @@ export default function TaskSchedulePage() {
         <p className="task-sched-hint">加载中…</p>
       ) : (
         <div className="task-sched-table-wrap">
-          <table className="task-sched-table">
-            <thead>
-              <tr>
-                <th />
-                <th>名称</th>
-                <th>类型</th>
-                <th>调度</th>
-                <th>状态</th>
-                <th>下次执行</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((t) => {
-                const isOpen = expandedId === t.id;
-                const isSystem = SYSTEM_TASK_NAMES.has(t.task_name);
-                const detail = detailsByTask[t.id];
-                return (
-                  <Fragment key={t.id}>
-                    <tr
-                      className={`task-sched-row-main ${isOpen ? 'expanded' : ''}`}
-                      onClick={() => toggleRow(t.id)}
-                    >
-                      <td>{isOpen ? '▼' : '▶'}</td>
-                      <td>{t.task_name}</td>
-                      <td>{t.task_type}</td>
-                      <td>
-                        {t.schedule_kind === 'cron' ? (
-                          <span title={t.schedule_expr}>cron: {t.schedule_expr}</span>
-                        ) : (
-                          <span title={t.schedule_expr}>once: {t.schedule_expr}</span>
-                        )}
-                      </td>
-                      <td>{t.status}</td>
-                      <td>{formatDisplayTime(t.next_run_time)}</td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <div className="task-sched-actions">
-                          <button
-                            type="button"
-                            className="task-sched-btn task-sched-icon-btn primary"
-                            title="立即执行"
-                            aria-label="立即执行"
-                            data-tooltip="立即执行"
-                            onClick={() => openTriggerConfirm(t.task_name)}
-                          >
-                            ▶
-                          </button>
-                          {!isSystem ? (
-                            <button
-                              type="button"
-                              className="task-sched-btn danger"
-                              onClick={() => openDeleteConfirm(t.task_name)}
-                            >
-                              删除
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="task-sched-btn task-sched-icon-btn"
-                            title="复制 INSERT SQL"
-                            aria-label="复制 INSERT SQL"
-                            data-tooltip="复制 INSERT SQL"
-                            onClick={() => void copySql(`/${t.id}/sql-insert`)}
-                          >
-                            ＋
-                          </button>
-                          <button
-                            type="button"
-                            className="task-sched-btn task-sched-icon-btn"
-                            title="复制 UPDATE SQL"
-                            aria-label="复制 UPDATE SQL"
-                            data-tooltip="复制 UPDATE SQL"
-                            onClick={() => void copySql(`/${t.id}/sql-update`)}
-                          >
-                            ⎘
-                          </button>
-                          <button
-                            type="button"
-                            className="task-sched-btn task-sched-icon-btn"
-                            title="执行 UPDATE SQL"
-                            aria-label="执行 UPDATE SQL"
-                            data-tooltip="执行 UPDATE SQL"
-                            onClick={() => openExecSqlModal(t.id)}
-                          >
-                            ⚡
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {isOpen ? (
-                      <tr className="task-sched-detail-row">
-                        <td colSpan={7}>
-                          <strong>执行明细</strong>
-                          {detail?.range ? (
-                            <span className="task-sched-hint" style={{ marginLeft: 8 }}>
-                              窗口 {formatDisplayTime(detail.range.fromIso)} — {formatDisplayTime(detail.range.toIso)}，最多 3 条
-                            </span>
-                          ) : null}
-                          {detail?.loading ? <p>加载明细…</p> : null}
-                          {detail?.error ? <div className="task-sched-err">{detail.error}</div> : null}
-                          {!detail?.loading && detail?.rows?.length === 0 ? (
-                            <p className="task-sched-hint">当日无明细</p>
-                          ) : null}
-                          {detail?.rows && detail.rows.length > 0 ? (
-                            <table className="task-sched-detail-table">
-                              <thead>
-                                <tr>
-                                  <th>id</th>
-                                  <th>create_time</th>
-                                  <th>start</th>
-                                  <th>end</th>
-                                  <th>status</th>
-                                  <th>executor</th>
-                                  <th>error</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {detail.rows.map((r) => (
-                                  <tr key={r.id}>
-                                    <td>{r.id}</td>
-                                    <td>{formatDisplayTime(r.create_time)}</td>
-                                    <td>{formatDisplayTime(r.start_time)}</td>
-                                    <td>{formatDisplayTime(r.end_time)}</td>
-                                    <td>{r.status}</td>
-                                    <td>{r.executor ?? ''}</td>
-                                    <td>{r.error_message ?? ''}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          ) : null}
-
-                          {!isSystem ? (
-                            <div className="task-sched-expr-edit">
-                              <span>
-                                {t.schedule_kind === 'cron'
-                                  ? '修改 cron 表达式（五段或六段）'
-                                  : '修改 once 触发时间字符串（将写入 schedule_expr 与 next_run_time）'}
-                              </span>
-                              <input
-                                value={exprDraftById[t.id] ?? t.schedule_expr}
-                                onChange={(e) =>
-                                  setExprDraftById((prev) => ({ ...prev, [t.id]: e.target.value }))
-                                }
-                              />
-                              <button
-                                type="button"
-                                className="task-sched-btn primary"
-                                disabled={busyId === t.id}
-                                onClick={() => openSaveExprConfirm(t)}
-                              >
-                                保存表达式…
-                              </button>
-                            </div>
-                          ) : (
-                            <p className="task-sched-hint">系统任务不可在此修改表达式</p>
-                          )}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+          <ConfigProvider
+            theme={{
+              token: {
+                colorPrimary: '#7ac58b',
+                borderRadius: 10,
+              },
+            }}
+          >
+            <Table<TaskScheduleRow>
+              className="task-sched-antd-table"
+              rowKey="id"
+              columns={columns}
+              dataSource={tasks}
+              pagination={false}
+              bordered
+              size="small"
+              scroll={{ x: totalTableWidth }}
+              rowClassName={(row) =>
+                expandedId === row.id ? 'task-sched-row-main expanded' : 'task-sched-row-main'
+              }
+              expandable={{
+                expandedRowRender: renderExpandedRow,
+                expandedRowKeys: expandedId != null ? [expandedId] : [],
+                onExpand: (expanded, row) => setExpandedId(expanded ? row.id : null),
+                expandRowByClick: true,
+              }}
+              components={{
+                header: {
+                  cell: ResizableHeaderCell,
+                },
+              }}
+            />
+          </ConfigProvider>
         </div>
       )}
+
+      {payloadModal ? (
+        <div className="task-sched-modal-mask" role="dialog" aria-modal="true" onClick={() => setPayloadModal(null)}>
+          <div className="task-sched-modal task-sched-modal--wide" onClick={(e) => e.stopPropagation()}>
+            <h3>Payload — {payloadModal.taskName}</h3>
+            <div className="task-sched-json-wrap">
+              <JsonHighlighter text={payloadModal.content} />
+            </div>
+            <div className="task-sched-modal-actions">
+              <button type="button" className="task-sched-btn" onClick={() => setPayloadModal(null)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {confirm.kind ? (
         <div className="task-sched-modal-mask" role="dialog" aria-modal="true">
