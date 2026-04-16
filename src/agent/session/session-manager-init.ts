@@ -13,13 +13,17 @@ import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 
 // 512 KB：超过此大小的 session 文件触发轮转
 const MAX_SESSION_FILE_SIZE = 512 * 1024;
+// 20 KB: 超过此大小，并且空闲时间超过 20 分钟，才会触发轮转
+const IDLE_LONG_TIME_SESSION_FILE_SIZE = 20 * 1024;
 // 20 分钟：超过此空闲时间的 session 触发轮转
 const MAX_SESSION_IDLE_MS = 20 * 60 * 1000;
 const sessionLogger = getSubsystemConsoleLogger("session");
 
 type UserOrAssistantMessage = Extract<Message, { role: "user" | "assistant" }>;
 
-function isUserOrAssistantMessage(m: AgentMessage): m is UserOrAssistantMessage {
+function isUserOrAssistantMessage(
+  m: AgentMessage,
+): m is UserOrAssistantMessage {
   return m.role === "user" || m.role === "assistant";
 }
 
@@ -35,7 +39,11 @@ function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
   const filterToolNames = getFilterContextToolNames();
 
   // 从后往前扫描，保留最多 10 条有意义的消息
-  for (let i = entries.length - 1; i >= 0 && messagesToPreserve.length < 10; i--) {
+  for (
+    let i = entries.length - 1;
+    i >= 0 && messagesToPreserve.length < 10;
+    i--
+  ) {
     const entry = entries[i];
     if (entry.type !== "message") continue;
 
@@ -44,7 +52,8 @@ function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
 
     // 跳过 context tool 的调用记录（如 memory-search、read 等）
     const toolName =
-      "toolName" in message && typeof (message as { toolName?: string }).toolName === "string"
+      "toolName" in message &&
+      typeof (message as { toolName?: string }).toolName === "string"
         ? (message as { toolName: string }).toolName
         : "";
     if (filterToolNames.includes(toolName)) continue;
@@ -80,7 +89,9 @@ function loadSessionIndex(tenantId: string): SessionIndex {
 
 function saveSessionIndex(tenantId: string, index: SessionIndex): void {
   const indexPath = resolveSessionIndexPath(tenantId);
-  fs.writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`, { mode: 0o600 });
+  fs.writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`, {
+    mode: 0o600,
+  });
 }
 
 function ensureSessionFile(sessionManager: SessionManager): string {
@@ -110,7 +121,10 @@ function shouldRotateSessionFile(sessionFile: string): boolean {
 function shouldRotateByIdleTime(sessionFile: string): boolean {
   try {
     const stat = fs.statSync(sessionFile);
-    return Date.now() - stat.mtime.getTime() > MAX_SESSION_IDLE_MS;
+    return (
+      Date.now() - stat.mtime.getTime() > MAX_SESSION_IDLE_MS &&
+      stat.size > IDLE_LONG_TIME_SESSION_FILE_SIZE
+    );
   } catch {
     return true;
   }
@@ -125,7 +139,14 @@ function createSessionEntry(params: {
   contextTokens?: number;
   previous?: SessionIndexEntry;
 }): SessionIndexEntry {
-  const { sessionId, sessionFile, modelProvider, model, contextTokens, previous } = params;
+  const {
+    sessionId,
+    sessionFile,
+    modelProvider,
+    model,
+    contextTokens,
+    previous,
+  } = params;
   return {
     sessionId,
     updatedAt: Date.now(),
@@ -136,7 +157,9 @@ function createSessionEntry(params: {
     modelProvider,
     model,
     contextTokens:
-      typeof contextTokens === "number" ? contextTokens : (previous?.contextTokens ?? 0),
+      typeof contextTokens === "number"
+        ? contextTokens
+        : (previous?.contextTokens ?? 0),
   };
 }
 
@@ -207,7 +230,12 @@ export function prepareBeforeSessionManager(params: {
       const messagesToPreserve = getMessagesToPreserve(oldManager);
       const manager = SessionManager.create(params.cwd, sessionDir);
       const sessionFile = ensureSessionFile(manager);
-      const rotateReason = rotateBySize && rotateByIdle ? "file_size_and_idle_timeout" : rotateBySize ? "file_size_limit_exceeded" : "idle_timeout_exceeded";
+      const rotateReason =
+        rotateBySize && rotateByIdle
+          ? "file_size_and_idle_timeout"
+          : rotateBySize
+            ? "file_size_limit_exceeded"
+            : "idle_timeout_exceeded";
       sessionLogger.info(
         "[session] new session created, reason=%s tenantId=%s sessionKey=%s previousSessionId=%s sessionId=%s",
         rotateReason,
