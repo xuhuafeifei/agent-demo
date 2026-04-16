@@ -53,6 +53,11 @@ type ConfirmState = {
 
 const API_BASE = '/api/task-schedules';
 
+function formatDisplayTime(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  return iso.replace('T', ' ').slice(0, 19);
+}
+
 function todayShanghaiDateString(): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
@@ -350,15 +355,18 @@ export default function TaskSchedulePage() {
                         )}
                       </td>
                       <td>{t.status}</td>
-                      <td>{t.next_run_time}</td>
+                      <td>{formatDisplayTime(t.next_run_time)}</td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="task-sched-actions">
                           <button
                             type="button"
-                            className="task-sched-btn primary"
+                            className="task-sched-btn task-sched-icon-btn primary"
+                            title="立即执行"
+                            aria-label="立即执行"
+                            data-tooltip="立即执行"
                             onClick={() => openTriggerConfirm(t.task_name)}
                           >
-                            立即执行
+                            ▶
                           </button>
                           {!isSystem ? (
                             <button
@@ -371,20 +379,33 @@ export default function TaskSchedulePage() {
                           ) : null}
                           <button
                             type="button"
-                            className="task-sched-btn"
+                            className="task-sched-btn task-sched-icon-btn"
+                            title="复制 INSERT SQL"
+                            aria-label="复制 INSERT SQL"
+                            data-tooltip="复制 INSERT SQL"
                             onClick={() => void copySql(`/${t.id}/sql-insert`)}
                           >
-                            复制 INSERT SQL
+                            ＋
                           </button>
                           <button
                             type="button"
-                            className="task-sched-btn"
+                            className="task-sched-btn task-sched-icon-btn"
+                            title="复制 UPDATE SQL"
+                            aria-label="复制 UPDATE SQL"
+                            data-tooltip="复制 UPDATE SQL"
                             onClick={() => void copySql(`/${t.id}/sql-update`)}
                           >
-                            复制 UPDATE SQL
+                            ⎘
                           </button>
-                          <button type="button" className="task-sched-btn" onClick={() => openExecSqlModal(t.id)}>
-                            执行 UPDATE SQL…
+                          <button
+                            type="button"
+                            className="task-sched-btn task-sched-icon-btn"
+                            title="执行 UPDATE SQL"
+                            aria-label="执行 UPDATE SQL"
+                            data-tooltip="执行 UPDATE SQL"
+                            onClick={() => openExecSqlModal(t.id)}
+                          >
+                            ⚡
                           </button>
                         </div>
                       </td>
@@ -395,7 +416,7 @@ export default function TaskSchedulePage() {
                           <strong>执行明细</strong>
                           {detail?.range ? (
                             <span className="task-sched-hint" style={{ marginLeft: 8 }}>
-                              窗口 {detail.range.fromIso} — {detail.range.toIso}，最多 3 条
+                              窗口 {formatDisplayTime(detail.range.fromIso)} — {formatDisplayTime(detail.range.toIso)}，最多 3 条
                             </span>
                           ) : null}
                           {detail?.loading ? <p>加载明细…</p> : null}
@@ -420,9 +441,9 @@ export default function TaskSchedulePage() {
                                 {detail.rows.map((r) => (
                                   <tr key={r.id}>
                                     <td>{r.id}</td>
-                                    <td>{r.create_time}</td>
-                                    <td>{r.start_time}</td>
-                                    <td>{r.end_time}</td>
+                                    <td>{formatDisplayTime(r.create_time)}</td>
+                                    <td>{formatDisplayTime(r.start_time)}</td>
+                                    <td>{formatDisplayTime(r.end_time)}</td>
                                     <td>{r.status}</td>
                                     <td>{r.executor ?? ''}</td>
                                     <td>{r.error_message ?? ''}</td>

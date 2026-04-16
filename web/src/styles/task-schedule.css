@@ -73,6 +73,69 @@
   color: #c62828;
 }
 
+.task-sched-icon-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  position: relative;
+}
+
+.task-sched-icon-btn[data-tooltip]::before,
+.task-sched-icon-btn[data-tooltip]::after {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 10;
+}
+
+.task-sched-icon-btn[data-tooltip]::before {
+  content: '';
+  bottom: calc(100% + 2px);
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #1f2937 transparent transparent transparent;
+  transform: translateY(4px);
+}
+
+.task-sched-icon-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #1f2937;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.task-sched-icon-btn[data-tooltip]:hover::before,
+.task-sched-icon-btn[data-tooltip]:hover::after,
+.task-sched-icon-btn[data-tooltip]:focus-visible::before,
+.task-sched-icon-btn[data-tooltip]:focus-visible::after {
+  opacity: 1;
+}
+
+.task-sched-icon-btn[data-tooltip]:hover::before,
+.task-sched-icon-btn[data-tooltip]:focus-visible::before {
+  transform: translateY(0);
+}
+
+.task-sched-icon-btn[data-tooltip]:hover::after,
+.task-sched-icon-btn[data-tooltip]:focus-visible::after {
+  transform: translateX(-50%) translateY(0);
+}
+
 .task-sched-table-wrap {
   overflow-x: auto;
   background: #fff;
