@@ -36,16 +36,18 @@
   color: var(--text-secondary);
 }
 
-.task-sched-toolbar input[type="date"] {
+.task-sched-toolbar input[type="date"],
+.task-sched-toolbar select {
   padding: 8px 10px;
   border: 1px solid var(--border-light);
   border-radius: 8px;
   font-size: 14px;
   background: #fff;
+  min-width: 120px;
 }
 
 .task-sched-btn {
-  padding: 8px 14px;
+  padding: 8px 18px;
   border-radius: 8px;
   border: 1px solid var(--border-light);
   background: #fff;
@@ -74,13 +76,13 @@
 }
 
 .task-sched-icon-btn {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   position: relative;
 }
@@ -153,10 +155,12 @@
   white-space: nowrap;
   position: relative;
   user-select: none;
+  padding: 4px 8px !important;
 }
 
 .task-sched-antd-table .ant-table-tbody > tr > td {
-  vertical-align: top;
+  vertical-align: middle;
+  padding: 4px 8px !important;
 }
 
 .task-sched-antd-table .ant-table-tbody > tr.task-sched-row-main:hover > td {
@@ -178,8 +182,8 @@
 .task-sched-resizer {
   position: absolute;
   top: 0;
-  right: -4px;
-  width: 8px;
+  right: -2px;
+  width: 4px;
   height: 100%;
   cursor: col-resize;
   z-index: 5;
@@ -188,16 +192,16 @@
 .task-sched-resizer::after {
   content: '';
   position: absolute;
-  top: 20%;
-  bottom: 20%;
-  left: 3px;
-  width: 2px;
-  background: rgba(0, 0, 0, 0.22);
+  top: 15%;
+  bottom: 15%;
+  left: 1.5px;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.28);
   border-radius: 1px;
 }
 
 .task-sched-resizer:hover::after {
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .task-sched-ellipsis {
@@ -242,7 +246,7 @@
 }
 
 .task-sched-schedule {
-  min-width: 320px;
+  min-width: 240px;
 }
 
 .task-sched-schedule-kind {
@@ -270,9 +274,10 @@
 
 .task-sched-actions {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 40px;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  width: 150px;
   align-items: center;
 }
 
