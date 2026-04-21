@@ -227,7 +227,7 @@ async function runBotCycle(
     timeoutMs: POLL_MS,
   });
 
-  log.debug(`resp ${JSON.stringify(resp, null, 2)}`);
+  log.debug(`resp ${JSON.stringify(resp)}`);
 
   // 检查接口返回是否异常（ret 或 errcode 非 0）
   const bad =
