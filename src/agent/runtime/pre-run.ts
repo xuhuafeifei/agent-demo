@@ -1,16 +1,16 @@
-import { ensureAgentDir } from "./utils/agent-path.js";
-import { normalizeProviderId } from "./pi-embedded-runner/model-config.js";
-import { selectModelForRuntime } from "./model-selection.js";
+import { ensureAgentDir } from "../utils/agent-path.js";
+import { normalizeProviderId } from "../pi-embedded-runner/model-config.js";
+import { selectModelForRuntime } from "../model-selection.js";
 import {
   initSessionState,
   prepareBeforeSessionManager,
   resolveSessionDir,
-} from "./session/index.js";
-import type { RuntimeModel } from "../types.js";
+} from "../session/index.js";
+import type { RuntimeModel } from "../../types.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { ensureAgentWorkspace } from "./workspace.js";
-import { type AgentChannel } from "./channel-policy.js";
-import { readFgbgUserConfig } from "../config/index.js";
+import { ensureAgentWorkspace } from "../workspace.js";
+import { type AgentChannel } from "../channel-policy.js";
+import { readFgbgUserConfig } from "../../config/index.js";
 
 /**
  * 从模型配置中获取上下文 token 数
@@ -71,9 +71,9 @@ export async function prepareBeforeGetReply(params: {
   sessionKey: string;
   channel: AgentChannel;
 }): Promise<{
-  cwd: string;             // 租户 workspace 目录
-  agentDir: string;        // agent 内部数据目录
-  sessionDir: string;      // 租户 session 目录
+  cwd: string; // 租户 workspace 目录
+  agentDir: string; // agent 内部数据目录
+  sessionDir: string; // 租户 session 目录
   modelRef: { provider: string; model: string };
   model?: RuntimeModel;
   modelError?: string;

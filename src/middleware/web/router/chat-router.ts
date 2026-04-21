@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { runWithSingleFlight } from "../../../agent/run.js";
+import { runWithSingleFlight } from "../../../agent/runtime/run.js";
 import type { RuntimeStreamEvent } from "../../../agent/utils/events.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { writeNamedSse, writeSse } from "../utils/sse.js";
@@ -141,7 +141,8 @@ export function createChatRouter() {
 
           if (event.type === "tool_execution_end") {
             const startedAt = toolStartedAt.get(event.toolCallId);
-            const elapsedMs = typeof startedAt === "number" ? Date.now() - startedAt : 0;
+            const elapsedMs =
+              typeof startedAt === "number" ? Date.now() - startedAt : 0;
             const displayName = getToolDisplayName(event.toolName, event.alias);
             const failed = event.isError || toolReturnedFailure(event.result);
             const rejected = toolUserRejected(event.result);
@@ -191,7 +192,8 @@ export function createChatRouter() {
       }
     } catch (error) {
       // 异常处理：统一记录日志，区分模型不可用错误和其他运行时错误
-      const runtimeError = error instanceof Error ? error : new Error("服务器内部错误");
+      const runtimeError =
+        error instanceof Error ? error : new Error("服务器内部错误");
       webLogger.error(`[chat] ${runtimeError.message}`, error);
       // 其他错误发送通用 error 事件
       writeNamedSse(res, "error", {

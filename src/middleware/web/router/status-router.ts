@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllRunningAgentStates } from "../../../agent/run.js";
+import { getAllRunningAgentStates } from "../../../agent/runtime/run.js";
 
 /**
  * Status router: GET /status
