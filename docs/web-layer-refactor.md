@@ -3,8 +3,8 @@
 > 目的：让 web-layer 只做 HTTP 适配和路由装配，领域逻辑与工具下沉可复用，并为前端提供稳定、版本化的 API 面。
 
 ## 背景与问题
-- 现状：`src/middleware/web/web-layer.ts` 超 800 行，聊天 SSE、配置 CRUD、OAuth、模型列表等混在同级 Router，阅读和修改成本高。
-- 问题：职责混杂、重复校验代码多，版本演进难区分用户接口与管理接口，多实例时 OAuth 会话存内存容易丢失。
+- 现状：`src/middleware/web/web-layer.ts` 曾集中装配聊天 SSE、配置 CRUD、模型列表等；现已按子路由拆分。
+- 问题：职责混杂、重复校验代码多，版本演进难区分用户接口与管理接口。
 
 ## 目标架构
 - 入口：`createWebLayer()` 仅做路由装配；建议挂载路径 `/api`
@@ -15,13 +15,11 @@
   - `config/memory-search-router.ts`
   - `config/providers-router.ts`
   - `config/logging-router.ts`
-  - `oauth-router.ts`：`/config/qwen-portal/oauth/*`
   - `status-router.ts`：`/status`
 - 公共工具：
   - `sse.ts`：`writeNamedSse`, `normalizeRuntimeEvent` 等
   - `http-validate.ts`：`validateBody(schema)`（基于 typebox/ajv），统一响应 `{ success, data?, error? }`
   - `config/service.ts`：读写配置、默认值、保护字段检查
-  - `services/oauth-session.ts`：OAuth 会话存取（默认内存，可替换 Redis/SQLite）
 - 前端消费：`web/src/api/client.ts` 作为轻量 SDK，封装 baseURL、错误处理、类型导出。
 
 ## 路径与接口示例（v1）
@@ -39,8 +37,6 @@
   - `GET /api/v1/config/models/:providerId`
   - `GET /api/v1/config/default-provider`
   - `POST /api/v1/config/logging/evict-cache`
-  - `POST /api/v1/config/qwen-portal/oauth/start`
-  - `POST /api/v1/config/qwen-portal/oauth/poll`
 - 状态：
   - `GET /api/v1/status`
 
@@ -55,9 +51,8 @@
 - 引入 `validateBody(schema)`，使用 `@sinclair/typebox` 定义 DTO，统一 400 响应。
 - 抽 `config/service.ts` 负责读写、默认值、保护字段逻辑。
 
-### 阶段 3：OAuth 服务化 + 前端 SDK
-- 抽 `services/oauth-session.ts`，路由仅调用 service。
-- 在前端或 `web/src/api/client.ts` 提供封装：`chat(message)`, `getConfig()`, `patchConfig()`, `testMemorySearch()`, `oauth.start() | poll()`。
+### 阶段 3：前端 SDK
+- 在 `web/src/api/client.ts` 提供封装：`chat(message)`, `getConfig()`, `patchConfig()`, `testMemorySearch()` 等。
 - 输出 TypeScript 类型供前端复用，减少重复定义。
 
 ## 测试清单（最小集）
@@ -65,5 +60,4 @@
 - `/config/fgbg`：GET 默认值；PATCH 非法字段 400；reset 恢复默认。
 - `/config/memory-search/test|repair-local`：成功/失败分支。
 - `/config/providers*`：存在/不存在 provider 分支。
-- `/config/qwen-portal/oauth`：start 得到 code；poll 成功/过期/错误。
 - `/status`：返回 runtimeState。

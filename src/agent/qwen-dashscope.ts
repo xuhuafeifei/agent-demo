@@ -7,21 +7,6 @@ import { randomUUID } from "node:crypto";
 export const QWEN_DASHSCOPE_COMPAT_V1_BASE =
   "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-/**
- * 与 qwen-code `QwenContentGenerator.getCurrentEndpoint` 一致：
- * 有 `resource_url`（OAuth 下发，常见为 portal）则以其为 base；无则退回 DEFAULT_DASHSCOPE_BASE_URL。
- * @see qwen-code/packages/core/src/qwen/qwenContentGenerator.ts
- */
-export function normalizeQwenOAuthResourceBaseUrl(
-  resourceUrl?: string | null,
-): string {
-  const baseEndpoint = resourceUrl?.trim() || QWEN_DASHSCOPE_COMPAT_V1_BASE;
-  const normalizedUrl = baseEndpoint.startsWith("http")
-    ? baseEndpoint
-    : `https://${baseEndpoint}`;
-  return normalizedUrl.endsWith("/v1") ? normalizedUrl : `${normalizedUrl}/v1`;
-}
-
 type CacheMode = "system_only" | "all";
 
 /**

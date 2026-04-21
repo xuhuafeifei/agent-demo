@@ -3,9 +3,6 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import {
   getProviderModels,
   testModelConnection,
-  startQwenPortalOAuth,
-  pollQwenPortalOAuth,
-  getQwenPortalCredentials,
   patchFgbgConfig,
 } from "../../api/client";
 import MessageManager from "../Message";
@@ -31,9 +28,6 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionResult, setConnectionResult] = useState(null);
-  const [qwenAuthBusy, setQwenAuthBusy] = useState(false);
-  const [qwenAuthHint, setQwenAuthHint] = useState("");
-  const [qwenCredentialMode, setQwenCredentialMode] = useState("oauth");
   const [formErrors, setFormErrors] = useState({});
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [modelOptions, setModelOptions] = useState([]);
@@ -101,39 +95,16 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
     const resolvedMaxTokens = providerCfg.maxTokens !== undefined && providerCfg.maxTokens !== null ? providerCfg.maxTokens : modelRow.maxTokens;
     const resolvedTokenRatio = providerCfg.tokenRatio !== undefined && providerCfg.tokenRatio !== null ? providerCfg.tokenRatio : modelRow.tokenRatio;
 
-    const isQwenOAuth = selectedProviderId === "qwen-portal" && !providerCfg.apiKey;
-
-    async function loadDetailForm() {
-      let baseUrl = providerCfg.baseUrl || "";
-      if (isQwenOAuth) {
-        try {
-          const res = await getQwenPortalCredentials();
-          if (res.success && res.resourceUrl) {
-            baseUrl = res.resourceUrl;
-          }
-        } catch { /* ignore */ }
-      }
-
-      setDetailForm({
-        apiKey: providerCfg.apiKey || "",
-        baseUrl,
-        model: modelToUse,
-        maxTokens: resolvedMaxTokens !== undefined && resolvedMaxTokens !== null ? resolvedMaxTokens : "",
-        tokenRatio: resolvedTokenRatio !== undefined && resolvedTokenRatio !== null ? resolvedTokenRatio : "",
-      });
-      setShowApiKey(false);
-      setConnectionResult(null);
-      setQwenAuthHint("");
-      modelAutoFilledRef.current = false;
-
-      if (selectedProviderId === "qwen-portal") {
-        const auth = providerCfg.auth;
-        if (auth === "oauth") setQwenCredentialMode("oauth");
-        else if (auth === "api-key") setQwenCredentialMode("manual");
-        else setQwenCredentialMode(String(providerCfg.apiKey || "").trim() ? "manual" : "oauth");
-      }
-    }
-    loadDetailForm();
+    setDetailForm({
+      apiKey: providerCfg.apiKey || "",
+      baseUrl: providerCfg.baseUrl || "",
+      model: modelToUse,
+      maxTokens: resolvedMaxTokens !== undefined && resolvedMaxTokens !== null ? resolvedMaxTokens : "",
+      tokenRatio: resolvedTokenRatio !== undefined && resolvedTokenRatio !== null ? resolvedTokenRatio : "",
+    });
+    setShowApiKey(false);
+    setConnectionResult(null);
+    modelAutoFilledRef.current = false;
   }, [selectedProviderId, rawConfig]);
 
   const selectedProvider = useMemo(
@@ -163,13 +134,6 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
     setFormErrors((prev) => ({ ...prev, [field]: false }));
   };
 
-  const handleQwenCredentialModeChange = (mode) => {
-    setQwenCredentialMode(mode);
-    setQwenAuthHint("");
-    setConnectionResult(null);
-    if (mode === "oauth") setDetailForm((prev) => ({ ...prev, apiKey: "" }));
-  };
-
   const handleTestConnection = async () => {
     const modelForRequest = String(detailForm.model ?? "").trim();
     if (!modelForRequest) {
@@ -177,14 +141,12 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
       MessageManager.error("请填写或选择模型后再测试连接。");
       return;
     }
-    const isQwenOAuth = selectedProviderId === "qwen-portal" && qwenCredentialMode === "oauth";
-    const needBaseUrl = !isQwenOAuth;
-    if (needBaseUrl && !detailForm.baseUrl) {
+    if (!detailForm.baseUrl) {
       setConnectionResult("error");
       MessageManager.error("请填写 Base URL 后再测试连接。");
       return;
     }
-    if (!isQwenOAuth && !detailForm.apiKey) {
+    if (!detailForm.apiKey) {
       setConnectionResult("error");
       MessageManager.error("请填写 API Key 后再测试连接。");
       return;
@@ -196,12 +158,9 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
       const payload = {
         model: modelForRequest,
         providerId: selectedProviderId,
-        baseUrl: needBaseUrl ? detailForm.baseUrl : detailForm.baseUrl || "",
+        baseUrl: detailForm.baseUrl,
+        apiKey: detailForm.apiKey,
       };
-      if (selectedProviderId === "qwen-portal") {
-        payload.qwenCredentialType = qwenCredentialMode === "oauth" ? "oauth" : "api_key";
-      }
-      if (!isQwenOAuth) payload.apiKey = detailForm.apiKey;
 
       const result = await testModelConnection(payload);
       if (result.success) {
@@ -219,66 +178,20 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
     }
   };
 
-  const handleQwenPortalAuth = async () => {
-    setQwenAuthBusy(true);
-    setQwenAuthHint("");
-    let intervalMs = 2000;
-    try {
-      const start = await startQwenPortalOAuth();
-      if (!mountedRef.current) return;
-      window.open(start.verificationUrl, "_blank", "noopener,noreferrer");
-      setQwenAuthHint("已在浏览器中打开 Qwen 认证页，请完成登录；完成后此处会自动显示结果。");
-      const deadline = Date.now() + (start.expiresIn ?? 900) * 1000;
-      while (Date.now() < deadline && mountedRef.current) {
-        await new Promise((r) => setTimeout(r, intervalMs));
-        const poll = await pollQwenPortalOAuth(start.oauthSessionId);
-        if (!mountedRef.current) return;
-        if (poll.success && poll.status === "success") {
-          setQwenAuthHint("授权成功，访问令牌已保存到本机");
-          setConnectionResult("success");
-          setQwenCredentialMode("oauth");
-          setDetailForm((prev) => ({ ...prev, apiKey: "", baseUrl: poll.resourceUrl || prev.baseUrl }));
-          return;
-        }
-        if (!poll.success || poll.status === "error") {
-          setQwenAuthHint(poll.error || "授权未完成或失败，请重试。");
-          setConnectionResult("error");
-          return;
-        }
-        if (poll.slowDown) intervalMs = Math.min(intervalMs * 1.5, 10000);
-      }
-      if (mountedRef.current) setQwenAuthHint("授权等待超时，请重新点击「Qwen 授权」。");
-    } catch (error) {
-      if (mountedRef.current) {
-        setQwenAuthHint(error?.message || String(error));
-        setConnectionResult("error");
-      }
-    } finally {
-      if (mountedRef.current) setQwenAuthBusy(false);
-    }
-  };
-
   const handleSave = async () => {
     if (!rawConfig || !baseConfig || !selectedProviderId) return;
     const builtinInfo = builtinProviders.find((p) => p.id === selectedProviderId);
-    const isQwenOAuthSave = selectedProviderId === "qwen-portal" && qwenCredentialMode === "oauth";
 
-    let baseUrlForSave = detailForm.baseUrl.trim() || String(builtinInfo?.baseUrl ?? "").trim() || "";
-    if (isQwenOAuthSave && !baseUrlForSave) {
-      try {
-        const res = await getQwenPortalCredentials();
-        if (res.success && res.resourceUrl) baseUrlForSave = String(res.resourceUrl).trim();
-      } catch { /* ignore */ }
-    }
+    const baseUrlForSave = detailForm.baseUrl.trim() || String(builtinInfo?.baseUrl ?? "").trim() || "";
 
     const errors = {};
     if (!detailForm.model?.trim()) errors.model = true;
     if (!baseUrlForSave.trim()) errors.baseUrl = true;
-    if (!isQwenOAuthSave && !detailForm.apiKey.trim()) errors.apiKey = true;
+    if (!detailForm.apiKey.trim()) errors.apiKey = true;
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
-      MessageManager.error(isQwenOAuthSave ? "请填写模型名称；若 Base URL 为空，请先完成 Qwen 授权或填写地址。" : "请填写所有必填字段（模型名称、Base URL、API Key）");
+      MessageManager.error("请填写所有必填字段（模型名称、Base URL、API Key）");
       return;
     }
 
@@ -295,12 +208,11 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
           ? existingModels.map((m, i) => i === 0 ? { ...m, id: modelIdToUse || m.id } : m)
           : modelIdToUse ? [{ id: modelIdToUse }] : [];
 
-      const apiKeyForSave = selectedProviderId === "qwen-portal" && qwenCredentialMode === "oauth" ? "" : detailForm.apiKey;
       const existingProvider = draft.models.providers[selectedProviderId] || {};
       const providerDraft = {
         ...existingProvider,
         baseUrl: baseUrlForSave,
-        apiKey: apiKeyForSave,
+        apiKey: detailForm.apiKey,
         api: existingProvider.api || builtinInfo?.api || "openai-completions",
         models: updatedModels,
         enabled: selectedProvider?.enabled !== false,
@@ -313,7 +225,7 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
       if (ratioStr !== "") { const n = parseFloat(ratioStr); if (Number.isFinite(n)) providerDraft.tokenRatio = n; }
       else delete providerDraft.tokenRatio;
 
-      if (selectedProviderId === "qwen-portal") providerDraft.auth = isQwenOAuthSave ? "oauth" : "api-key";
+      if (selectedProviderId === "qwen-portal") providerDraft.auth = "api-key";
       draft.models.providers[selectedProviderId] = providerDraft;
 
       providers.forEach((p) => { if (draft.models.providers[p.id]) draft.models.providers[p.id].enabled = p.enabled; });
@@ -344,9 +256,6 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
     testingConnection,
     connectionResult,
     setConnectionResult,
-    qwenAuthBusy,
-    qwenAuthHint,
-    qwenCredentialMode,
     formErrors,
     showProviderModal,
     setShowProviderModal,
@@ -357,9 +266,7 @@ export function useModelConfig({ rawConfig, baseConfig, setRawConfig, setBaseCon
     modelAutoFilledRef,
     handleProviderToggle,
     handleDetailChange,
-    handleQwenCredentialModeChange,
     handleTestConnection,
-    handleQwenPortalAuth,
     handleSave,
   };
 }

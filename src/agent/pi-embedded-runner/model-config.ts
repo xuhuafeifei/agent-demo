@@ -2,10 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveGlobalConfigPath } from "../../utils/app-path.js";
-import {
-  getQwenPortalCredentials,
-  isQwenPortalCredentialsExpired,
-} from "../auth/oauth-path.js";
 import type {
   FgbgUserConfig,
   ModelConfigFile,
@@ -15,13 +11,7 @@ import type {
   ProviderConfig,
   RuntimeModel,
 } from "../../types.js";
-import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import {
-  QWEN_DASHSCOPE_COMPAT_V1_BASE,
-  normalizeQwenOAuthResourceBaseUrl,
-} from "../qwen-dashscope.js";
-
-const logger = getSubsystemConsoleLogger("model-config");
+import { QWEN_DASHSCOPE_COMPAT_V1_BASE } from "../qwen-dashscope.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -106,47 +96,20 @@ function providerEnvApiKeyName(providerId: string): string {
 }
 
 /**
- * 当前 qwen-portal 的 apiKey 是否来自 OAuth 档案（而非 env / model.json 明文 key）。
- * 与 providers-router test-connection 的 OAuth 判定对齐（配置中 auth === "oauth" 时忽略明文 apiKey）。
- */
-function qwenPortalKeyFromOAuthProfile(
-  apiKey: string | undefined,
-  projectApiKey: string | undefined,
-): boolean {
-  if (!apiKey?.trim()) return false;
-  const envKey = process.env[providerEnvApiKeyName("qwen-portal")]?.trim();
-  if (envKey && apiKey === envKey) return false;
-  const proj = projectApiKey?.trim();
-  if (proj && apiKey === proj) return false;
-  const creds = getQwenPortalCredentials();
-  return Boolean(creds && apiKey === creds.access);
-}
-
-/**
- * 让 pi-ai / openai-completions 路径与 /config/test-connection 使用相同的 DashScope 头与 OAuth baseUrl。
+ * DashScope 兼容头（与 /config/test-connection 行为一致，API Key 方式）。
  */
 function applyQwenPortalDashScopeExtras(
   merged: Record<string, ProviderConfig>,
-  projectConfig: ModelConfigFile,
 ): void {
   const p = merged["qwen-portal"];
   if (!p?.apiKey?.trim()) return;
-
-  const oauthToken = qwenPortalKeyFromOAuthProfile(
-    p.apiKey,
-    projectConfig.apiKey?.["qwen-portal"],
-  );
-  const creds = getQwenPortalCredentials();
-  if (oauthToken) {
-    p.baseUrl = normalizeQwenOAuthResourceBaseUrl(creds?.resourceUrl);
-  }
 
   const ua = "QwenCode/0.13.2 (darwin; arm64)";
   const dashHeaders: Record<string, string> = {
     "User-Agent": ua,
     "X-DashScope-CacheControl": "enable",
     "X-DashScope-UserAgent": ua,
-    "X-DashScope-AuthType": oauthToken ? "qwen-oauth" : "openai",
+    "X-DashScope-AuthType": "openai",
   };
   p.headers = { ...dashHeaders, ...(p.headers ?? {}) };
 }
@@ -183,31 +146,6 @@ async function resolveApiKeyForProviderAsync(params: {
   const syncResult = resolveApiKeyForProvider(params);
   if (syncResult) {
     return syncResult;
-  }
-
-  // 对于 qwen-portal，如果同步获取失败（可能过期），尝试异步刷新
-  if (providerId === "qwen-portal") {
-    try {
-      const { refreshQwenPortalCredentials } =
-        await import("../auth/qwen-portal-oauth.js");
-      const credentials = getQwenPortalCredentials();
-      if (!credentials) {
-        logger.debug("No Qwen Portal credentials found");
-        return undefined;
-      }
-      if (isQwenPortalCredentialsExpired(credentials)) {
-        logger.debug("Qwen Portal credentials expired, refreshing...");
-        const newCredentials = await refreshQwenPortalCredentials(credentials);
-        if (newCredentials) {
-          logger.debug("Qwen Portal credentials refreshed");
-          return newCredentials.access;
-        }
-      } else {
-        return credentials.access;
-      }
-    } catch {
-      // 刷新失败，返回 undefined
-    }
   }
 
   return undefined;
@@ -436,25 +374,19 @@ export async function getMergedProviders(
       continue;
     }
 
-    const qwenOAuthInConfig =
-      providerId === "qwen-portal" && provider.auth === "oauth";
-    const explicitKeyForResolve = qwenOAuthInConfig
-      ? undefined
-      : provider.apiKey?.trim() || undefined;
-
     merged[providerId] = {
       ...prior,
       ...provider,
       models: mergeModels(prior.models, provider.models),
       apiKey: await resolveApiKeyForProviderAsync({
         providerId,
-        explicitApiKey: explicitKeyForResolve,
+        explicitApiKey: provider.apiKey?.trim() || undefined,
         projectApiKey: projectConfig.apiKey?.[providerId],
       }),
     };
   }
 
-  applyQwenPortalDashScopeExtras(merged, projectConfig);
+  applyQwenPortalDashScopeExtras(merged);
   return merged;
 }
 

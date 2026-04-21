@@ -5,10 +5,7 @@ import {
 } from "../../../config/index.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { buildImplicitProviderTemplates } from "../../../agent/pi-embedded-runner/model-config.js";
-import {
-  buildQwenPortalProbeChatCompletionBody,
-  normalizeQwenOAuthResourceBaseUrl,
-} from "../../../agent/qwen-dashscope.js";
+import { buildQwenPortalProbeChatCompletionBody } from "../../../agent/qwen-dashscope.js";
 import {
   validateRequest,
   testConnectionRequestSchema,
@@ -28,17 +25,7 @@ export function createProvidersRouter() {
       const config = readFgbgUserConfig();
       const providersConfig = config.models?.providers || {};
       const configuredProviders = Object.entries(providersConfig)
-        .filter(([id, cfg]: [string, any]) => {
-          if (cfg.apiKey?.trim()) return true;
-          if (id === "qwen-portal" && cfg.auth === "oauth") return true;
-          if (
-            id === "qwen-portal" &&
-            !cfg.apiKey?.trim() &&
-            cfg.auth !== "api-key"
-          )
-            return true;
-          return false;
-        })
+        .filter(([, cfg]: [string, any]) => Boolean(cfg.apiKey?.trim()))
         .map(([id, cfg]: [string, any]) => ({
           id,
           name: cfg.models?.[0]?.name || id,
@@ -193,57 +180,10 @@ export function createProvidersRouter() {
         });
       }
 
-      let baseUrl = validation.data.baseUrl;
-      let apiKey = validation.data.apiKey;
+      const baseUrl = validation.data.baseUrl;
+      const apiKey = validation.data.apiKey;
       const model = validation.data.model;
       const providerId = validation.data.providerId;
-      const qwenCredentialType = validation.data.qwenCredentialType;
-
-      let isQwenOAuth = false;
-      // qwen-portal 需要特殊处理
-      if (providerId === "qwen-portal") {
-        if (qwenCredentialType === "oauth") {
-          isQwenOAuth = true;
-          apiKey = undefined;
-        } else if (qwenCredentialType === "api_key") {
-          isQwenOAuth = false;
-        } else {
-          isQwenOAuth = !String(apiKey ?? "").trim();
-        }
-      }
-
-      // qwen oauth 认证, 读取认证文件 api key
-      if (isQwenOAuth) {
-        try {
-          const { getValidQwenPortalCredentials } =
-            await import("../../../agent/auth/qwen-portal-oauth.js");
-          const credentials = await getValidQwenPortalCredentials();
-          if (credentials) {
-            apiKey = credentials.access;
-            baseUrl = normalizeQwenOAuthResourceBaseUrl(
-              credentials.resourceUrl,
-            );
-          }
-        } catch (err) {
-          webLogger.error(`[test-connection] OAuth error: ${err}`);
-        }
-      }
-
-      if (!String(baseUrl ?? "").trim()) {
-        return res.status(400).json({
-          success: false,
-          error: isQwenOAuth
-            ? "缺少 OAuth 凭证或 resource URL，请先完成 Qwen 授权"
-            : "Missing required field: baseUrl",
-        });
-      }
-
-      if (!String(apiKey ?? "").trim()) {
-        return res.status(400).json({
-          success: false,
-          error: "Missing API Key or OAuth credentials",
-        });
-      }
 
       const apiUrl = `${baseUrl.toString().replace(/\/+$/, "")}/chat/completions`;
 
@@ -274,12 +214,12 @@ export function createProvidersRouter() {
         headers["User-Agent"] = "QwenCode/0.13.2 (darwin; arm64)";
         headers["X-DashScope-CacheControl"] = "enable";
         headers["X-DashScope-UserAgent"] = "QwenCode/0.13.2 (darwin; arm64)";
-        headers["X-DashScope-AuthType"] = isQwenOAuth ? "qwen-oauth" : "openai";
+        headers["X-DashScope-AuthType"] = "openai";
       }
 
       // debug调试日志, 如果出现qwen 连接失败, 可以解除注释查看
       // webLogger.debug(
-      //   `[test-connection] URL: ${apiUrl}, isQwen: ${isQwenProvider}, AuthType: ${isQwenOAuth ? "qwen-oauth" : "openai"}`,
+      //   `[test-connection] URL: ${apiUrl}, isQwen: ${isQwenProvider}`,
       // );
       // webLogger.debug(JSON.stringify(requestBody, null, 2));
       // webLogger.debug(JSON.stringify(headers, null, 2));

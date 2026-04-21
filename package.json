@@ -8,7 +8,6 @@
     "web:build": "vite build --config web/vite.config.mjs",
     "web:build:prod-fast": "vite build --config web/vite.config.mjs",
     "generate-js-dts": "node scripts/generate-js-dts.js",
-    "qwen-auth": "tsc && node dist/scripts/qwen-oauth-login.js",
     "test:llama-tokenizer": "node scripts/test-llama-tokenizer.mjs --verbose",
     "test:path-checker": "tsc && node --test test/path-checker.test.mjs",
     "test:read-tool": "tsc && node --test test/read-tool.test.mjs",

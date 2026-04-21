@@ -6,7 +6,7 @@
 
 - Provide a dedicated HTML/JS view for inspecting and mutating the `fgbg.json` definition without exposing raw files or bypassing existing backend validations and defaults.
 - Reuse the current static bundle (`src/public/index.html` + `app.js`) by adding an extra view that can route-switch next to the existing chat experience.
-- Keep sensitive inputs (e.g., the qwen code API key that is populated by `scripts/qwen-oauth-login.ts`) out of the browser while still surfacing enough metadata for users to know what is automatically supplied.
+- Provider API keys are edited in the settings UI; there is no separate OAuth login flow for Qwen.
 
 ## 2. Backend contract
 
@@ -51,16 +51,8 @@
      - Validation rules mirrored from backend (e.g., `logging.cacheTimeSecond` between 60-300). Inline error hints (red text) appear before submission.
      - Fields that are defaults but user can override include a “设为自定义” link that adds the field to the PATCH payload with a new value.
 
-4. **Sensitive sections**
-   - Special card for `models.providers["qwen-portal"]`.
-   - Do **not** render an editable input for `apiKey`.
-   - Instead show a readonly summary:
-     ```
-     qwen-portal/coder-model
-     apiKey: 通过 `scripts/qwen-oauth-login.ts` 生成，前端不可见。
-     ```
-   - Provide a help link pointing to the script location and instructions (e.g., “在终端执行 `npm run qwen-oauth`”).
-   - Optionally show a status pill: “凭证存在 / 未设置（运行脚本）”.
+4. **Provider detail**
+   - `qwen-portal` uses the same form as other providers: Base URL, API Key, model, and test connection.
 
 5. **Save toolbar**
    - “保存变更” button disabled until diff detected. On click, collects only dirty fields + sends to `PATCH`.

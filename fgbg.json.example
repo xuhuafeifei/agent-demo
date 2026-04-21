@@ -32,7 +32,7 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "qwen-portal/coder-model"
+        "primary": "deepseek/deepseek-chat"
       },
       "models": {
         "deepseek/deepseek-chat": {

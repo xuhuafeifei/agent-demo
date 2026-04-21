@@ -6,7 +6,6 @@ import { createFgbgRouter } from "./router/fgbg-router.js";
 import { createMemorySearchRouter } from "./router/memory-search-router.js";
 import { createProvidersRouter } from "./router/providers-router.js";
 import { createLoggingRouter } from "./router/logging-router.js";
-import { createOAuthRouter } from "./router/oauth-router.js";
 import { createApprovalRouter } from "./router/approval-router.js";
 import { createToolSecurityRouter } from "./router/tool-security-router.js";
 import { createWeixinRouter } from "./router/weixin-router.js";
@@ -33,7 +32,6 @@ export function createWebLayer() {
   router.use("/config/memory-search", createMemorySearchRouter());
   router.use("/config", createProvidersRouter());
   router.use("/config/logging", createLoggingRouter());
-  router.use("/config/qwen-portal/oauth", createOAuthRouter());
   router.use("/config/tool-security", createToolSecurityRouter());
   router.use("/weixin", createWeixinRouter());
   router.use("/task-schedules", createTaskScheduleRouter());

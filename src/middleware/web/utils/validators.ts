@@ -46,7 +46,7 @@ export const modelProviderSchema = z.object({
     )
     .optional(),
   enabled: z.boolean().optional(),
-  auth: z.enum(["oauth", "api-key"]).optional(),
+  auth: z.enum(["api-key"]).optional(),
 });
 
 /**
@@ -132,14 +132,9 @@ export const weixinChannelSchema = z.object({
  */
 export const testConnectionRequestSchema = z.object({
   baseUrl: z.url({ message: "Base URL 必须是有效的 URL" }),
-  apiKey: z.string().optional(),
+  apiKey: z.string().min(1, { message: "API Key 不能为空" }),
   model: z.string().min(1, { message: "模型名称不能为空" }),
   providerId: z.string().optional(),
-  qwenCredentialType: z
-    .enum(["oauth", "api_key"], {
-      message: "qwenCredentialType不能为空",
-    })
-    .optional(),
 });
 
 /**

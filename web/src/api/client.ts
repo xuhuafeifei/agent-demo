@@ -50,19 +50,6 @@ export interface ModelInfo {
   name: string;
 }
 
-export interface OAuthStartResponse {
-  oauthSessionId: string;
-  verificationUrl: string;
-  userCode: string;
-  expiresIn: number;
-}
-
-export interface OAuthPollResponse {
-  status: 'success' | 'pending' | 'error';
-  slowDown?: boolean;
-  error?: string;
-}
-
 export interface HistoryEntry {
   id: string;
   role: 'user' | 'assistant';
@@ -258,14 +245,6 @@ export class ApiClient {
       ),
 
     /**
-     * Get Qwen Portal OAuth credentials
-     */
-    getQwenPortalCredentials: () =>
-      request<{ credentials: any }>(
-        `${this.baseURL}/config/qwen-portal/oauth/credentials`
-      ),
-
-    /**
      * QQ layer control
      */
     qq: {
@@ -289,26 +268,6 @@ export class ApiClient {
         `${this.baseURL}/config/logging/evict-cache`,
         { method: 'POST' }
       ),
-
-    /**
-     * Start Qwen Portal OAuth device flow
-     */
-    oauth: {
-      start: () =>
-        request<OAuthStartResponse>(
-          `${this.baseURL}/config/qwen-portal/oauth/start`,
-          { method: 'POST' }
-        ),
-
-      poll: (oauthSessionId: string) =>
-        request<OAuthPollResponse>(
-          `${this.baseURL}/config/qwen-portal/oauth/poll`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ oauthSessionId }),
-          }
-        ),
-    },
   };
 
   /**
@@ -462,12 +421,9 @@ export const getSupportedModelProviders = () => api.config.getSupportedModelProv
 export const getConfiguredProviders = () => api.config.getConfiguredProviders();
 export const setPrimaryModel = (primary: string) => api.config.patchFgbg({ agents: { defaults: { model: { primary } } } });
 export const getPrimaryModel = () => api.config.getFgbg();
-export const getQwenPortalCredentials = () => api.config.getQwenPortalCredentials();
 export const getDefaultModelProvider = () => api.config.getDefaultProvider();
 export const testModelConnection = (params: Record<string, unknown>) => api.config.testConnection(params);
 export const getModelProviderInfo = () => api.config.getProviders();
-export const startQwenPortalOAuth = () => api.config.oauth.start();
-export const pollQwenPortalOAuth = (oauthSessionId: string) => api.config.oauth.poll(oauthSessionId);
 export const stopQqLayer = () => api.config.qq.stop();
 export const startQqLayerIfIdle = () => api.config.qq.start();
 export const getHistory = () => api.history.get();

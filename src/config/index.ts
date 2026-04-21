@@ -27,6 +27,23 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
       mode: modelsMode,
       providers: (() => {
         const defaultProviders: Record<string, ProviderConfig> = {
+          deepseek: {
+            baseUrl: "https://api.deepseek.com",
+            apiKey: "",
+            api: "openai-completions",
+            models: [
+              {
+                id: "deepseek-chat",
+                name: "deepseek-chat",
+                reasoning: false,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 8192,
+                maxTokens: 65536,
+                tokenRatio: 0.75,
+              },
+            ],
+          },
           "qwen-portal": {
             baseUrl: "https://portal.qwen.ai/v1",
             apiKey: "",
@@ -66,11 +83,11 @@ function resolveFgbgUserConfig(raw: FgbgUserRawConfig): FgbgUserConfig {
       defaults: {
         model: {
           primary:
-            raw.agents?.defaults?.model?.primary ?? "qwen-portal/coder-model",
+            raw.agents?.defaults?.model?.primary ?? "deepseek/deepseek-chat",
         },
         models: raw.agents?.defaults?.models ?? {
-          "qwen-portal/coder-model": {
-            alias: "qwen-portal",
+          "deepseek/deepseek-chat": {
+            alias: "deepseek",
           },
         },
       },
@@ -332,12 +349,12 @@ export function getSupportedModelProviders(): string[] {
   return Object.keys(providers);
 }
 
-// 获取agent 使用的默认供应商(默认 qwen-portal, 这是后端系统的共识)
+// 获取 agent 使用的默认供应商（与默认主模型 deepseek 一致）
 export function getDefaultModelProvider(): string {
   const modelRef = parseModelRef(
     readFgbgUserConfig().agents.defaults.model.primary,
   );
-  return modelRef?.provider ?? "qwen-portal";
+  return modelRef?.provider ?? "deepseek";
 }
 
 // 获取模型信息的接口

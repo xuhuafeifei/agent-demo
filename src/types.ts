@@ -36,7 +36,7 @@ export type ProviderConfig = {
   baseUrl: string;
   apiKey?: string;
   api?: ModelApi;
-  auth?: "api-key" | "aws-sdk" | "oauth" | "token";
+  auth?: "api-key" | "aws-sdk" | "token";
   headers?: Record<string, string>;
   authHeader?: boolean;
   models: ModelDefinitionConfig[];
