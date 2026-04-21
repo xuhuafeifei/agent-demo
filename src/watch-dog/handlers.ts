@@ -77,11 +77,17 @@ async function runWithTimeout(
     child.on("exit", (code, signal) => {
       if (resolved) return;
       if (signal === "SIGTERM" || signal === "SIGKILL") {
-        cleanResolve({ status: "timeout", errorMessage: `killed by ${signal}` });
+        cleanResolve({
+          status: "timeout",
+          errorMessage: `killed by ${signal}`,
+        });
       } else if (code === 0) {
         cleanResolve({ status: "success" });
       } else {
-        cleanResolve({ status: "failed", errorMessage: `exit code ${code ?? "null"}` });
+        cleanResolve({
+          status: "failed",
+          errorMessage: `exit code ${code ?? "null"}`,
+        });
       }
     });
 
@@ -89,7 +95,9 @@ async function runWithTimeout(
     timeoutHandle = setTimeout(() => {
       if (child.killed) return;
       child.kill("SIGTERM");
-      setTimeout(() => { if (!child.killed) child.kill("SIGKILL"); }, 5_000);
+      setTimeout(() => {
+        if (!child.killed) child.kill("SIGKILL");
+      }, 5_000);
       cleanResolve({ status: "timeout", errorMessage: "timeout exceeded" });
     }, opts.timeoutMs);
   });
@@ -104,7 +112,11 @@ async function runWithTimeout(
  * 3. 根据 tenantId 解析对应租户的 workspace 目录，实现多租户环境隔离
  * 4. 脚本必须在 workspace/scripts/ 目录下执行，且受 allowedScripts 白名单限制
  */
-export const executeScriptHandler: TaskHandler = async ({ task, payload, config }) => {
+export const executeScriptHandler: TaskHandler = async ({
+  task,
+  payload,
+  config,
+}) => {
   watchDogLogger.info("[execute_script] triggered");
   // 黑名单校验：若当前时间在黑名单时间段内，跳过执行
   if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
@@ -115,9 +127,10 @@ export const executeScriptHandler: TaskHandler = async ({ task, payload, config 
   const p = (payload ?? {}) as ScriptTaskPayload & { tenantId?: string };
   // 取任务 payload 中的 tenantId（默认 "default"），决定使用哪个租户的 workspace
   // identify 字段已统一映射到 tenantId，实现租户隔离
-  const tenantId = typeof p.tenantId === "string" && p.tenantId.trim()
-    ? p.tenantId.trim()
-    : readFgbgUserConfig().channels.web.tenantId;
+  const tenantId =
+    typeof p.tenantId === "string" && p.tenantId.trim()
+      ? p.tenantId.trim()
+      : readFgbgUserConfig().channels.web.tenantId;
   // resolveTenantWorkspaceDir 根据 tenantId 定位租户专属的 workspace 目录
   const workspaceDir = resolveTenantWorkspaceDir(tenantId);
   const scriptsDir = path.join(workspaceDir, "scripts");
@@ -137,34 +150,55 @@ export const executeScriptHandler: TaskHandler = async ({ task, payload, config 
   }
 
   // 安全校验：脚本必须在 allowedScripts 白名单中（防止执行恶意脚本）
-  if (config.allowedScripts.length > 0 && !config.allowedScripts.includes(scriptName)) {
+  if (
+    config.allowedScripts.length > 0 &&
+    !config.allowedScripts.includes(scriptName)
+  ) {
     watchDogLogger.error("[execute_script] script not allowed: %s", scriptName);
-    return { status: "failed", errorMessage: `script not allowed: ${scriptName}` };
+    return {
+      status: "failed",
+      errorMessage: `script not allowed: ${scriptName}`,
+    };
   }
 
   // 路径穿越防护：确保解析后的脚本路径仍在 scripts 目录下
   const scriptPath = path.resolve(scriptsDir, scriptName);
   if (!scriptPath.startsWith(path.resolve(scriptsDir) + path.sep)) {
-    watchDogLogger.error("[execute_script] script path outside scripts/ dir: %s", scriptName);
-    return { status: "failed", errorMessage: "script path outside scripts/ dir" };
+    watchDogLogger.error(
+      "[execute_script] script path outside scripts/ dir: %s",
+      scriptName,
+    );
+    return {
+      status: "failed",
+      errorMessage: "script path outside scripts/ dir",
+    };
   }
 
   // 文件存在性校验
   if (!fs.existsSync(scriptPath)) {
     watchDogLogger.error("[execute_script] script not found: %s", scriptName);
-    return { status: "failed", errorMessage: `script not found: ${scriptName}` };
+    return {
+      status: "failed",
+      errorMessage: `script not found: ${scriptName}`,
+    };
   }
 
   // 可执行权限校验
   try {
     fs.accessSync(scriptPath, fs.constants.X_OK);
   } catch {
-    watchDogLogger.error("[execute_script] script not executable: %s", scriptName);
+    watchDogLogger.error(
+      "[execute_script] script not executable: %s",
+      scriptName,
+    );
     return { status: "failed", errorMessage: "script not executable" };
   }
 
   // 执行脚本（带超时控制）
-  const result = await runWithTimeout(scriptPath, args, { cwd: scriptsDir, timeoutMs });
+  const result = await runWithTimeout(scriptPath, args, {
+    cwd: scriptsDir,
+    timeoutMs,
+  });
   watchDogLogger.info("[execute_script] completed: %s", scriptName);
   return result;
 };
@@ -187,7 +221,8 @@ export const cleanupLogsHandler: TaskHandler = async () => {
 function toChannelList(value: unknown): Array<"qq" | "weixin" | "web"> {
   if (!Array.isArray(value)) return ["qq"];
   const list = value.filter(
-    (v): v is "qq" | "weixin" | "web" => v === "qq" || v === "weixin" || v === "web",
+    (v): v is "qq" | "weixin" | "web" =>
+      v === "qq" || v === "weixin" || v === "web",
   );
   return list.length > 0 ? list : ["qq"];
 }
@@ -233,7 +268,10 @@ async function deliverReminderByChannels(params: {
 
   // 至少一个渠道成功即视为整体成功，否则聚合所有错误信息
   if (successCount > 0) return { status: "success" };
-  return { status: "failed", errorMessage: errors.join("; ") || "no channel delivered" };
+  return {
+    status: "failed",
+    errorMessage: errors.join("; ") || "no channel delivered",
+  };
 }
 
 /**
@@ -250,29 +288,43 @@ async function deliverReminderByChannels(params: {
  * - identify 字段已统一映射到 tenantId
  * - 若未指定 tenantId，回退到 QQ_DEFAULT_TENANT_ID（即默认 QQ bot 账号）
  */
-export const executeReminderHandler: TaskHandler = async ({ task, payload }) => {
+export const executeReminderHandler: TaskHandler = async ({
+  task,
+  payload,
+}) => {
   handlerLogger.info("execute_reminder trigger! task_name=%s", task.task_name);
   // 黑名单校验：若当前时间在黑名单时间段内，跳过执行
   if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
-    handlerLogger.info("execute_reminder skipped (blacklist) task_name=%s", task.task_name);
+    handlerLogger.info(
+      "execute_reminder skipped (blacklist) task_name=%s",
+      task.task_name,
+    );
     return { status: "skipped" };
   }
   const p = (payload ?? {}) as ReminderTaskPayload;
   // 校验 content 字段必须存在且非空（提醒内容的核心字段）
   const content = typeof p.content === "string" ? p.content.trim() : "";
   if (!content) {
-    handlerLogger.error("execute_reminder failed task_name=%s content is required", task.task_name);
+    handlerLogger.error(
+      "execute_reminder failed task_name=%s content is required",
+      task.task_name,
+    );
     return { status: "failed", errorMessage: "content is required" };
   }
   // 渠道列表规范化（默认 qq）
   const channels = toChannelList(p.channels);
   // tenantId 决定路由到哪个 bot 账号，未指定时使用默认值
-  const tenantId = typeof p.tenantId === "string" && p.tenantId.trim()
-    ? p.tenantId.trim()
-    : QQ_DEFAULT_TENANT_ID;
+  const tenantId =
+    typeof p.tenantId === "string" && p.tenantId.trim()
+      ? p.tenantId.trim()
+      : QQ_DEFAULT_TENANT_ID;
 
   // 按渠道投递通知消息
-  const result = await deliverReminderByChannels({ channels, text: content, tenantId });
+  const result = await deliverReminderByChannels({
+    channels,
+    text: content,
+    tenantId,
+  });
   handlerLogger.info(
     "execute_reminder completed task_name=%s status=%s",
     task.task_name,
@@ -302,27 +354,34 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
   handlerLogger.info("execute_agent trigger! task_name=%s", task.task_name);
   // 黑名单校验：若当前时间在黑名单时间段内，跳过执行
   if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
-    handlerLogger.info("execute_agent skipped (blacklist) task_name=%s", task.task_name);
+    handlerLogger.info(
+      "execute_agent skipped (blacklist) task_name=%s",
+      task.task_name,
+    );
     return { status: "skipped" };
   }
   const p = (payload ?? {}) as AgentTaskPayload;
   // 校验 goal 字段必须存在且非空（Agent 执行目标的核心字段）
   const goal = typeof p.goal === "string" ? p.goal.trim() : "";
   if (!goal) {
-    handlerLogger.error("execute_agent failed task_name=%s goal is required", task.task_name);
+    handlerLogger.error(
+      "execute_agent failed task_name=%s goal is required",
+      task.task_name,
+    );
     return { status: "failed", errorMessage: "goal is required" };
   }
 
   // tenantId 隔离：决定执行该任务时使用哪个租户的 workspace/memory/session
   // identify 字段已统一映射到 tenantId，实现多租户环境隔离
   // 若未指定 tenantId，回退到全局配置的 web 渠道 tenantId
-  const tenantId = typeof p.tenantId === "string" && p.tenantId.trim()
-    ? p.tenantId.trim()
-    : readFgbgUserConfig().channels.web.tenantId;
+  const tenantId =
+    typeof p.tenantId === "string" && p.tenantId.trim()
+      ? p.tenantId.trim()
+      : readFgbgUserConfig().channels.web.tenantId;
 
   try {
     // 动态导入 Agent 运行模块（避免循环依赖，且按需加载）
-    const { runWithSingleFlight } = await import("../agent/run.js");
+    const { runWithSingleFlight } = await import("../agent/runtime/run.js");
     const now = nowChinaIso();
     // 构建 Agent 执行的 prompt：包含任务名、当前时间、任务目标
     const prompt = [
@@ -337,10 +396,10 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
     // 每个任务使用独立的 sessionKey（通过 watchDogTaskId 区分）
     const result = await runWithSingleFlight({
       message: prompt,
-      channel: "web",                    // web 渠道表示内部触发（非外部用户消息）
-      tenantId,                          // 租户隔离：使用对应租户的 workspace/memory/session
-      module: "watch-dog",               // 独立模块标识，与 main 并发隔离
-      watchDogTaskId: String(task.id),   // 任务 ID 绑定，便于日志追踪
+      channel: "web", // web 渠道表示内部触发（非外部用户消息）
+      tenantId, // 租户隔离：使用对应租户的 workspace/memory/session
+      module: "watch-dog", // 独立模块标识，与 main 并发隔离
+      watchDogTaskId: String(task.id), // 任务 ID 绑定，便于日志追踪
       onEvent: () => {
         // watch-dog 不透传流式事件（静默执行，只在结束时获取最终结果）
       },
@@ -367,7 +426,11 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
 
     // 需要通知：将 Agent 执行结果投递到指定渠道
     const channels = toChannelList(p.channels);
-    const deliverResult = await deliverReminderByChannels({ channels, text: finalText, tenantId });
+    const deliverResult = await deliverReminderByChannels({
+      channels,
+      text: finalText,
+      tenantId,
+    });
     handlerLogger.info(
       "execute_agent completed task_name=%s status=%s notify=true",
       task.task_name,
@@ -377,7 +440,11 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
   } catch (error) {
     // 捕获 Agent 执行异常（防止异常冒泡导致 watch-dog 崩溃）
     const message = error instanceof Error ? error.message : String(error);
-    handlerLogger.error("execute_agent failed task_name=%s error=%s", task.task_name, message);
+    handlerLogger.error(
+      "execute_agent failed task_name=%s error=%s",
+      task.task_name,
+      message,
+    );
     return { status: "failed", errorMessage: message };
   }
 };

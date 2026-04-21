@@ -1,6 +1,6 @@
 import WebSocket, { type RawData } from "ws";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { runWithSingleFlight } from "../../agent/run.js";
+import { runWithSingleFlight } from "../../agent/runtime/run.js";
 import { resolveQQAccountFromConfig } from "./qq-config.js";
 import { getEventBus } from "../../event-bus/index.js";
 import { getGatewayUrl, sendC2CMessage } from "./qq-api.js";

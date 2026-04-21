@@ -1,7 +1,7 @@
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { Type, type Static } from "@sinclair/typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { prepareBeforeGetReply } from "../../pre-run.js";
+import { prepareBeforeGetReply } from "../../runtime/pre-run.js";
 import { createRuntimeAgentSession } from "../../pi-embedded-runner/attempt.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
 
@@ -78,9 +78,7 @@ export function createCompactContextTool(
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : "未知错误";
-        logger.error(
-          `压缩会话上下文失败: ${message}`,
-        );
+        logger.error(`压缩会话上下文失败: ${message}`);
         return errResult(`压缩会话上下文失败: ${message}`, {
           code: "INTERNAL_ERROR",
           message,

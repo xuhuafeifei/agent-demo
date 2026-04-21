@@ -1,32 +1,32 @@
 import fs from "node:fs";
-import { getGlobalModelConfigPath } from "./pi-embedded-runner/model-config.js";
+import { getGlobalModelConfigPath } from "../pi-embedded-runner/model-config.js";
 import {
   createRuntimeAgentSession,
   runEmbeddedPiAgent,
-} from "./pi-embedded-runner/attempt.js";
-import { createCacheTrace } from "./utils/cache-trace.js";
-import type { RuntimeStreamEvent } from "./utils/events.js";
-import { loadSessionIndexEntry, resolveSessionDir } from "./session/index.js";
+} from "../pi-embedded-runner/attempt.js";
+import { createCacheTrace } from "../utils/cache-trace.js";
+import type { RuntimeStreamEvent } from "../utils/events.js";
+import { loadSessionIndexEntry, resolveSessionDir } from "../session/index.js";
 import {
   SessionManager,
   type SessionMessageEntry,
 } from "@mariozechner/pi-coding-agent";
 import { prepareBeforeGetReply } from "./pre-run.js";
-import { buildSystemPrompt } from "./system-prompt.js";
-import { getMemoryIndexManager } from "../memory/index.js";
+import { buildSystemPrompt } from "../system-prompt.js";
+import { getMemoryIndexManager } from "../../memory/index.js";
 import {
   readWorkspaceSoul,
   readWorkspaceUserinfoSummary,
-} from "./workspace.js";
+} from "../workspace.js";
 import type {
   TextContent,
   ThinkingContent,
   ToolCall,
 } from "@mariozechner/pi-ai";
-import { getSubsystemConsoleLogger } from "../logger/logger.js";
-import { resolveTenantWorkspaceDir } from "../utils/app-path.js";
-import { createToolBundle } from "./tool/tool-bundle.js";
-import { getSkillManager } from "./skill/skill-manager.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import { resolveTenantWorkspaceDir } from "../../utils/app-path.js";
+import { createToolBundle } from "../tool/tool-bundle.js";
+import { getSkillManager } from "../skill/skill-manager.js";
 import {
   getAllRunningAgentStates,
   tryAcquireAgent,
@@ -34,12 +34,12 @@ import {
   bindAgentSession,
   getAgentStateById,
   abortAgentRun,
-} from "./agent-state.js";
-import { formatChinaIso } from "../watch-dog/time.js";
-import { getFilterContextToolNames } from "./tool/tool-bundle.js";
-import { getChannelPolicy, type AgentChannel } from "./channel-policy.js";
-import { refreshFgbgUserConfigCache } from "../config/index.js";
-import { areTextsOverTokenThreshold } from "./utils/token-counter.js";
+} from "../agent-state.js";
+import { formatChinaIso } from "../../watch-dog/time.js";
+import { getFilterContextToolNames } from "../tool/tool-bundle.js";
+import { getChannelPolicy, type AgentChannel } from "../channel-policy.js";
+import { refreshFgbgUserConfigCache } from "../../config/index.js";
+import { areTextsOverTokenThreshold } from "../utils/token-counter.js";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 

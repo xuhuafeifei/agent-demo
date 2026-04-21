@@ -7,7 +7,7 @@
 
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { readFgbgUserConfig } from "../../config/index.js";
-import { runWithSingleFlight } from "../../agent/run.js";
+import { runWithSingleFlight } from "../../agent/runtime/run.js";
 import {
   loadWeixinAccounts,
   updateWeixinBotBuf,

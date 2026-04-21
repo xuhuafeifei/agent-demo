@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import cors from "cors";
 import dotenv from "dotenv";
-import { logRuntimePaths } from "./agent/run.js";
+import { logRuntimePaths } from "./agent/runtime/run.js";
 import { createWebLayer } from "./middleware/web/web-layer.js";
 import { fileURLToPath } from "node:url";
 import { getMemoryIndexManager } from "./memory/index.js";
