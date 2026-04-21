@@ -85,13 +85,18 @@ export async function sendWeixinDirectMessage(
   }
 
   try {
-    await ilinkSendText({
+    const sendResp = await ilinkSendText({
       baseUrl: bot.baseUrl,
       token: bot.token,
       toUserId,
       text,
       contextToken: bot.contextToken || undefined,
     });
+    log.info(
+      "sendWeixinDirectMessage ok tenantId=%s ret=%s",
+      bot.tenantId,
+      sendResp,
+    );
     return true;
   } catch (e) {
     log.error(

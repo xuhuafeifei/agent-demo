@@ -279,7 +279,7 @@ export async function ilinkSendText(params: {
   toUserId: string;
   text: string;
   contextToken?: string;
-}): Promise<void> {
+}): Promise<string> {
   // 生成唯一客户端 ID
   const clientId = `ag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const body = {
@@ -293,5 +293,11 @@ export async function ilinkSendText(params: {
       context_token: params.contextToken,
     },
   };
-  await ilinkPost(params.baseUrl, "ilink/bot/sendmessage", body, params.token, 15_000);
+  return ilinkPost(
+    params.baseUrl,
+    "ilink/bot/sendmessage",
+    body,
+    params.token,
+    15_000,
+  );
 }

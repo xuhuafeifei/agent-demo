@@ -16,7 +16,6 @@ import { watchDogLogger } from "./watch-dog.js";
 import { shouldSkipTaskForBlacklistNow } from "./blacklist-check.js";
 import { getEventBus, TOPPIC_HEART_BEAT } from "../event-bus/index.js";
 import { sendQQDirectMessage } from "../middleware/qq/qq-layer.js";
-import { QQ_DEFAULT_TENANT_ID } from "../middleware/qq/qq-account.js";
 import { sendWeixinDirectMessage } from "../middleware/weixin/weixin-layer.js";
 import { formatChinaIso, nowChinaIso } from "./time.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
@@ -280,44 +279,46 @@ async function deliverReminderByChannels(params: {
  * 工作流程：
  * 1. 黑名单校验：检查当前时间是否在任务的黑名单时间段内
  * 2. 提取 payload 中的 content 字段，校验非空
- * 3. 解析渠道列表（默认 qq），解析 tenantId（默认 QQ_DEFAULT_TENANT_ID）
+ * 3. 解析渠道列表（默认 qq），直接使用 payload.tenantId 路由租户 bot
  * 4. 调用 deliverReminderByChannels 按渠道投递通知
  *
  * tenantId 隔离：
  * - payload.tenantId 决定路由到哪个 bot 账号
- * - identify 字段已统一映射到 tenantId
- * - 若未指定 tenantId，回退到 QQ_DEFAULT_TENANT_ID（即默认 QQ bot 账号）
+ * - 创建任务时保证 tenantId 必填
  */
 export const executeReminderHandler: TaskHandler = async ({
   task,
   payload,
 }) => {
-  handlerLogger.info("execute_reminder trigger! task_name=%s", task.task_name);
+  const p = (payload ?? {}) as ReminderTaskPayload;
+  // 创建提醒任务时 tenantId 为必填字段，这里直接使用
+  const tenantId = p.tenantId!.trim();
+  handlerLogger.info(
+    "execute_reminder trigger! task_name=%s tenantId=%s",
+    task.task_name,
+    tenantId,
+  );
   // 黑名单校验：若当前时间在黑名单时间段内，跳过执行
   if (shouldSkipTaskForBlacklistNow({ payload, timezone: task.timezone })) {
     handlerLogger.info(
-      "execute_reminder skipped (blacklist) task_name=%s",
+      "execute_reminder skipped (blacklist) task_name=%s tenantId=%s",
       task.task_name,
+      tenantId,
     );
     return { status: "skipped" };
   }
-  const p = (payload ?? {}) as ReminderTaskPayload;
   // 校验 content 字段必须存在且非空（提醒内容的核心字段）
   const content = typeof p.content === "string" ? p.content.trim() : "";
   if (!content) {
     handlerLogger.error(
-      "execute_reminder failed task_name=%s content is required",
+      "execute_reminder failed task_name=%s tenantId=%s content is required",
       task.task_name,
+      tenantId,
     );
     return { status: "failed", errorMessage: "content is required" };
   }
   // 渠道列表规范化（默认 qq）
   const channels = toChannelList(p.channels);
-  // tenantId 决定路由到哪个 bot 账号，未指定时使用默认值
-  const tenantId =
-    typeof p.tenantId === "string" && p.tenantId.trim()
-      ? p.tenantId.trim()
-      : QQ_DEFAULT_TENANT_ID;
 
   // 按渠道投递通知消息
   const result = await deliverReminderByChannels({
@@ -326,8 +327,9 @@ export const executeReminderHandler: TaskHandler = async ({
     tenantId,
   });
   handlerLogger.info(
-    "execute_reminder completed task_name=%s status=%s",
+    "execute_reminder completed task_name=%s tenantId=%s status=%s",
     task.task_name,
+    tenantId,
     result.status,
   );
   return result;
