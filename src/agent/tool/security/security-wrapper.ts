@@ -61,6 +61,7 @@ export type ToolCheckSpec =
 
 /**
  * 为工具实例织入安全检查 wrapper。
+ * 安全检查会根据 用户配置 fgbg 动态调节策略
  * 检查按固定顺序执行：
  * pathCheck → channelRuntimeAssert → tenantPermissionAssert → approval
  */

@@ -109,7 +109,7 @@ export async function getReplyFromAgent(params: {
   lane?: AgentLane;
 }): Promise<string> {
   agentLogger.debug(
-    `[agent] getReplyFromAgent params=${JSON.stringify(params)}`,
+    `getReplyFromAgent params=${JSON.stringify(params)}`,
   );
   // 刷新配置缓存，确保使用最新的模型配置
   refreshFgbgUserConfigCache();

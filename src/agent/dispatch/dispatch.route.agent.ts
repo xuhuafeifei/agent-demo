@@ -1,8 +1,13 @@
 import type { AgentLane } from "../../hook/events.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { selectModelForRuntime } from "../model-selection.js";
 import { getRecentUserInputsForRouter } from "../runtime/run.js";
 import { readLastRouteMode } from "./route-decision-log.js";
 import { invokeLaneRouterModel } from "./routing-llm.js";
+
+const dispatchRouteAgentLogger = getSubsystemConsoleLogger(
+  "dispatch-route-agent",
+);
 
 export type RoutingDecisionSource =
   | "router"
@@ -41,10 +46,19 @@ export async function resolveLaneWithRouting(params: {
     const selected = await selectModelForRuntime();
     if (!selected.model) throw new Error("no model");
     const recentUserInputs = getRecentUserInputsForRouter(params.tenantId);
-    const { parsed, rawText } = await invokeLaneRouterModel(selected.model, {
-      currentUserInput: params.userInput,
-      recentUserInputs,
-    });
+    dispatchRouteAgentLogger.info("selected model: %s", selected.modelRef.model);
+    const { parsed, rawText } = await invokeLaneRouterModel(
+      selected.model,
+      {
+        currentUserInput: params.userInput,
+        recentUserInputs,
+      },
+      {
+        onStreamDelta: (delta) => {
+          dispatchRouteAgentLogger.debug("router output chunk: %s", delta);
+        },
+      },
+    );
     return {
       lane: parsed.lane,
       emotions: parsed.emotions,

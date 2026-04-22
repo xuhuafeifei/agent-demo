@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AgentLane } from "../../hook/events.js";
 import { resolveTenantDir } from "../../utils/app-path.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+
+const routeLogLogger = getSubsystemConsoleLogger("route-decision-log");
 
 export type RouteDecisionRecord = {
   userInput: string;
@@ -92,11 +95,11 @@ export async function appendRouteDecisionLog(params: {
   try {
     const file = resolveRouteLogPath(params.tenantId, params.module);
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
-    await fs.promises.appendFile(
-      file,
-      `${JSON.stringify(params.record)}\n`,
-      "utf-8",
-    );
+
+    const json = JSON.stringify(params);
+    routeLogLogger.debug(`appendRouteDecisionLog params=${json}`);
+
+    await fs.promises.appendFile(file, `${json}\n`, "utf-8");
   } catch {
     /* 日志失败不影响主流程 */
   }

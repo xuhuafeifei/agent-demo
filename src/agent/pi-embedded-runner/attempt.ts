@@ -10,7 +10,11 @@ import type {
   AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel, AgentMessage } from "@mariozechner/pi-agent-core";
-import type { TextContent, ThinkingContent, ToolCall } from "@mariozechner/pi-ai";
+import type {
+  TextContent,
+  ThinkingContent,
+  ToolCall,
+} from "@mariozechner/pi-ai";
 import type { RuntimeStreamEvent } from "../utils/events.js";
 import path from "node:path";
 import type { RuntimeModel } from "../../types.js";
@@ -53,7 +57,9 @@ type AssistantMessageEvent = {
   partial?: { content?: (TextContent | ThinkingContent | ToolCall)[] };
 };
 
-function extractAssistantText(content: (TextContent | ThinkingContent | ToolCall)[] | undefined): string {
+function extractAssistantText(
+  content: (TextContent | ThinkingContent | ToolCall)[] | undefined,
+): string {
   if (!content) return "";
 
   // 仅拼接文本块，忽略 thinking/tool 等非文本内容。
@@ -220,7 +226,9 @@ export async function createRuntimeAgentSession(params: {
     cwd,
     agentDir,
     thinkingLevel: thinkingLevel,
-    // 自定义工具通过 customTools 传入，框架会自动覆盖内置同名工具
+    // 显式传空列表：不启用 pi 默认的 read/bash/edit/write 激活集；活动工具只来自 customTools
+    //（见 pi-coding-agent createAgentSession：缺省 tools 会默认为上述四名）
+    tools: [],
     customTools,
   });
 
@@ -249,8 +257,13 @@ export async function runEmbeddedPiAgent(params: {
   needsCompression?: boolean; // 是否需要压缩会话的标记
   agentId: string;
 }): Promise<string> {
-  const { session, message, onEvent, needsCompression = false, agentId } =
-    params;
+  const {
+    session,
+    message,
+    onEvent,
+    needsCompression = false,
+    agentId,
+  } = params;
   let latestAssistantText = "";
   let latestModelError: string | undefined;
   let wasAborted = false;
@@ -315,7 +328,10 @@ export async function runEmbeddedPiAgent(params: {
   };
 
   type AssistantSessionEvent = AgentSessionEvent & {
-    message: { role?: string; content?: (TextContent | ThinkingContent | ToolCall)[] };
+    message: {
+      role?: string;
+      content?: (TextContent | ThinkingContent | ToolCall)[];
+    };
   };
 
   const isAssistantMessageEvent = (
@@ -424,7 +440,9 @@ export async function runEmbeddedPiAgent(params: {
       }
       case "message_end": {
         if (!isAssistantMessageEvent(event)) break;
-        const messageData = event.message as { content?: (TextContent | ThinkingContent | ToolCall)[] };
+        const messageData = event.message as {
+          content?: (TextContent | ThinkingContent | ToolCall)[];
+        };
         const finalText = extractAssistantText(messageData.content);
         if (finalText) latestAssistantText = finalText;
         wrappedOnEvent({

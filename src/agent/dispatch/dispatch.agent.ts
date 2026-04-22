@@ -16,6 +16,8 @@ export async function runDispatchedAgentConversation(
     module: params.module,
     userInput: params.message,
   });
+  // 记录决策 agent 的决策事件耗时
+  const consumeTime = Date.now() - started;
 
   const lane = routing.lane;
 
@@ -30,7 +32,6 @@ export async function runDispatchedAgentConversation(
     lane,
   });
 
-  const consumeTime = Date.now() - started;
   const llmTotalResponse =
     result.status === "success" ? (result.finalText ?? "") : "";
 
