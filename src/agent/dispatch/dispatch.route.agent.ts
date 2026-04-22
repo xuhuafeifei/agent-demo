@@ -1,0 +1,74 @@
+import type { AgentLane } from "../../hook/events.js";
+import { selectModelForRuntime } from "../model-selection.js";
+import { getRecentUserInputsForRouter } from "../runtime/run.js";
+import { readLastRouteMode } from "./route-decision-log.js";
+import { invokeLaneRouterModel } from "./routing-llm.js";
+
+export type RoutingDecisionSource =
+  | "router"
+  | "fallback_prev"
+  | "fallback_heavy"
+  | "non_main_module";
+
+export type RoutingDecision = {
+  lane: AgentLane;
+  emotions: string[];
+  emotionRate: number;
+  rawResponse: string;
+  decisionSource: RoutingDecisionSource;
+};
+
+/**
+ * 路由决策：优先 LLM；失败则上一轮 mode；再失败固定 heavy。
+ * 非 main 模块直接 heavy（避免无用户消息场景浪费路由调用）。
+ */
+export async function resolveLaneWithRouting(params: {
+  tenantId: string;
+  module: string;
+  userInput: string;
+}): Promise<RoutingDecision> {
+  if (params.module !== "main") {
+    return {
+      lane: "heavy",
+      emotions: [],
+      emotionRate: 0,
+      rawResponse: "",
+      decisionSource: "non_main_module",
+    };
+  }
+
+  try {
+    const selected = await selectModelForRuntime();
+    if (!selected.model) throw new Error("no model");
+    const recentUserInputs = getRecentUserInputsForRouter(params.tenantId);
+    const { parsed, rawText } = await invokeLaneRouterModel(selected.model, {
+      currentUserInput: params.userInput,
+      recentUserInputs,
+    });
+    return {
+      lane: parsed.lane,
+      emotions: parsed.emotions,
+      emotionRate: parsed.emotionRate,
+      rawResponse: rawText,
+      decisionSource: "router",
+    };
+  } catch {
+    const prev = await readLastRouteMode(params.tenantId, params.module);
+    if (prev) {
+      return {
+        lane: prev,
+        emotions: [],
+        emotionRate: 0,
+        rawResponse: "",
+        decisionSource: "fallback_prev",
+      };
+    }
+    return {
+      lane: "heavy",
+      emotions: [],
+      emotionRate: 0,
+      rawResponse: "",
+      decisionSource: "fallback_heavy",
+    };
+  }
+}

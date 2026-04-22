@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { runWithSingleFlight } from "../../../agent/runtime/run.js";
+import { dispatchAgentRequest } from "../../../agent/dispatch/dispatch.js";
 import type { RuntimeStreamEvent } from "../../../agent/utils/events.js";
 import { getSubsystemConsoleLogger } from "../../../logger/logger.js";
 import { writeNamedSse, writeSse } from "../utils/sse.js";
@@ -69,13 +69,9 @@ export function createChatRouter() {
     // 当前 Web 端为单租户模式，tenantId 由 channels.web.tenantId 决定（默认 "default"）
     const tenantId = readFgbgUserConfig().channels.web.tenantId;
 
-    // 调用 runWithSingleFlight 执行 Agent 逻辑：
-    // - module: "main" 表示主对话模块
-    // - tenantId: 用于隔离不同租户的会话状态和上下文
-    // - sessionKey: 未显式传入时由 runWithSingleFlight 内部根据 channel + tenantId 派生
-    // - singleFlight 机制确保同一会话同一时间只有一个请求在执行，避免并发冲突
+    // 调用 dispatchAgentRequest：管理指令短路 → 路由 lane → 单飞执行
     try {
-      const result = await runWithSingleFlight({
+      const result = await dispatchAgentRequest({
         message,
         channel: "web",
         tenantId,

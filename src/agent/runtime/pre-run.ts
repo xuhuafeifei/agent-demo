@@ -11,6 +11,10 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { ensureAgentWorkspace } from "../workspace.js";
 import { type AgentChannel } from "../channel-policy.js";
 import { readFgbgUserConfig } from "../../config/index.js";
+import type { BaseHook } from "../../hook/base-hook.js";
+import type { AgentHookEvent } from "../../hook/events.js";
+import { PromptHook } from "../../hook/prompt-hook.js";
+import { ToolHook } from "../../hook/tool-hook.js";
 
 /**
  * 从模型配置中获取上下文 token 数
@@ -84,8 +88,14 @@ export async function prepareBeforeGetReply(params: {
   normalizedProvider: string;
   apiKey?: string;
   thinkingLevel: ThinkingLevel;
+  /** 工具 / prompt 共用（各 Hook 按 event.kind 自行过滤；默认含 PromptHook + ToolHook） */
+  hooks: Set<BaseHook<AgentHookEvent>>;
 }> {
   const { tenantId, sessionKey, channel } = params;
+
+  const hooks = new Set<BaseHook<AgentHookEvent>>();
+  hooks.add(new PromptHook());
+  hooks.add(new ToolHook());
 
   // ─── 步骤 1：选择运行时模型 ───
   // 根据全局配置选择本次请求要使用的 LLM 模型
@@ -159,5 +169,6 @@ export async function prepareBeforeGetReply(params: {
     normalizedProvider,
     apiKey,
     thinkingLevel,
+    hooks,
   };
 }

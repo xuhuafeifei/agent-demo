@@ -7,7 +7,7 @@
 
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { readFgbgUserConfig } from "../../config/index.js";
-import { runWithSingleFlight } from "../../agent/runtime/run.js";
+import { dispatchAgentRequest } from "../../agent/dispatch/dispatch.js";
 import {
   loadWeixinAccounts,
   updateWeixinBotBuf,
@@ -111,7 +111,7 @@ export async function sendWeixinDirectMessage(
  * 将同一 Bot 的多条消息合并后调用 Agent 处理（单飞）。
  *
  * tenantId 流向：
- *   bot.tenantId（来自 WeixinBoundBot）→ runWithSingleFlight({ tenantId })
+ *   bot.tenantId（来自 WeixinBoundBot）→ dispatchAgentRequest({ tenantId })
  *   该 tenantId 会被 Agent 系统用来隔离不同租户的会话上下文和记忆。
  */
 async function processBotBucket(
@@ -129,9 +129,7 @@ async function processBotBucket(
   // 持久化对手方用户 ID，供后续主动发消息使用
   updateWeixinBotPeerUserId(bot.tenantId, from);
 
-  // 以 bot.tenantId 作为租户标识调用 Agent 单飞逻辑
-  // runWithSingleFlight 内部会根据 tenantId 隔离会话，保证同一租户同时只有一个请求在运行
-  const result = await runWithSingleFlight({
+  const result = await dispatchAgentRequest({
     message: aggregatedText,
     channel: "weixin",
     tenantId: bot.tenantId, // 关键：将微信 bot 的 tenantId 传入 Agent，实现租户级隔离

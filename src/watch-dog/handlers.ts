@@ -342,7 +342,7 @@ export const executeReminderHandler: TaskHandler = async ({
  * 1. tenantId 隔离：决定执行该任务时使用哪个租户的 workspace/memory/session
  *    - payload.tenantId 优先，未指定则回退到全局 web 渠道的 tenantId
  *    - 不同租户的 Agent 上下文完全隔离（记忆、会话、工作空间独立）
- * 2. 使用 runWithSingleFlight 调用 Agent：
+ * 2. 使用 dispatchAgentRequest 调用 Agent：
  *    - module: "watch-dog" 确保与 main 模块并发互不阻塞
  *    - watchDogTaskId: 绑定任务 ID，便于追踪和日志关联
  *    - channel: "web" 表示这是 watch-dog 内部触发的任务（非外部用户消息）
@@ -382,8 +382,8 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
       : readFgbgUserConfig().channels.web.tenantId;
 
   try {
-    // 动态导入 Agent 运行模块（避免循环依赖，且按需加载）
-    const { runWithSingleFlight } = await import("../agent/runtime/run.js");
+    // 动态导入 Agent dispatch 入口（避免循环依赖，且按需加载）
+    const { dispatchAgentRequest } = await import("../agent/dispatch/dispatch.js");
     const now = nowChinaIso();
     // 构建 Agent 执行的 prompt：包含任务名、当前时间、任务目标
     const prompt = [
@@ -396,7 +396,7 @@ export const executeAgentHandler: TaskHandler = async ({ task, payload }) => {
 
     // watch-dog 使用独立 module，与 main 并发互不阻塞
     // 每个任务使用独立的 sessionKey（通过 watchDogTaskId 区分）
-    const result = await runWithSingleFlight({
+    const result = await dispatchAgentRequest({
       message: prompt,
       channel: "web", // web 渠道表示内部触发（非外部用户消息）
       tenantId, // 租户隔离：使用对应租户的 workspace/memory/session

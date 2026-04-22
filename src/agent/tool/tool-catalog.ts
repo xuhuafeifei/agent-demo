@@ -6,7 +6,7 @@
  * - 这是唯一的「工具注册点」，新增工具只需在此处添加条目
  * - 不读取任何配置，仅定义「有什么」和「怎么实例化」
  * - 工具说明文案（description）只在各工具工厂返回的 ToolDefinition 中维护一份，
- *   createToolBundle 会从实例上读取并写入 system prompt ## Toolings
+ *   createToolBundle / ToolHook 会从实例上读取并写入 system prompt ## Toolings
  *
  * 工具按功能类别组织：
  * - 文件操作：read、write
@@ -62,16 +62,16 @@ type ToolFactory = (
 ) => RuntimeToolDefinition;
 
 /** 工具目录条目：工厂函数 + 可选的安全检查规格 */
-type ToolEntry = {
+export type ToolEntry = {
   factory: ToolFactory;
   /** 安全检查规格，createToolBundle 装配时自动织入 */
   checks?: ToolCheckSpec[];
 };
 
 /**
- * 工具目录：名称 → 工厂函数
+ * 工具目录：名称 → 工厂函数（模块内可扩展；对外请用 {@link TOOL_CATALOG} 只读视图）。
  */
-export const TOOL_CATALOG: Record<string, ToolEntry> = {
+const TOOL_CATALOG_INTERNAL = {
   // ===== 文件操作 =====
   read: {
     factory: (_cwd, tenantId, channel, agentId) =>
@@ -189,10 +189,23 @@ export const TOOL_CATALOG: Record<string, ToolEntry> = {
   webFetch: {
     factory: (_cwd, _tenantId, _channel, _agentId) => createWebFetchTool(),
   },
-};
+} satisfies Record<string, ToolEntry>;
+
+/**
+ * 只读工具目录：供包外与其它模块只读使用（不要依赖可变性）。
+ */
+export const TOOL_CATALOG: Readonly<typeof TOOL_CATALOG_INTERNAL> =
+  TOOL_CATALOG_INTERNAL;
+
+/**
+ * 与 {@link TOOL_CATALOG} 同步的 Map，便于按名 O(1) 取条目（装配用户勾选工具等）。
+ */
+export const TOOL_ENTRY_BY_NAME: ReadonlyMap<string, ToolEntry> = new Map(
+  Object.entries(TOOL_CATALOG_INTERNAL),
+);
 
 /**
  * 工具目录名称联合类型
  * 用于类型安全地引用工具名，如：ToolCatalogName = "read" | "write" | "memorySearch" | ...
  */
-export type ToolCatalogName = keyof typeof TOOL_CATALOG;
+export type ToolCatalogName = keyof typeof TOOL_CATALOG_INTERNAL;

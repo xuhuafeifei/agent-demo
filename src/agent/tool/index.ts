@@ -37,9 +37,16 @@ export {
 } from "./security/tool-security.resolve.js";
 
 // 工具目录与装配
-export { TOOL_CATALOG, type ToolCatalogName } from "./tool-catalog.js";
+export {
+  TOOL_CATALOG,
+  TOOL_ENTRY_BY_NAME,
+  type ToolCatalogName,
+  type ToolEntry,
+} from "./tool-catalog.js";
+export { BUILTIN_TOOL_NAMES, type BuiltinToolName } from "./builtin-tools.js";
 export {
   createToolBundle,
+  createBuiltInTools,
   getFilterContextToolNames,
   type ToolBundle,
 } from "./tool-bundle.js";

@@ -1,48 +1,58 @@
-import fs from "node:fs";
-import { getGlobalModelConfigPath } from "../pi-embedded-runner/model-config.js";
+/**
+ * Agent 主运行入口：单次拉取回复（getReplyFromAgent）与单飞包装（runWithSingleFlight）。
+ * 历史 / Hook / 路径调试等见 {@link run.helper.js} 再 export。
+ */
 import {
   createRuntimeAgentSession,
   runEmbeddedPiAgent,
 } from "../pi-embedded-runner/attempt.js";
 import { createCacheTrace } from "../utils/cache-trace.js";
 import type { RuntimeStreamEvent } from "../utils/events.js";
-import { loadSessionIndexEntry, resolveSessionDir } from "../session/index.js";
-import {
-  SessionManager,
-  type SessionMessageEntry,
-} from "@mariozechner/pi-coding-agent";
 import { prepareBeforeGetReply } from "./pre-run.js";
-import { buildSystemPrompt } from "../system-prompt.js";
+import {
+  appendCurrentChatSection,
+  buildSystemPromptStem,
+} from "../system-prompt.js";
+import type { AgentLane } from "../../hook/events.js";
+import { PROMPT_BUILD_KIND, TOOL_HOOK_KIND } from "../../hook/events.js";
 import { getMemoryIndexManager } from "../../memory/index.js";
 import {
   readWorkspaceSoul,
   readWorkspaceUserinfoSummary,
 } from "../workspace.js";
-import type {
-  TextContent,
-  ThinkingContent,
-  ToolCall,
-} from "@mariozechner/pi-ai";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { resolveTenantWorkspaceDir } from "../../utils/app-path.js";
-import { createToolBundle } from "../tool/tool-bundle.js";
 import { getSkillManager } from "../skill/skill-manager.js";
 import {
   getAllRunningAgentStates,
   tryAcquireAgent,
   releaseAgent,
   bindAgentSession,
-  getAgentStateById,
-  abortAgentRun,
 } from "../agent-state.js";
 import { formatChinaIso } from "../../watch-dog/time.js";
-import { getFilterContextToolNames } from "../tool/tool-bundle.js";
+import { BUILTIN_TOOL_NAMES } from "../tool/builtin-tools.js";
+import { createToolBundle } from "../tool/tool-bundle.js";
 import { getChannelPolicy, type AgentChannel } from "../channel-policy.js";
 import { refreshFgbgUserConfigCache } from "../../config/index.js";
 import { areTextsOverTokenThreshold } from "../utils/token-counter.js";
+import {
+  getSessionMessageEntrys,
+  invokeAgentHooks,
+  pruneSessionChat,
+} from "./run.helper.js";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 
+export {
+  clearHistory,
+  defaultMainSessionKey,
+  getHistory,
+  getRecentUserInputsForRouter,
+  invokeAgentHooks,
+  logRuntimePaths,
+} from "./run.helper.js";
+
+/** 已选出 provider/model 但 `RuntimeModel` 缺失（如未配置 API Key、模型元数据未加载）时由主链路抛出。 */
 export class ModelUnavailableError extends Error {
   provider?: string;
   model?: string;
@@ -56,6 +66,8 @@ export class ModelUnavailableError extends Error {
     this.detail = params.detail;
   }
 }
+
+export type { AgentLane } from "../../hook/events.js";
 
 export type AgentRunResult =
   | { status: "busy"; message: string; systemError: false }
@@ -74,168 +86,18 @@ export type AgentRunResult =
     };
 
 /**
- * 打印当前租户的运行时路径信息（调试用）
- */
-export function logRuntimePaths(tenantId: string): void {
-  const sessionKey = `session:main:${tenantId}`;
-  agentLogger.info(`全局配置路径: ${getGlobalModelConfigPath()}`);
-  const entry = loadSessionIndexEntry(tenantId, sessionKey);
-  agentLogger.info(`会话索引路径: ${resolveSessionDir(tenantId)}/session.json`);
-  agentLogger.info(`会话文件路径: ${entry?.sessionFile ?? "未创建"}`);
-}
-
-const DEFAULT_HISTORY_LIMIT = 20;
-
-/**
- * 获取指定租户的 session 消息列表（内部用，用于构建对话历史上下文）
+ * 向 Agent 拉取一次回复（完整一轮：准备环境 → 工具 Hook → 建 Pi session → 拼 system prompt 与第二段 Hook →
+ * 设入模型 → 跑嵌入式 Pi）。流式进度经 `onEvent` 上抛给 web/IM 等中间层。
  *
- * 流程：
- * 1. 通过 sessionKey 定位索引文件
- * 2. 打开 SessionManager 读取所有消息条目
- * 3. 过滤出 type === "message" 的条目返回
- */
-function getSessionMessageEntrys(tenantId: string): SessionMessageEntry[] {
-  // 构造该租户的主会话键
-  const sessionKey = `session:main:${tenantId}`;
-  const entry = loadSessionIndexEntry(tenantId, sessionKey);
-  // 无索引或文件不存在，返回空列表
-  if (!entry?.sessionFile) return [];
-  if (!fs.existsSync(entry.sessionFile)) return [];
-
-  // 打开 session 文件，提取所有消息条目
-  const sessionManager = SessionManager.open(
-    entry.sessionFile,
-    resolveSessionDir(tenantId),
-  );
-  const entries = sessionManager.getEntries();
-
-  // 只保留 type === "message" 的条目（排除 system/tool 类型）
-  return entries.filter(
-    (entryItem): entryItem is SessionMessageEntry =>
-      entryItem.type === "message",
-  );
-}
-
-/**
- * 获取指定租户的对话历史（前端 API 消费）
+ * 与 {@link runWithSingleFlight} 的区别：本函数不抢 agent 互斥锁，仅假设调用方已选好 `sessionKey` / `agentId`。
  *
- * 从 session 文件中提取最近 20 条 user/assistant 消息，
- * 只保留纯文本内容，过滤掉 tool 调用等内部消息。
- */
-export function getHistory(tenantId: string): Array<{
-  role: string;
-  content: string;
-  timestamp?: number;
-}> {
-  const messageEntrys = getSessionMessageEntrys(tenantId);
-  // 只保留 user 和 assistant 角色的消息
-  const filtered = messageEntrys.filter(
-    (msg) => msg.message.role === "user" || msg.message.role === "assistant",
-  );
-  // 取最近 20 条
-  const recent = filtered.slice(-DEFAULT_HISTORY_LIMIT);
-  const history: Array<{ role: string; content: string; timestamp?: number }> =
-    [];
-  // 伪造时间戳：基于当前时间倒推，每条间隔 1 秒
-  const baseTimestamp = Date.now() - recent.length * 1000;
-
-  recent.forEach((msg, idx) => {
-    const raw = msg.message as {
-      role?: string;
-      content?: (TextContent | ThinkingContent | ToolCall)[];
-      toolName?: string;
-    };
-    // 从复合消息中提取文本部分
-    const textParts: string[] = [];
-    if (Array.isArray(raw.content)) {
-      for (const block of raw.content) {
-        if (
-          block?.type === "text" &&
-          typeof block.text === "string" &&
-          block.text.trim()
-        ) {
-          textParts.push(block.text.trim());
-        }
-      }
-    }
-    // 只保留有文本内容的消息
-    if (textParts.length > 0) {
-      history.push({
-        role: raw.role || "unknown",
-        content: textParts.join("\n"),
-        timestamp: baseTimestamp + idx * 1000,
-      });
-    }
-  });
-
-  return history;
-}
-
-/**
- * 清除指定租户的会话历史
- */
-export function clearHistory(tenantId: string): void {
-  const sessionKey = `session:main:${tenantId}`;
-  const entry = loadSessionIndexEntry(tenantId, sessionKey);
-  if (!entry?.sessionFile) return;
-  try {
-    fs.unlinkSync(entry.sessionFile);
-  } catch {
-    // 忽略文件不存在的情况
-  }
-}
-
-/**
- * 从 session 消息列表剪枝，返回 "user: ...\n\nassistant: ..." 格式文本。
- *
- * 用于构建 system prompt 中的对话历史上下文。
- * 过滤掉 context tool（如 memory-search、read 等无实际对话意义的工具调用），
- * 只保留有文本内容的 user/assistant 消息，按时间倒序后反转恢复正序。
- */
-function pruneSessionChat(messages: SessionMessageEntry[]): string {
-  const selected: string[] = [];
-  const filterToolNames = getFilterContextToolNames();
-  for (let i = 0; i < messages.length; i += 1) {
-    const msg = messages[i];
-    const raw = msg.message as {
-      role?: string;
-      content?: (TextContent | ThinkingContent | ToolCall)[];
-      toolName?: string;
-    };
-    const role = raw.role ?? "unknown";
-    const toolName = raw.toolName ?? "";
-    // 跳过 context tool 的调用记录（如 memory-search、read 等）
-    if (filterToolNames.includes(toolName)) continue;
-
-    // 提取消息中的文本部分
-    const parts: string[] = [];
-    if (Array.isArray(raw.content)) {
-      for (const block of raw.content) {
-        if (
-          block?.type === "text" &&
-          typeof block.text === "string" &&
-          block.text.trim()
-        ) {
-          parts.push(block.text.trim());
-        }
-      }
-    }
-    if (parts.length > 0) {
-      selected.push(`${role}: ${parts.join("\n")}`);
-    }
-  }
-  // 反转恢复时间正序，用双换行分隔
-  return selected.reverse().join("\n\n");
-}
-
-/**
- * 向 Agent 拉取一次回复；流式进度通过 `onEvent` 交给中间层。
- *
- * @param params.message 用户输入
- * @param params.onEvent 流式事件回调
- * @param params.channel 渠道：web | qq | weixin
- * @param params.tenantId 租户 ID，决定使用哪套 workspace/memory/session
- * @param params.sessionKey 会话键（watch-dog 使用 `watchdog:task:{id}`，普通渠道使用 `session:main:{tenantId}`）
+ * @param params.message 本轮用户输入
+ * @param params.onEvent 流式事件（含 token/工具/context 等）
+ * @param params.channel 渠道（影响渠道策略、thinking 等）
+ * @param params.tenantId 租户，驱动 workspace / session 路径
+ * @param params.sessionKey 已解析好的会话键（须与 `agentId` 所代表的模块一致）
+ * @param params.agentId 与 agent-state 绑定的实例 id（如 `agent:main:xxx`）
+ * @param params.lane 轻量/重量会话模式，影响工具预装等（默认 `heavy`）
  */
 export async function getReplyFromAgent(params: {
   message: string;
@@ -244,6 +106,7 @@ export async function getReplyFromAgent(params: {
   tenantId: string;
   sessionKey: string;
   agentId: string;
+  lane?: AgentLane;
 }): Promise<string> {
   agentLogger.debug(
     `[agent] getReplyFromAgent params=${JSON.stringify(params)}`,
@@ -251,9 +114,17 @@ export async function getReplyFromAgent(params: {
   // 刷新配置缓存，确保使用最新的模型配置
   refreshFgbgUserConfigCache();
 
-  const { message, onEvent, channel, tenantId, sessionKey, agentId } = params;
+  const {
+    message,
+    onEvent,
+    channel,
+    tenantId,
+    sessionKey,
+    agentId,
+    lane = "heavy",
+  } = params;
 
-  // 准备运行时环境：模型选择、workspace 创建、session 初始化
+  // 阶段一：与本次请求绑定的环境（模型、工作目录、session 文件、默认 PromptHook+ToolHook 等）
   const prepared = await prepareBeforeGetReply({
     tenantId,
     sessionKey,
@@ -294,6 +165,27 @@ export async function getReplyFromAgent(params: {
     model: modelRef.model,
   });
 
+  // 创建内置工具
+  const builtInBundle = createToolBundle(
+    prepared.cwd,
+    tenantId,
+    channel,
+    agentId,
+    BUILTIN_TOOL_NAMES,
+  );
+
+  const toolHookEvent = {
+    kind: TOOL_HOOK_KIND,
+    lane,
+    tenantId,
+    channel,
+    cwd: prepared.cwd,
+    agentId,
+    tools: builtInBundle.tools,
+    toolings: builtInBundle.toolings,
+  };
+  await invokeAgentHooks(prepared.hooks, toolHookEvent);
+
   // 创建运行时 agent session（包含工具链、模型配置、租户隔离）
   const session = await createRuntimeAgentSession({
     model: prepared.model!,
@@ -307,28 +199,42 @@ export async function getReplyFromAgent(params: {
     tenantId: tenantId, // tenantId 是租户 ID
     channel: channel, // channel 是渠道
     agentId, // agentId 是 agent 主键
+    customTools: toolHookEvent.tools,
   });
   // 绑定到agent-state. 当前 agent 主运行的容器
   bindAgentSession(agentId, session);
 
   // 从 session 历史剪枝生成对话上下文字
-  const chatHistoryText = pruneSessionChat(getSessionMessageEntrys(tenantId));
+  const chatHistoryText = pruneSessionChat(
+    getSessionMessageEntrys(tenantId, sessionKey),
+  );
 
-  // 构建 system prompt：整合 SOUL.md、userinfo、对话历史、工具元数据、技能元数据
-  const prompt = buildSystemPrompt({
+  let promptText = buildSystemPromptStem({
     soul: readWorkspaceSoul(tenantId),
     user: readWorkspaceUserinfoSummary(tenantId),
     nowText: formatChinaIso(new Date()),
     language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
-    chatHistory: chatHistoryText,
-    workspace: resolveTenantWorkspaceDir(tenantId),
-    toolings: createToolBundle(prepared.cwd, tenantId, channel, agentId)
-      .toolings,
-    skillsMeta: getSkillManager(tenantId).getMetaPromptText(),
     channel: channel,
-    // tenantId 作为 channel 的上下文信息写入 system prompt，供工具参数填写参考
     tenantId: tenantId,
   });
+  const heavyPayload = {
+    workspace: resolveTenantWorkspaceDir(tenantId),
+    toolings: toolHookEvent.toolings,
+    skillsMeta: getSkillManager(tenantId).getMetaPromptText(),
+  };
+  const promptBuildEvent = {
+    kind: PROMPT_BUILD_KIND,
+    lane,
+    tenantId,
+    channel,
+    promptText,
+    heavyPayload,
+  };
+  await invokeAgentHooks(prepared.hooks, promptBuildEvent, {
+    logErrors: true,
+  });
+  const prompt =
+    promptBuildEvent.promptText + appendCurrentChatSection(chatHistoryText);
   agentLogger.trace(`prompt: ${prompt}`);
 
   // 检查提示词总 token 数是否超过模型上下文窗口，决定是否需要压缩
@@ -432,6 +338,7 @@ export async function runWithSingleFlight(params: {
   module: string;
   watchDogTaskId?: string;
   channel: AgentChannel;
+  lane?: AgentLane;
 }): Promise<AgentRunResult> {
   const {
     message,
@@ -440,32 +347,13 @@ export async function runWithSingleFlight(params: {
     tenantId,
     module: mod,
     channel,
+    lane = "heavy",
   } = params;
   const emitEvent = onEvent ?? (() => {});
 
   // 锁 key 由 module + tenantId 组成，不同 module 的同租户 agent 可并发
   const agentId = `agent:${mod}:${tenantId}`;
-  const sessionKey = `session:${mod}:${tenantId}`;
-
-  // 特殊指令：-stop 仅用于终止当前 agentId 的运行，不走正常单飞执行流程。
-  if (message.trim() === "-stop") {
-    const state = getAgentStateById(agentId);
-    if (!state) {
-      return {
-        status: "success",
-        finalText: "",
-        message: "当前没有正在运行的任务",
-        systemError: false,
-      };
-    }
-    abortAgentRun(agentId, "stopped by -stop command");
-    return {
-      status: "success",
-      finalText: "",
-      message: "已发送停止指令",
-      systemError: false,
-    };
-  }
+  const sessionKey = `session:${mod}:${lane}:${tenantId}`;
 
   if (!tryAcquireAgent(agentId, tenantId, channel)) {
     return {
@@ -484,6 +372,7 @@ export async function runWithSingleFlight(params: {
       tenantId,
       sessionKey,
       agentId,
+      lane,
     });
     return {
       status: "success",

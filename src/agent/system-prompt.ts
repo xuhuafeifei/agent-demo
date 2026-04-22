@@ -3,23 +3,6 @@ import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
 const logger = getSubsystemConsoleLogger("system-prompt");
 
-export type BuildSystemPromptInput = {
-  soul: string;
-  user?: string;
-  nowText: string;
-  language: string;
-  chatHistory?: string;
-  workspace?: string;
-  toolings?: string[];
-  skillsMeta?: string;
-  channel?: AgentChannel;
-  /**
-   * 当前会话所属租户 ID（tenantId）。
-   * 用于告知大模型在调用 sendIMMessage、createReminderTask 等工具时填入的 tenantId 值。
-   */
-  tenantId: string;
-};
-
 function nonEmptyOrFallback(
   value: string | undefined,
   fallback: string,
@@ -37,79 +20,132 @@ function nonEmptyListOrFallback(
   return list.length > 0 ? list : fallback;
 }
 
-/**
- * 纯组合器：
- * - 只接收调用方入参
- * - 只做模板拼接
- * - 不做文件/数据库/网络读取
- */
-export function buildSystemPrompt(input: BuildSystemPromptInput): string {
-  const soul = nonEmptyOrFallback(input.soul, "N/A");
-  const user = nonEmptyOrFallback(input.user, "N/A");
-  const nowText = nonEmptyOrFallback(input.nowText, "N/A");
-  const language = nonEmptyOrFallback(input.language, "zh-CN");
-  const chatHistory = nonEmptyOrFallback(input.chatHistory, "N/A");
-  const workspace = nonEmptyOrFallback(input.workspace, "N/A");
-  const toolings = nonEmptyListOrFallback(input.toolings, ["N/A"]);
-  const skillsMeta = nonEmptyOrFallback(input.skillsMeta, "No skills loaded.");
-  const channel = input.channel;
-  const tenantId = input.tenantId;
-  // debug，一手删了
-  logger.debug(`channel, tenantId: ${channel}, ${tenantId}`);
+/** 多块 prompt 拼接；Hook / 调用方累加时用 */
+export function joinPromptBlocks(...blocks: string[]): string {
+  return blocks.filter((b) => b.length > 0).join("\n\n");
+}
+
+// --- 共用块（每段自包含 ## 标题与正文）---
+
+export function whoYouArePromptBlock(soul: string): string {
+  const text = nonEmptyOrFallback(soul, "N/A");
   return `## who you are
-${soul}
+${text}`;
+}
 
-## Environment
-Please current date is ${nowText}! don't forget it!
-If you see other time information elsewhere, those are outdated; ${nowText} is the correct one!
+export function environmentPromptBlock(nowText: string): string {
+  const t = nonEmptyOrFallback(nowText, "N/A");
+  return `## Environment
+Please current date is ${t}! don't forget it!
+If you see other time information elsewhere, those are outdated; ${t} is the correct one!`;
+}
 
-## Channel
+export function channelPromptBlock(
+  channel: AgentChannel | undefined,
+  tenantId: string,
+): string {
+  return `## Channel
 Current channel is ${channel}. 
-Current tenantId is ${tenantId}.
+Current tenantId is ${tenantId}.`;
+}
 
-## Channel rules
+export function channelRulesPromptBlock(
+  channel: AgentChannel | undefined,
+  tenantId: string,
+): string {
+  return `## Channel rules
 1. **currentChannel** must exactly match the channel shown above under **## Channel** (expected: \`${channel}\`).
 2. **currentTenantId** must exactly match the tenantId shown above (expected: \`${tenantId}\`).
 3. **sendToChannel / sendToTenantId** (tool-dependent): **createReminderTask** may omit both; the server defaults to the runtime channel and tenantId. **sendIMMessage** must always pass **sendToChannel** (qq or weixin); **sendToTenantId** may be omitted (defaults to runtime tenantId).
-4. Do not invent arbitrary channel or tenant values.
+4. Do not invent arbitrary channel or tenant values.`;
+}
 
-## Toolings
-
-You have access to the following toolings:
-- ${toolings.join("\n- ")}
-
-## Skills
-${skillsMeta}
-
-## User
+export function userPromptBlock(user: string): string {
+  const text = nonEmptyOrFallback(user, "N/A");
+  return `## User
 Summaries from workspace **userinfo/*.md** (YAML frontmatter \`name\` / \`description\`). For full text or fuzzy recall use **memorySearch** and **read** on \`userinfo/...\`.
 
-${user}
+${text}`;
+}
 
-## Language
-If the user does not request it, reply in ${language}.
+export function languagePromptBlock(language: string): string {
+  const lang = nonEmptyOrFallback(language, "zh-CN");
+  return `## Language
+If the user does not request it, reply in ${lang}.`;
+}
 
-## Workspace
-Your working directory is: ${workspace}
+// --- heavy 块 ---
 
+export function toolingsPromptBlock(toolings: string[]): string {
+  const list = nonEmptyListOrFallback(toolings, ["N/A"]);
+  return `## Toolings
 
-## Memory Recall
+You have access to the following toolings:
+- ${list.join("\n- ")}`;
+}
+
+export function skillsPromptBlock(skillsMeta: string): string {
+  const text = nonEmptyOrFallback(skillsMeta, "No skills loaded.");
+  return `## Skills
+${text}`;
+}
+
+export function workspacePromptBlock(workspace: string): string {
+  const path = nonEmptyOrFallback(workspace, "N/A");
+  return `## Workspace
+Your working directory is: ${path}`;
+}
+
+export function memoryRecallPromptBlock(): string {
+  return `## Memory Recall
 Do not assume memory is preloaded in this prompt.
 When you need past memory or long-term context, use function tools to query memory by yourself.
 
-Boundary: **Project-level** long-term notes live in workspace **MEMORY.md** (this workspace). **User-level** topic summaries live under **~/.fgbg/memory/** (via persistKnowledge type memory). Do not confuse the two when persisting or searching.
+Boundary: **Project-level** long-term notes live in workspace **MEMORY.md** (this workspace). **User-level** topic summaries live under **~/.fgbg/memory/** (via persistKnowledge type memory). Do not confuse the two when persisting or searching.`;
+}
 
-## Memory Persistence
+export function memoryPersistencePromptBlock(): string {
+  return `## Memory Persistence
 Use **persistKnowledge** with required field **type**:
 
 - **type: "memory"** — Records of important events or topics in **~/.fgbg/memory/<fileName>.md** (creates new file). Fields: **fileName** (e.g. \`notes.md\`), **content** (plain Markdown body).
 - **type: "userinfo"** — User profile and preferences in **workspace/userinfo/<fileName>.md** (creates new file). Fields: **fileName**, **title**, **description**, **content**. The tool adds YAML frontmatter; these files are indexed for memorySearch and summarized in ## User above.
 - **type: "skill"** — Reusable procedures under **workspace/skills/<skillDir>/** (writes SKILL.md with YAML frontmatter). Fields: **path** (skill directory), **title**, **description**, **content**. Full steps: use **loadSkill(path)**; do not rely on memorySearch for skill bodies.
 
-For **MEMORY.md** only: use **read** / **write** / **append** on the workspace file path—do not use persistKnowledge for it.
+For **MEMORY.md** only: use **read** / **write** / **append** on the workspace file path—do not use persistKnowledge for it.`;
+}
 
-## Current Chat Information
+export function currentChatPromptBlock(chatHistory: string): string {
+  const text = nonEmptyOrFallback(chatHistory, "N/A");
+  return `## Current Chat Information
 user and assistant chat history
-${chatHistory}
-`;
+${text}`;
+}
+
+/**
+ * 共用 stem（至 Language）：主流程构建后交给 Hook 追加；最后在 run 里再接 Current Chat。
+ */
+export function buildSystemPromptStem(params: {
+  soul: string;
+  user?: string;
+  nowText: string;
+  language: string;
+  channel?: AgentChannel;
+  tenantId: string;
+}): string {
+  const { channel, tenantId } = params;
+  logger.debug(`channel, tenantId: ${channel}, ${tenantId}`);
+  return joinPromptBlocks(
+    whoYouArePromptBlock(params.soul),
+    environmentPromptBlock(params.nowText),
+    channelPromptBlock(channel, tenantId),
+    channelRulesPromptBlock(channel, tenantId),
+    userPromptBlock(params.user ?? ""),
+    languagePromptBlock(params.language),
+  );
+}
+
+/** 主流程在 Hook 之后拼接对话历史块 */
+export function appendCurrentChatSection(chatHistory: string | undefined): string {
+  return `\n\n${currentChatPromptBlock(chatHistory ?? "")}`;
 }

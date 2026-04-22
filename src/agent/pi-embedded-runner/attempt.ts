@@ -16,8 +16,8 @@ import path from "node:path";
 import type { RuntimeModel } from "../../types.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { enrichProviderErrorMessage } from "../model-error-hints.js";
-import { createToolBundle } from "../tool/tool-bundle.js";
 import { getFilterContextToolNames } from "../tool/tool-bundle.js";
+import type { RuntimeToolDefinition } from "../tool/tool-catalog.js";
 import { toolReturnedFailure } from "../tool/utils/tool-result-ui.js";
 import { updateAgentHeartbeatFromEvent } from "../agent-state.js";
 import type { AgentChannel } from "../channel-policy.js";
@@ -180,6 +180,8 @@ export async function createRuntimeAgentSession(params: {
   channel: AgentChannel;
   /** 与本次运行一致的 agent 主键，装配工具时透传 */
   agentId: string;
+  /** 由 ToolHook（及扩展 Hook）解析后的 Pi customTools */
+  customTools: RuntimeToolDefinition[];
 }): Promise<AgentSession> {
   const {
     model,
@@ -193,6 +195,7 @@ export async function createRuntimeAgentSession(params: {
     tenantId,
     channel,
     agentId,
+    customTools,
   } = params;
 
   const sessionManager = SessionManager.open(sessionFile, sessionDir);
@@ -207,7 +210,6 @@ export async function createRuntimeAgentSession(params: {
     path.join(agentDir, "models.json"),
   );
   modelRegistry.refresh();
-  const toolBundle = createToolBundle(cwd, tenantId, channel, agentId);
 
   const { session } = await createAgentSession({
     model,
@@ -219,7 +221,7 @@ export async function createRuntimeAgentSession(params: {
     agentDir,
     thinkingLevel: thinkingLevel,
     // 自定义工具通过 customTools 传入，框架会自动覆盖内置同名工具
-    customTools: toolBundle.tools,
+    customTools,
   });
 
   // 调试：打印会话中的工具名称

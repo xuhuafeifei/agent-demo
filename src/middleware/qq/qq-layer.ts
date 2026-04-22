@@ -1,6 +1,6 @@
 import WebSocket, { type RawData } from "ws";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
-import { runWithSingleFlight } from "../../agent/runtime/run.js";
+import { dispatchAgentRequest } from "../../agent/dispatch/dispatch.js";
 import { resolveQQAccountFromConfig } from "./qq-config.js";
 import { getEventBus } from "../../event-bus/index.js";
 import { getGatewayUrl, sendC2CMessage } from "./qq-api.js";
@@ -205,8 +205,8 @@ export async function sendQQDirectMessage(
  * 3. 建立 WebSocket 连接，接收 Gateway Hello（op=10）后发送 Identify（op=2）认证
  * 4. 启动心跳定时器，按 Gateway 返回的 heartbeat_interval 定期发送 Ping（op=1）
  * 5. 收到 C2C 私聊消息时，解析出用户 openid 和消息内容
- * 6. 使用 primary bot 的 tenantId 调用 runWithSingleFlight 处理 AI 对话
- * 7. 根据 runWithSingleFlight 的事件回调（onAccepted/onBusy/onError/completed）
+ * 6. 使用 primary bot 的 tenantId 调用 dispatchAgentRequest 处理 AI 对话
+ * 7. 根据 dispatch 返回结果（onAccepted/busy/failed/success）
  *    向用户发送对应的 QQ 消息回复
  *
  * 断线重连：ws.on("close") 和 catch 块中都会 setTimeout 重新调用 connect()，
@@ -316,9 +316,7 @@ export async function startQQLayer(): Promise<void> {
         const tenantId =
           getPrimaryQQBot()?.tenantId?.trim() || QQ_DEFAULT_TENANT_ID;
 
-        // 调用 runWithSingleFlight 启动 AI 对话处理流程
-        // singleFlight 保证同一时刻只有一个对话在运行，避免并发冲突
-        await runWithSingleFlight({
+        await dispatchAgentRequest({
           message: inboundText,
           channel: "qq",
           tenantId,

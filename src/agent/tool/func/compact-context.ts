@@ -4,6 +4,11 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { prepareBeforeGetReply } from "../../runtime/pre-run.js";
 import { createRuntimeAgentSession } from "../../pi-embedded-runner/attempt.js";
 import { errResult, okResult, type ToolDetails } from "../tool-result.js";
+import { TOOL_HOOK_KIND } from "../../../hook/events.js";
+import { invokeAgentHooks } from "../../runtime/run.js";
+import { BUILTIN_TOOL_NAMES } from "../builtin-tools.js";
+import { TOOL_ENTRY_BY_NAME } from "../tool-catalog.js";
+import { createToolBundle } from "../tool-bundle.js";
 
 const logger = getSubsystemConsoleLogger("compact-tool");
 const compactContextParameters = Type.Object({});
@@ -45,6 +50,29 @@ export function createCompactContextTool(
           channel: "web",
         });
 
+        const agentId = `agent:main:${tenantId}`;
+        const builtinNames = BUILTIN_TOOL_NAMES.filter((n) =>
+          TOOL_ENTRY_BY_NAME.has(n),
+        );
+        const builtInBundle = createToolBundle(
+          prepared.cwd,
+          tenantId,
+          "web",
+          agentId,
+          builtinNames,
+        );
+        const toolHookEvent = {
+          kind: TOOL_HOOK_KIND,
+          lane: "heavy" as const,
+          tenantId,
+          channel: "web" as const,
+          cwd: prepared.cwd,
+          agentId,
+          tools: builtInBundle.tools,
+          toolings: builtInBundle.toolings,
+        };
+        await invokeAgentHooks(prepared.hooks, toolHookEvent);
+
         const session = await createRuntimeAgentSession({
           model: prepared.model!,
           sessionDir: prepared.sessionDir,
@@ -56,7 +84,8 @@ export function createCompactContextTool(
           thinkingLevel: prepared.thinkingLevel,
           tenantId,
           channel: "web",
-          agentId: `agent:main:${tenantId}`,
+          agentId,
+          customTools: toolHookEvent.tools,
         });
 
         const compactionResult = await session.compact(
