@@ -15,6 +15,8 @@ export type RouteDecisionRecord = {
   mode: AgentLane;
   /** router | fallback_prev | fallback_heavy | non_main_module */
   decisionSource: string;
+  /** 模型在 JSON 中给出的 lane 判断说明（与 router 决策同源） */
+  routerReasoning: string;
   routerRawResponse: string;
 };
 

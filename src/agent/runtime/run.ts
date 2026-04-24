@@ -165,7 +165,7 @@ export async function getReplyFromAgent(params: {
     model: modelRef.model,
   });
 
-  // 创建内置工具
+  // 系统必带四项（知识/时间）；read/bash/edit/write 等由 ToolHook 按 enabledTools 叠加
   const builtInBundle = createToolBundle(
     prepared.cwd,
     tenantId,

@@ -236,16 +236,17 @@ export const GLOBAL_DENY_PATHS_WIN = [
 
 export type ToolMode = "safety" | "guard" | "yolo" | "custom";
 
-/** 各模式内置工具表（代码内自带默认） */
+/**
+ * 各模式「参考」工具名表（面向文档/展示；运行时 = 系统必带四项 + enabledTools，见 builtin-tools / tool-security.defaults）。
+ * 系统必带（全 heavy 预装）：memorySearch、getNow、persistKnowledge、loadSkill — 勿再写入此表以免重复表述。
+ */
 export const MODE_TOOL_SETS: Record<ToolMode, { tools: string[] }> = {
   safety: {
     tools: [
       "read",
       "write",
-      "memorySearch",
-      "persistKnowledge",
-      "loadSkill",
-      "getNow",
+      "edit",
+      "sendIMMessage",
       "createReminderTask",
       "listTaskSchedules",
     ],
@@ -255,17 +256,16 @@ export const MODE_TOOL_SETS: Record<ToolMode, { tools: string[] }> = {
       "read",
       "write",
       "edit",
-      "memorySearch",
-      "persistKnowledge",
-      "loadSkill",
+      "sendIMMessage",
       "createReminderTask",
       "createAgentTask",
       "compactContext",
-      "bash",
-      "getNow",
       "listTaskSchedules",
       "runTaskByName",
       "deleteTaskByName",
+      "bash",
+      "webSearch",
+      "webFetch",
     ],
   },
   yolo: {
@@ -273,38 +273,33 @@ export const MODE_TOOL_SETS: Record<ToolMode, { tools: string[] }> = {
       "read",
       "write",
       "edit",
-      "memorySearch",
-      "persistKnowledge",
-      "loadSkill",
+      "sendIMMessage",
       "createReminderTask",
       "createAgentTask",
       "compactContext",
       "bash",
-      "getNow",
       "listTaskSchedules",
       "runTaskByName",
       "deleteTaskByName",
+      "webSearch",
+      "webFetch",
     ],
   },
   custom: {
-    // 需要用户自己设置配置文件
     tools: [
       "read",
       "write",
       "edit",
-      "append",
-      "update",
-      "memorySearch",
-      "persistKnowledge",
-      "loadSkill",
+      "sendIMMessage",
       "createReminderTask",
       "createAgentTask",
       "compactContext",
       "bash",
-      "getNow",
       "listTaskSchedules",
       "runTaskByName",
       "deleteTaskByName",
+      "webSearch",
+      "webFetch",
     ],
   },
 };

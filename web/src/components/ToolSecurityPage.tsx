@@ -59,7 +59,7 @@ export default function ToolSecurityPage() {
   } | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [newDenyPath, setNewDenyPath] = useState("");
-  const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [choosableTools, setChoosableTools] = useState<string[]>([]);
 
   useEffect(() => {
     loadConfig();
@@ -69,7 +69,7 @@ export default function ToolSecurityPage() {
     try {
       setLoading(true);
       const data = await toolSecurityApi.getConfig();
-      setAvailableTools(data.availableTools || []);
+      setChoosableTools(data.choosableTools || []);
       const configData = {
         ...data.config,
         denyPaths:
@@ -111,7 +111,7 @@ export default function ToolSecurityPage() {
   const handleReset = async () => {
     try {
       const data = await toolSecurityApi.resetConfig();
-      setAvailableTools(data.availableTools || []);
+      setChoosableTools(data.choosableTools || []);
       setConfig({
         ...data.config,
         denyPaths:
@@ -249,7 +249,7 @@ export default function ToolSecurityPage() {
 
   const isReadOnly = config.preset !== "custom";
   const toolsToShow =
-    availableTools.length > 0 ? availableTools : config.enabledTools;
+    choosableTools.length > 0 ? choosableTools : config.enabledTools;
 
   return (
     <div className="tool-security-page">

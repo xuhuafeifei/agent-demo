@@ -9,6 +9,8 @@
  *   createToolBundle / ToolHook 会从实例上读取并写入 system prompt ## Toolings
  *
  * 工具按功能类别组织：
+ * - 系统必带（builtin-tools，与 enabledTools 无关）：memorySearch、getNow、persistKnowledge、loadSkill
+ * - 文件 / 工程类（典型仅 heavy + enabledTools）：read、write、edit、bash 等
  * - 文件操作：read、write
  * - 知识管理：memorySearch、persistKnowledge、loadSkill
  * - 任务调度：listTaskSchedules、runTaskByName、deleteTaskByName、createReminderTask、createAgentTask、getNow
@@ -50,6 +52,7 @@ import {
   CHANNEL_RUNTIME_MISMATCH_HINT_IM_SEND,
   CHANNEL_RUNTIME_MISMATCH_HINT_REMINDER,
 } from "./utils/channel-runtime-assert.js";
+import { BUILTIN_TOOL_NAMES, type BuiltinToolName } from "./builtin-tools.js";
 
 export type RuntimeToolDefinition = ToolDefinition<any, any>;
 
@@ -196,6 +199,15 @@ const TOOL_CATALOG_INTERNAL = {
  */
 export const TOOL_CATALOG: Readonly<typeof TOOL_CATALOG_INTERNAL> =
   TOOL_CATALOG_INTERNAL;
+
+/** 用户可勾选/配置的工具子集（已排除 {@link BUILTIN_TOOL_NAMES}） */
+export const CHOOSEABLE_TOOLS_CATALOG = {
+  ...Object.fromEntries(
+    Object.entries(TOOL_CATALOG_INTERNAL).filter(([key]) =>
+      !(BUILTIN_TOOL_NAMES as readonly string[]).includes(key),
+    ),
+  ),
+} as Readonly<Omit<typeof TOOL_CATALOG_INTERNAL, BuiltinToolName>>;
 
 /**
  * 与 {@link TOOL_CATALOG} 同步的 Map，便于按名 O(1) 取条目（装配用户勾选工具等）。

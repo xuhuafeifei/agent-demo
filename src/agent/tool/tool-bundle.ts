@@ -113,9 +113,8 @@ export function createToolBundle(
 }
 
 /**
- * 创建内置工具包
- *
- * 内置工具是与业务场景无关的通用工具，所有 Agent 实例都会默认加载
+ * 创建系统必带工具包（memorySearch / getNow / persistKnowledge / loadSkill）。
+ * heavy 主链路先装本包，再经 ToolHook 叠加用户启用工具；不含 read/bash/edit/write。
  *
  * @param cwd - 当前工作目录
  * @param runtimeTenantId - 运行时租户ID

@@ -27,7 +27,7 @@ export interface ToolSecurityConfig {
 
 export interface ToolSecurityResponse {
   config: ToolSecurityConfig;
-  availableTools: string[];
+  choosableTools: string[];
 }
 
 export interface ToolSecurityImportResponse {

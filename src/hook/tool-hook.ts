@@ -7,8 +7,8 @@ import { TOOL_HOOK_KIND, type AgentHookEvent } from "./events.js";
 
 /**
  * 默认工具装配 Hook：
- * - light：主链路不预装工具，event.tools 已为空；此处不追加工具，避免误清空主链路为 heavy 装配的内容。
- * - heavy：在 event 已有内置工具基础上追加用户配置工具（排除内置名避免重复）。
+ * - light：不追加 `enabledTools`；仅保留主链路在 run 中预装的「系统必带」基础工具包。
+ * - heavy：在系统必带工具之上，追加 `enabledTools`（读/写/bash 等由安全配置决定；与必带去重，避免同工具注册两次）。
  */
 export class ToolHook extends BaseHook<AgentHookEvent> {
   readonly name = "tool";
@@ -24,8 +24,7 @@ export class ToolHook extends BaseHook<AgentHookEvent> {
     const securityConfig = resolveToolSecurityConfig(config.toolSecurity);
 
     if (event.lane === "light") {
-      // 与 run 约定：light 不在主链路预装内置，此处勿置空 tools，以免与「主链路先装内置」的演进冲突。
-      // 若将来主链路对全 lane 预装，需在此显式清空以维持 light 零工具会话。
+      // 与 run 约定：light 不叠加用户 enabledTools；主链路仍带系统必带四项（见 builtin-tools）。
       return;
     }
 

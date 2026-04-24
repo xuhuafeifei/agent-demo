@@ -17,6 +17,8 @@ export type RoutingDecisionSource =
 
 export type RoutingDecision = {
   lane: AgentLane;
+  /** 与结构化 JSON 中的 reasoning 字段一致（模型对 lane 的简要说明） */
+  reasoning: string;
   emotions: string[];
   emotionRate: number;
   rawResponse: string;
@@ -35,6 +37,7 @@ export async function resolveLaneWithRouting(params: {
   if (params.module !== "main") {
     return {
       lane: "heavy",
+      reasoning: "",
       emotions: [],
       emotionRate: 0,
       rawResponse: "",
@@ -59,8 +62,16 @@ export async function resolveLaneWithRouting(params: {
         },
       },
     );
+    if (parsed.reasoning) {
+      dispatchRouteAgentLogger.info("router reasoning: %s", parsed.reasoning);
+    } else {
+      dispatchRouteAgentLogger.info(
+        "router reasoning: (empty — 检查模型是否按提示输出 reasoning 字段)",
+      );
+    }
     return {
       lane: parsed.lane,
+      reasoning: parsed.reasoning,
       emotions: parsed.emotions,
       emotionRate: parsed.emotionRate,
       rawResponse: rawText,
@@ -71,6 +82,7 @@ export async function resolveLaneWithRouting(params: {
     if (prev) {
       return {
         lane: prev,
+        reasoning: "",
         emotions: [],
         emotionRate: 0,
         rawResponse: "",
@@ -79,6 +91,7 @@ export async function resolveLaneWithRouting(params: {
     }
     return {
       lane: "heavy",
+      reasoning: "",
       emotions: [],
       emotionRate: 0,
       rawResponse: "",

@@ -70,9 +70,8 @@
     "preset": "guard",
     "enabledTools": [
       "read", "write",
-      "memorySearch", "persistKnowledge", "loadSkill",
       "createReminderTask", "createAgentTask", "compactContext",
-      "getNow", "listTaskSchedules",
+      "listTaskSchedules",
       "runTaskByName", "deleteTaskByName"
     ],
     "access": {

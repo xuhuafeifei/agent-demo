@@ -11,15 +11,15 @@ import {
   type ToolSecurityConfig,
   type ToolMode,
 } from "../../../agent/tool/security/index.js";
-import { TOOL_CATALOG } from "../../../agent/tool/tool-catalog.js";
+import { CHOOSEABLE_TOOLS_CATALOG } from "../../../agent/tool/tool-catalog.js";
 
 /**
  * 获取系统实际可用的工具列表（从工具目录动态获取）
  * 这是"有哪些工具"的权威来源，与 fgbg.json 配置无关
  */
-function getAvailableToolNames(): string[] {
+function getChoosableToolNames(): string[] {
   // 从 TOOL_CATALOG 获取所有工具名（去重，因为 read/readFile 指向同一 entry）
-  return [...new Set(Object.keys(TOOL_CATALOG))];
+  return [...new Set(Object.keys(CHOOSEABLE_TOOLS_CATALOG))];
 }
 
 /**
@@ -123,7 +123,7 @@ export function createToolSecurityRouter(): Router {
       const resolved = resolveToolSecurityConfig(savedConfig);
 
       // 获取所有可用的工具列表（从实际注册的工具目录动态获取）
-      const availableTools = getAvailableToolNames();
+      const choosableTools = getChoosableToolNames();
 
       // 根据 preset 决定返回哪个配置
       let resultConfig;
@@ -167,7 +167,7 @@ export function createToolSecurityRouter(): Router {
       res.json({
         success: true,
         config: resultConfig,
-        availableTools,
+        choosableTools,
       });
     } catch (error: any) {
       res.status(500).json({
@@ -231,7 +231,7 @@ export function createToolSecurityRouter(): Router {
 
       // 解析配置
       const resolved = resolveToolSecurityConfig(currentConfig.toolSecurity);
-      const availableTools = getAvailableToolNames();
+      const choosableTools = getChoosableToolNames();
 
       res.json({
         success: true,
@@ -253,7 +253,7 @@ export function createToolSecurityRouter(): Router {
           },
           unapprovableStrategy: resolved.unapprovableStrategy || "reject",
         },
-        availableTools,
+        choosableTools,
       });
     } catch (error: any) {
       res.status(500).json({
@@ -275,7 +275,7 @@ export function createToolSecurityRouter(): Router {
       evicateFgbgUserConfigCache();
 
       const resolved = resolveToolSecurityConfig(currentConfig.toolSecurity);
-      const availableTools = getAvailableToolNames();
+      const choosableTools = getChoosableToolNames();
 
       res.json({
         success: true,
@@ -297,7 +297,7 @@ export function createToolSecurityRouter(): Router {
           },
           unapprovableStrategy: resolved.unapprovableStrategy || "reject",
         },
-        availableTools,
+        choosableTools,
       });
     } catch (error: any) {
       res.status(500).json({

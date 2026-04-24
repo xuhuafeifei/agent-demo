@@ -46,6 +46,7 @@ export async function runDispatchedAgentConversation(
       consumeTime,
       mode: lane,
       decisionSource: routing.decisionSource,
+      routerReasoning: routing.reasoning,
       routerRawResponse: routing.rawResponse,
     },
   });

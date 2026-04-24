@@ -30,6 +30,10 @@ export type RouterModelOutput = {
    * - heavy：偏工程实现、代码与调试、复杂多步任务、工具编排、严肃问题分析与方案落地。
    */
   lane: "light" | "heavy";
+  /**
+   * 简要的判断依据/思考过程（与 lane 等在同一 JSON 内输出，用于排查与继续优化提示词；不要求很长）。
+   */
+  reasoning: string;
   /** 用户情绪标签数组（简短中文情绪词） */
   emotions: string[];
   /** 用户情绪/激动程度（0~1 的浮点数） */
@@ -50,8 +54,11 @@ lane 含义：
 
 输出约束（必须严格遵守）：
 - 只输出一个 JSON 对象，不要输出任何其它内容（不要 Markdown 代码块、不要解释、不要前后缀）。
-- 键名与类型必须一致：{"lane":"light"|"heavy","emotions":字符串数组,"emotionRate":数字}
-- emotionRate 为 0~1 的浮点数，表示用户情绪/激动程度；emotions 为简短中文情绪词（可空数组）。
+- 必须包含字段 reasoning（字符串）：用 1～5 句中文简要说明「依据历史/当前内容为何选该 lane」；便于排障与优化，随后才是结构化结果。
+- 必须包含字段：lane、emotions、emotionRate；键名与类型如下：
+  {"reasoning":字符串,"lane":"light"|"heavy","emotions":字符串数组,"emotionRate":数字}
+- emotionRate 为 0~1 的浮点数；emotions 为简短中文情绪词（可空数组）。
+- 字符串里不要使用未转义的双引号，避免整段不是合法 JSON。
 
 请综合历史用户输入与当前输入的连续性；若历史为空，仅依据当前输入即可。`;
 
@@ -220,7 +227,7 @@ export async function invokeLaneRouterModel(
       { role: "user" as const, content: userContent },
     ],
     temperature: 0, // 0 表示确定性输出
-    max_tokens: 256, // 限制响应长度
+    max_tokens: 1024, // reasoning + 结构化字段，给足长度
     stream: true, // 启用流式响应
   };
 
@@ -282,6 +289,12 @@ function parseRouterJson(rawText: string): RouterModelOutput {
     // 验证 lane 字段
     const lane = o.lane === "light" || o.lane === "heavy" ? o.lane : null;
     if (!lane) throw new Error("bad lane");
+    const reasoningRaw =
+      typeof o.reasoning === "string" && o.reasoning.trim() !== ""
+        ? o.reasoning.trim()
+        : typeof o.thinking === "string"
+          ? o.thinking.trim()
+          : "";
     // 验证 emotions 字段
     const emotions = Array.isArray(o.emotions)
       ? o.emotions.map((x) => String(x)).filter(Boolean)
@@ -291,7 +304,7 @@ function parseRouterJson(rawText: string): RouterModelOutput {
       typeof o.emotionRate === "number" && !Number.isNaN(o.emotionRate)
         ? o.emotionRate
         : 0;
-    return { lane, emotions, emotionRate };
+    return { lane, reasoning: reasoningRaw, emotions, emotionRate };
   };
 
   try {

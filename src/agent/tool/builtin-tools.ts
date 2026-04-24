@@ -1,15 +1,16 @@
 /**
- * 系统内置工具名（与 lane 无关）。
- * 与历史 pi-coding-agent 默认四件套 read/bash/edit/write 对齐，由本仓 factory 经 customTools 提供实现。
- * heavy 运行时由 ToolHook 与用户 enabledTools 求并集；light 不注入任何工具。
+ * 系统必带工具名：与 heavy/light 中「能力档位」无关，只要主链路为 heavy 并装配基础包，这四项会始终注入。
+ * - memorySearch / persistKnowledge / loadSkill：知识侧
+ * - getNow：时间/调度侧
+ *
+ * 以下**不属于**本列表，仅出现在 heavy 下由「用户/预设 enabledTools」装配（可勾选、可关）：
+ * - read, bash, edit, write 等工程与文件类工具
  */
 export const BUILTIN_TOOL_NAMES = [
-  "read",
-  // "bash",
-  // "edit",
-  // "write",
   "memorySearch",
   "getNow",
+  "persistKnowledge",
+  "loadSkill",
 ] as const;
 
 export type BuiltinToolName = (typeof BUILTIN_TOOL_NAMES)[number];
