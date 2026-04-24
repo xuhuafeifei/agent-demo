@@ -44,6 +44,8 @@ export type RouterModelOutput = {
 const ROUTER_HISTORY_SNIPPET_MAX_CHARS = 200;
 /** 当前输入的最大字符数限制 */
 const ROUTER_CURRENT_INPUT_MAX_CHARS = 8000;
+/** 路由模型请求超时时间（毫秒） */
+const ROUTER_REQUEST_TIMEOUT_MS = 10_000;
 
 /** 路由系统提示词 - 定义路由 Agent 的行为和输出约束 */
 const ROUTER_SYSTEM_PROMPT = `你是路由 Agent（lane router）。你的任务是结合「最近一段时间内的用户输入」与「当前这一轮用户输入」，判断本次应答应路由到哪条执行 lane（agent 能力档位）。
@@ -238,12 +240,25 @@ export async function invokeLaneRouterModel(
     ...(model.headers ?? {}),
   };
 
-  // 发送请求
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  // 发送请求（10s 超时保护）
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ROUTER_REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`router request timeout after ${ROUTER_REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!res.ok) {
     throw new Error(`router http ${res.status}`);
