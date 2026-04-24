@@ -13,6 +13,7 @@ import { type AgentChannel } from "../channel-policy.js";
 import { readFgbgUserConfig } from "../../config/index.js";
 import type { BaseHook } from "../../hook/base-hook.js";
 import type { AgentHookEvent } from "../../hook/events.js";
+import { LaneHook } from "../../hook/lane-hook.js";
 import { PromptHook } from "../../hook/prompt-hook.js";
 import { ToolHook } from "../../hook/tool-hook.js";
 
@@ -96,6 +97,7 @@ export async function prepareBeforeGetReply(params: {
   const hooks = new Set<BaseHook<AgentHookEvent>>();
   hooks.add(new PromptHook());
   hooks.add(new ToolHook());
+  hooks.add(new LaneHook());
 
   // ─── 步骤 1：选择运行时模型 ───
   // 根据全局配置选择本次请求要使用的 LLM 模型

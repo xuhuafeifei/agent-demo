@@ -10,6 +10,7 @@ import {
   type SessionMessageEntry,
 } from "@mariozechner/pi-coding-agent";
 import { loadSessionIndexEntry, resolveSessionDir } from "../session/index.js";
+import { clearLaneHistory, loadLane } from "../../lane/lane-store.js";
 import type { AgentHookEvent, AgentLane } from "../../hook/events.js";
 import type { BaseHook } from "../../hook/base-hook.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
@@ -275,84 +276,46 @@ function extractTextPartsFromContent(
 /**
  * 获取指定租户的对话历史（前端 API 消费）
  *
- * 返回格式化后的对话历史，包含角色、内容和时间戳
+ * 从 lane 文件中读取统一时间线，返回格式化后的对话历史。
  *
  * @param tenantId - 租户 ID
- * @param sessionKey - 会话键，默认使用 main 会话
- * @returns 格式化后的对话历史数组
- */
-/**
- * 获取指定租户的对话历史（前端 API 消费）
- *
- * 返回格式化后的对话历史，包含角色、内容和时间戳
- *
- * @param tenantId - 租户 ID
- * @param sessionKey - 会话键，默认使用 main 会话
+ * @param laneKey - lane 键，默认使用 main 模块的 lane
  * @returns 格式化后的对话历史数组
  */
 export function getHistory(
   tenantId: string,
-  sessionKey: string = defaultMainSessionKey(tenantId),
+  laneKey: string = `lane:main:${tenantId}`,
 ): Array<{
   role: string;
   content: string;
   timestamp?: number;
 }> {
-  // 1. 获取会话消息条目
-  const messageEntrys = getSessionMessageEntrys(tenantId, sessionKey);
-
-  // 2. 过滤出 user 和 assistant 角色的消息
-  const filtered = messageEntrys.filter(
-    (msg) => msg.message.role === "user" || msg.message.role === "assistant",
+  const events = loadLane(tenantId, laneKey);
+  const filtered = events.filter(
+    (e) => e.role === "user" || e.role === "assistant",
   );
-
-  // 3. 只取最近的 DEFAULT_HISTORY_LIMIT 条消息
   const recent = filtered.slice(-DEFAULT_HISTORY_LIMIT);
 
-  const history: Array<{ role: string; content: string; timestamp?: number }> =
-    [];
-  const baseTimestamp = Date.now() - recent.length * 1000;
-
-  // 4. 格式化消息内容
-  recent.forEach((msg, idx) => {
-    const raw = msg.message as {
-      role?: string;
-      content?: (TextContent | ThinkingContent | ToolCall)[];
-      toolName?: string;
-    };
-
-    const textParts = extractTextPartsFromContent(raw.content);
-    if (textParts.length > 0) {
-      history.push({
-        role: raw.role || "unknown",
-        content: textParts.join("\n"),
-        timestamp: baseTimestamp + idx * 1000,
-      });
-    }
-  });
-
-  return history;
+  return recent.map((e) => ({
+    role: e.role,
+    content: e.content,
+    timestamp: e.timestamp,
+  }));
 }
 
 /**
- * 清除指定租户的会话历史
+ * 清除指定租户的对话历史
  *
- * 删除会话文件，下次打开时将创建新会话
+ * 删除 lane 文件，下次对话时将创建新 lane
  *
  * @param tenantId - 租户 ID
- * @param sessionKey - 会话键，默认使用 main 会话
+ * @param laneKey - lane 键，默认使用 main 模块的 lane
  */
 export function clearHistory(
   tenantId: string,
-  sessionKey: string = defaultMainSessionKey(tenantId),
+  laneKey: string = `lane:main:${tenantId}`,
 ): void {
-  const entry = loadSessionIndexEntry(tenantId, sessionKey);
-  if (!entry?.sessionFile) return;
-  try {
-    fs.unlinkSync(entry.sessionFile);
-  } catch {
-    // 忽略文件不存在的异常
-  }
+  clearLaneHistory(tenantId, laneKey);
 }
 
 /**

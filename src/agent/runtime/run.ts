@@ -14,8 +14,7 @@ import {
   buildSystemPromptStem,
 } from "../system-prompt.js";
 import type { AgentLane } from "../../hook/events.js";
-import { PROMPT_BUILD_KIND, TOOL_HOOK_KIND } from "../../hook/events.js";
-import { getMemoryIndexManager } from "../../memory/index.js";
+import { LANE_HOOK_KIND, PROMPT_BUILD_KIND, TOOL_HOOK_KIND } from "../../hook/events.js";
 import {
   readWorkspaceSoul,
   readWorkspaceUserinfoSummary,
@@ -157,6 +156,22 @@ export async function getReplyFromAgent(params: {
     });
   }
 
+  // 触发 lane hook：用户输入先落地
+  const laneModule = sessionKey.split(":")[1] ?? "main";
+  const laneKey = `lane:${laneModule}:${tenantId}`;
+  await invokeAgentHooks(prepared.hooks, {
+    kind: LANE_HOOK_KIND,
+    lane,
+    tenantId,
+    channel,
+    role: "user",
+    content: message,
+    agentId,
+    sessionKey,
+    laneKey,
+    module: laneModule,
+  });
+
   // 创建请求追踪 trace
   const requestId = Date.now().toString();
   const trace = createCacheTrace({
@@ -165,7 +180,7 @@ export async function getReplyFromAgent(params: {
     model: modelRef.model,
   });
 
-  // 系统必带四项（知识/时间）；read/bash/edit/write 等由 ToolHook 按 enabledTools 叠加
+  // 创建内置工具
   const builtInBundle = createToolBundle(
     prepared.cwd,
     tenantId,
@@ -296,6 +311,21 @@ export async function getReplyFromAgent(params: {
       agentId,
     });
     trace.recordStage("request:end");
+
+    // 触发 lane hook：模型输出后补齐
+    await invokeAgentHooks(prepared.hooks, {
+      kind: LANE_HOOK_KIND,
+      lane,
+      tenantId,
+      channel,
+      role: "assistant",
+      content: finalText,
+      agentId,
+      sessionKey,
+      laneKey,
+      module: laneModule,
+    });
+
     emit({ type: "done" });
     trace.logTimeline("done");
     return finalText;
@@ -306,11 +336,6 @@ export async function getReplyFromAgent(params: {
     trace.logTimeline("error");
     throw error;
   } finally {
-    // 通知 memory 系统 session 文件已变更，触发增量索引
-    getMemoryIndexManager(tenantId).onMemorySourceChanged(
-      "session",
-      prepared.sessionFile,
-    );
     // 释放 session 资源
     session.dispose();
   }

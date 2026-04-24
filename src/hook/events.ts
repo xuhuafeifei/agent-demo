@@ -7,6 +7,8 @@ export const PROMPT_BUILD_KIND = "prompt.build" as const;
 
 export const TOOL_HOOK_KIND = "tool.hook" as const;
 
+export const LANE_HOOK_KIND = "lane.write" as const;
+
 /**
  * Hook 事件公共字段；具体分支 `extends HookEvent` 并收窄 `kind`、补充独有字段。
  *
@@ -14,7 +16,7 @@ export const TOOL_HOOK_KIND = "tool.hook" as const;
  * 这样 `if (event.kind === '…')` 才能缩窄到 `ToolHookEvent` / `PromptBuildEvent`。
  */
 export interface HookEvent {
-  kind: typeof PROMPT_BUILD_KIND | typeof TOOL_HOOK_KIND;
+  kind: typeof PROMPT_BUILD_KIND | typeof TOOL_HOOK_KIND | typeof LANE_HOOK_KIND;
   lane: AgentLane;
   tenantId: string;
   channel: AgentChannel;
@@ -42,5 +44,15 @@ export interface PromptBuildEvent extends HookEvent {
   };
 }
 
+export interface LaneHookEvent extends HookEvent {
+  kind: typeof LANE_HOOK_KIND;
+  role: "user" | "assistant";
+  content: string;
+  agentId: string;
+  sessionKey: string;
+  laneKey: string;
+  module: string;
+}
+
 /** 实际下发到 Hook 的联合类型（基形状见 `HookEvent`）。 */
-export type AgentHookEvent = ToolHookEvent | PromptBuildEvent;
+export type AgentHookEvent = ToolHookEvent | PromptBuildEvent | LaneHookEvent;

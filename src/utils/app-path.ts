@@ -66,6 +66,14 @@ export function resolveTenantSessionDir(tenantId: string): string {
 }
 
 /**
+ * 租户 lane 目录：~/.fgbg/tenants/{tenantId}/lane。
+ * 存放 lane.json 索引和 *.jsonl lane 对话文件。
+ */
+export function resolveTenantLaneDir(tenantId: string): string {
+  return path.join(resolveTenantDir(tenantId), "lane");
+}
+
+/**
  * 租户 memory 目录：~/.fgbg/tenants/{tenantId}/memory。
  * 存放 memory.db（SQLite 向量索引）。
  */

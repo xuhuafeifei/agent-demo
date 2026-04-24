@@ -1,5 +1,5 @@
 /** 记忆来源类型。 */
-export type MemorySource = "MEMORY.md" | "memory" | "sessions" | "userinfo";
+export type MemorySource = "MEMORY.md" | "memory" | "lane" | "userinfo";
 
 /** 单路径同步动作。 */
 export type SyncAction = "skip" | "create" | "rebuild" | "delete";

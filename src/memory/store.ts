@@ -542,6 +542,52 @@ export async function replacePathChunks(tenantId: string, params: {
 }
 
 /**
+ * 单条 lane 事件增量写入（只 INSERT，不 DELETE）。
+ *
+ * 租户隔离：通过 tenantId 打开对应的数据库。
+ *
+ * line_end 取该 path 当前最大值 +1，保 (path, line_start, line_end) 唯一索引不冲突。
+ */
+export async function insertLaneEventChunk(
+  tenantId: string,
+  params: {
+    path: string;
+    content: string;
+    embedding: number[];
+  },
+): Promise<number> {
+  const db = await openDb(tenantId);
+  const { path, content, embedding } = params;
+
+  return transactionCommit(db, () => {
+    const maxRow = db
+      .prepare("SELECT COALESCE(MAX(line_end), 0) as max_line FROM chunks WHERE path = ?")
+      .get(path);
+    const nextLine = Number((maxRow as Record<string, unknown>)?.max_line ?? 0) + 1;
+
+    const chunkRes = db.prepare(
+      `INSERT INTO chunks(source, path, chunk_content, embedding, line_start, line_end, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    ).run("lane", path, content, JSON.stringify(embedding), nextLine, nextLine);
+
+    const id = toNumber(chunkRes.lastInsertRowid);
+    if (!id) return 0;
+
+    db.prepare("INSERT INTO chunks_vec(id, embedding) VALUES (?, ?)").run(
+      BigInt(id),
+      JSON.stringify(embedding),
+    );
+
+    db.prepare(
+      `INSERT INTO chunks_fts(source, chunk_content, path, line_start, line_end, id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("lane", content, path, nextLine, nextLine, id);
+
+    return id;
+  });
+}
+
+/**
  * FTS 全文检索查询（按 BM25 相关性升序排名）。
  *
  * 租户隔离：通过 tenantId 打开对应的数据库，不同租户的检索结果完全隔离。

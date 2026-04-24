@@ -1,6 +1,6 @@
 import path from "node:path";
 import chokidar, { type FSWatcher } from "chokidar";
-import { syncAllMemorySources, syncMemoryByPath } from "./indexer.js";
+import { syncAllMemorySources, syncMemoryByPath, appendLaneEvent } from "./indexer.js";
 import { closeMemoryDb } from "./store.js";
 import type {
   MemoryHit,
@@ -18,7 +18,7 @@ import {
   resolveWorkspaceMemoryPath,
   resolveWorkspaceUserinfoDir,
 } from "./utils/path.js";
-import { resolveSessionDir } from "../agent/session/session-path.js";
+import { getEventBus } from "../event-bus/index.js";
 import { ensureAgentWorkspace } from "../agent/workspace.js";
 import { getSubsystemConsoleLogger } from "../logger/logger.js";
 
@@ -90,10 +90,18 @@ export class MemoryIndexManager {
     ensureDirSync(resolveWorkspaceMemoryDir(this.tenantId));
     ensureDirSync(resolveWorkspaceUserinfoDir(this.tenantId));
 
-    // 监听：工作区 MEMORY.md、~/.fgbg/tenants/{tenantId}/workspace/memory/*.md、workspace/userinfo/*.md
+    // 监听：工作区 MEMORY.md、~/.fgbg/tenants/{tenantId}/workspace/memory/*.md、workspace/userinfo/*.md、lane/*.jsonl
     this.watchFile(resolveWorkspaceMemoryPath(this.tenantId), "MEMORY.md");
     this.watchDir(resolveWorkspaceMemoryDir(this.tenantId), "memory");
     this.watchDir(resolveWorkspaceUserinfoDir(this.tenantId), "userinfo");
+
+    // lane 终身走增量，由 EventBus 驱动，不监听文件系统
+    getEventBus().on("lane:appended", (payload) => {
+      const p = payload as { tenantId: string; laneFile: string; event: { role: string; content: string } };
+      if (p.tenantId !== this.tenantId) return;
+      if (this.state !== "running") return;
+      void this.appendLaneEvent(p.laneFile, p.event);
+    });
 
     // 获取配置并创建准备策略
     const config = readFgbgUserConfig().agents.memorySearch;
@@ -176,16 +184,16 @@ export class MemoryIndexManager {
    * 所有来源最终归一化到内部 MemorySource，并按 path 去重防抖。
    */
   onMemorySourceChanged(
-    source: "workspace" | "memory" | "session" | "userinfo",
+    source: "workspace" | "memory" | "userinfo" | "lane",
     filePath: string,
   ): void {
     if (this.state !== "running") return;
 
     const normalized = path.resolve(filePath);
-    let mapped: MemorySource = "sessions";
+    let mapped: MemorySource = "lane";
     if (source === "memory") mapped = "MEMORY.md"; // 用户 memory 目录（~/.fgbg/tenants/{tenantId}/workspace/memory/*.md）→ MEMORY.md
     if (source === "workspace") mapped = "memory"; // 工作区 MEMORY.md 路径 → memory
-    if (source === "session") mapped = "sessions";
+    if (source === "lane") mapped = "lane";
     if (source === "userinfo") mapped = "userinfo";
 
     // 同一路径防抖：取消未执行的定时器，只保留最后一次变更
@@ -220,12 +228,27 @@ export class MemoryIndexManager {
    * 内部全量同步（不检查 state），供 start() 与 syncAll() 使用。
    */
   private async syncAllInternal(): Promise<SyncSummary> {
-    const sessionDir = resolveSessionDir(this.tenantId);
-    const summary = await syncAllMemorySources(this.tenantId, sessionDir);
+    const summary = await syncAllMemorySources(this.tenantId);
     memoryLogger.info(
       `syncAll total=${summary.total} create=${summary.create} rebuild=${summary.rebuild} delete=${summary.delete} skip=${summary.skip} failed=${summary.failed} durationMs=${summary.durationMs}ms`,
     );
     return summary;
+  }
+
+  /**
+   * 增量索引单个 lane 事件。
+   */
+  private async appendLaneEvent(
+    laneFile: string,
+    event: { role: string; content: string },
+  ): Promise<void> {
+    try {
+      await appendLaneEvent(this.tenantId, laneFile, event);
+      memoryLogger.debug(`lane incremental indexed path=${laneFile}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      memoryLogger.warn(`lane incremental index error path=${laneFile} error=${message}`);
+    }
   }
 
   /**
@@ -311,6 +334,7 @@ export class MemoryIndexManager {
     });
     this.watchers.push(watcher);
   }
+
 }
 
 // 按租户 ID 管理 MemoryIndexManager 单例，每个租户一个独立实例

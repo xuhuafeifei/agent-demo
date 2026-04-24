@@ -6,10 +6,11 @@ import {
   queryFileHash,
   listTrackedPaths,
   replacePathChunks,
+  insertLaneEventChunk,
 } from "./store.js";
 import type { MemorySource, SyncResult, SyncSummary } from "./types.js";
 import { chunkTextWithLines } from "./utils/chunk.js";
-import { extractSessionDialogueText } from "./utils/session-content.js";
+import { extractLaneDialogueText } from "./utils/lane-content.js";
 import { sha256 } from "./utils/hash.js";
 import {
   ensureDirSync,
@@ -70,8 +71,9 @@ function measureSync<T>(params: {
  */
 function detectSourceByPath(tenantId: string, filePath: string): MemorySource {
   const normalized = path.resolve(filePath);
-  if (filePath.endsWith(".jsonl")) return "sessions";
-  if (normalized === path.resolve(resolveWorkspaceMemoryPath(tenantId))) return "memory";
+  if (filePath.endsWith(".jsonl")) return "lane";
+  if (normalized === path.resolve(resolveWorkspaceMemoryPath(tenantId)))
+    return "memory";
   const userinfoDir = path.resolve(resolveWorkspaceUserinfoDir(tenantId));
   const userinfoPrefix = userinfoDir + path.sep;
   if (normalized.startsWith(userinfoPrefix)) return "userinfo";
@@ -83,6 +85,25 @@ function detectSourceByPath(tenantId: string, filePath: string): MemorySource {
     return "MEMORY.md";
   }
   return "memory";
+}
+
+/**
+ * 增量索引单个 lane 事件。
+ *
+ * 直接将事件文本转为 embedding 并 INSERT，不读取文件、不计算 hash、不 DELETE 历史。
+ */
+export async function appendLaneEvent(
+  tenantId: string,
+  laneFile: string,
+  event: { role: string; content: string },
+): Promise<void> {
+  const content = `${event.role}: ${event.content}`;
+  const [embedding] = await batchEmbeddingText([content]);
+  await insertLaneEventChunk(tenantId, {
+    path: laneFile,
+    content,
+    embedding,
+  });
 }
 
 // ========== 单路径同步入口 ==========
@@ -108,10 +129,14 @@ function detectSourceByPath(tenantId: string, filePath: string): MemorySource {
  * - replacePathChunks(tenantId, ...)   → 只写入该租户下的 chunk/向量
  * 因此即使两个租户有同名文件，索引数据也完全隔离。
  */
-export async function syncMemoryByPath(tenantId: string, params: {
-  path: string;
-  source?: MemorySource;
-}): Promise<SyncResult> {
+
+export async function syncMemoryByPath(
+  tenantId: string,
+  params: {
+    path: string;
+    source?: MemorySource;
+  },
+): Promise<SyncResult> {
   const started = Date.now();
   const filePath = path.resolve(params.path);
   const source = params.source ?? detectSourceByPath(tenantId, filePath);
@@ -174,12 +199,11 @@ export async function syncMemoryByPath(tenantId: string, params: {
 
   // 规则 4：内容变化或首次索引 → 执行完整 pipeline
 
-  // Step 4a: 内容预处理——session 文件需清洗，只保留 role+对话正文
+  // Step 4a: 内容预处理——lane 文件需提取对话文本
   const { value: textToChunk } = measureSync({
     label: "normalize",
     meta: metaBase,
-    fn: () =>
-      source === "sessions" ? extractSessionDialogueText(content) : content,
+    fn: () => (source === "lane" ? extractLaneDialogueText(content) : content),
   });
 
   // Step 4b: 从用户配置读取切块大小上限
@@ -243,17 +267,6 @@ function listMarkdownFiles(dir: string): string[] {
     .map((entry) => path.join(dir, entry.name)); // 仅顶层 .md，不递归
 }
 
-/** 列出目录下所有会话文件（*.jsonl，仅顶层） */
-function listJsonlFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  return entries
-    .filter(
-      (entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".jsonl"),
-    )
-    .map((entry) => path.join(dir, entry.name)); // 会话文件，仅顶层
-}
-
 // ========== 全量同步入口 ==========
 /**
  * 全量同步所有 memory 来源。
@@ -268,7 +281,7 @@ function listJsonlFiles(dir: string): string[] {
  * 1. workspace MEMORY.md：resolveWorkspaceMemoryPath(tenantId) 返回的路径，标记为 source="memory"
  * 2. 用户 memory 目录下的 .md 文件：resolveWorkspaceMemoryDir(tenantId) 下的所有顶层 .md，标记为 source="MEMORY.md"
  * 3. userinfo 目录下的 .md 文件：resolveWorkspaceUserinfoDir(tenantId) 下的所有顶层 .md，标记为 source="userinfo"
- * 4. 会话目录下的 .jsonl 文件（sessionDir 可选传入），标记为 source="sessions"
+ * 4. lane 直走增量，不走全量索引
  *
  * 【已跟踪路径清理机制】
  * 数据库维护了一份"已跟踪路径列表"（tracked paths），通过 listTrackedPaths(tenantId) 获取。
@@ -280,7 +293,6 @@ function listJsonlFiles(dir: string): string[] {
  */
 export async function syncAllMemorySources(
   tenantId: string,
-  sessionDir?: string,
 ): Promise<SyncSummary> {
   const started = Date.now();
 
@@ -290,9 +302,12 @@ export async function syncAllMemorySources(
 
   // 收集本轮候选文件——四类来源，均以 tenantId 解析目录
   const workspaceMemory = resolveWorkspaceMemoryPath(tenantId);
-  const userMemoryFiles = listMarkdownFiles(resolveWorkspaceMemoryDir(tenantId));
-  const userinfoFiles = listMarkdownFiles(resolveWorkspaceUserinfoDir(tenantId));
-  const sessionFiles = sessionDir ? listJsonlFiles(sessionDir) : [];
+  const userMemoryFiles = listMarkdownFiles(
+    resolveWorkspaceMemoryDir(tenantId),
+  );
+  const userinfoFiles = listMarkdownFiles(
+    resolveWorkspaceUserinfoDir(tenantId),
+  );
 
   memoryLogger.debug("syncAllMemorySources: workspaceMemory", {
     workspaceMemory,
@@ -303,14 +318,13 @@ export async function syncAllMemorySources(
   memoryLogger.debug("syncAllMemorySources: userinfoFiles", {
     userinfoFiles,
   });
-  memoryLogger.debug("syncAllMemorySources: sessionFiles", { sessionFiles });
 
   // 构建候选 Map：key=绝对路径，value=来源类型
+  // lane 终身走增量，不参与全量扫描
   const candidates = new Map<string, MemorySource>();
   candidates.set(path.resolve(workspaceMemory), "memory"); // 工作区 MEMORY.md 路径 → memory
   for (const p of userMemoryFiles) candidates.set(path.resolve(p), "MEMORY.md"); // 用户 memory 目录 → MEMORY.md
   for (const p of userinfoFiles) candidates.set(path.resolve(p), "userinfo");
-  for (const p of sessionFiles) candidates.set(path.resolve(p), "sessions");
 
   memoryLogger.debug("syncAllMemorySources: candidates", { candidates });
 
@@ -318,7 +332,10 @@ export async function syncAllMemorySources(
   // 这些文件大概率已被删除，syncMemoryByPath 会对它们执行 delete 清理
   for (const tracked of await listTrackedPaths(tenantId)) {
     if (!candidates.has(path.resolve(tracked))) {
-      candidates.set(path.resolve(tracked), detectSourceByPath(tenantId, tracked));
+      candidates.set(
+        path.resolve(tracked),
+        detectSourceByPath(tenantId, tracked),
+      );
     }
   }
 
@@ -338,7 +355,10 @@ export async function syncAllMemorySources(
     summary.total += 1;
     try {
       const start = Date.now();
-      const result = await syncMemoryByPath(tenantId, { path: filePath, source });
+      const result = await syncMemoryByPath(tenantId, {
+        path: filePath,
+        source,
+      });
       memoryLogger.info(
         ` syncMemoryByPath done action=${result.action} totalMs=${Date.now() - start} source=${source} path=${filePath} chunks=${result.chunkCount}`,
       );
