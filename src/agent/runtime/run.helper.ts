@@ -25,9 +25,9 @@ const agentLogger = getSubsystemConsoleLogger("agent");
 const DEFAULT_HISTORY_LIMIT = 20;
 
 /**
- * 路由决策时使用的最近用户输入数量
+ * 路由决策时从 lane（与 active jsonl 同源）末尾截取的对话事件条数（含 user / assistant，按写入顺序）
  */
-const ROUTER_RECENT_USER_COUNT = 5;
+const ROUTER_RECENT_LANE_EVENT_COUNT = 24;
 
 /**
  * 按优先级升序执行 Agent 钩子
@@ -134,112 +134,41 @@ export function getSessionMessageEntrys(
 }
 
 /**
- * 获取会话文件的修改时间（用于判断会话活跃度）
+ * 路由用：lane jsonl 中一条对话事件（时间戳与落盘字段 `timestamp` 对齐，毫秒）。
+ */
+export type RouterLaneHistoryLine = {
+  /** 与 LaneEvent.timestamp 一致 */
+  atMs: number;
+  role: "user" | "assistant";
+  laneMode: AgentLane;
+  /** 归一化后的正文 */
+  text: string;
+};
+
+/**
+ * 供路由使用：从 main 模块 lane 活跃 jsonl 读取近期对话片段（与 {@link getHistory} 同源）。
+ *
+ * 顺序与 jsonl 行顺序一致（旧→新）；`atMs` 即每条记录写入时的 `timestamp`，与历史内容一一对应。
+ * 路由发生在本轮落 lane 之前，故此处不含当前用户句；当前句由调用方单独传入。
  *
  * @param tenantId - 租户 ID
- * @param sessionKey - 会话键
- * @returns 会话文件的修改时间戳（毫秒），文件不存在时返回 0
+ * @returns 尾部若干条 user/assistant 事件，用于路由 prompt
  */
-function sessionFileMtimeMs(tenantId: string, sessionKey: string): number {
-  const entry = loadSessionIndexEntry(tenantId, sessionKey);
-  if (!entry?.sessionFile || !fs.existsSync(entry.sessionFile)) return 0;
-  try {
-    return fs.statSync(entry.sessionFile).mtimeMs;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * 从 session 条目中抽取 user 角色的纯文本行（与 pruneSessionChat 同样跳过 context tool）
- *
- * 用于路由决策时获取用户输入特征
- *
- * @param messages - 会话消息条目数组
- * @returns 抽取的用户纯文本输入数组
- */
-/**
- * 从 session 条目中抽取 user 角色的纯文本行（与 pruneSessionChat 同样跳过 context tool）
- *
- * 用于路由决策时获取用户输入特征
- *
- * @param messages - 会话消息条目数组
- * @returns 抽取的用户纯文本输入数组
- */
-function collectUserTextLinesFromSessionMessages(
-  messages: SessionMessageEntry[],
-): string[] {
-  const filterToolNames = getFilterContextToolNames();
-  const lines: string[] = [];
-
-  // 遍历所有会话消息
-  for (const msg of messages) {
-    const raw = msg.message as {
-      role?: string;
-      content?: (TextContent | ThinkingContent | ToolCall)[];
-      toolName?: string;
-    };
-
-    // 只处理 user 角色的消息
-    if (raw.role !== "user") continue;
-
-    const toolName = raw.toolName ?? "";
-    // 跳过需要从上下文过滤的工具消息
-    if (filterToolNames.includes(toolName)) continue;
-
-    // 提取纯文本内容
-    const textParts = extractTextPartsFromContent(raw.content);
-    if (textParts.length > 0) lines.push(textParts.join("\n"));
-  }
-
-  return lines;
-}
-
-/**
- * 供 lane 路由使用：读取 main 模块下 light/heavy 两个会话，取「最近更活跃」一侧末尾的用户输入
- *
- * 最多 ROUTER_RECENT_USER_COUNT 条（时间顺序为会话文件内从旧到新）
- *
- * @param tenantId - 租户 ID
- * @returns 最近用户输入数组，用于路由决策
- */
-/**
- * 供 lane 路由使用：读取 main 模块下 light/heavy 两个会话，取「最近更活跃」一侧末尾的用户输入
- *
- * 最多 ROUTER_RECENT_USER_COUNT 条（时间顺序为会话文件内从旧到新）
- *
- * @param tenantId - 租户 ID
- * @returns 最近用户输入数组，用于路由决策
- */
-export function getRecentUserInputsForRouter(tenantId: string): string[] {
-  const heavyKey = defaultMainSessionKey(tenantId, "heavy");
-  const lightKey = defaultMainSessionKey(tenantId, "light");
-
-  // 获取 heavy 和 light 两个 lane 的用户输入历史
-  const heavyLines = collectUserTextLinesFromSessionMessages(
-    getSessionMessageEntrys(tenantId, heavyKey),
-  );
-  const lightLines = collectUserTextLinesFromSessionMessages(
-    getSessionMessageEntrys(tenantId, lightKey),
-  );
-
-  // 获取两个 lane 的会话活跃度（通过文件修改时间判断）
-  const mHeavy = sessionFileMtimeMs(tenantId, heavyKey);
-  const mLight = sessionFileMtimeMs(tenantId, lightKey);
-
-  // 确定主辅会话：最近活跃的会话为主会话
-  const [primary, secondary] =
-    mHeavy >= mLight ? [heavyLines, lightLines] : [lightLines, heavyLines];
-
-  // 从主会话获取最近的用户输入
-  const out = primary.slice(-ROUTER_RECENT_USER_COUNT);
-
-  // 若主会话输入不足，则从辅会话补充
-  if (out.length >= ROUTER_RECENT_USER_COUNT || secondary.length === 0) {
-    return out;
-  }
-  const need = ROUTER_RECENT_USER_COUNT - out.length;
-  return [...secondary.slice(-need), ...out];
+export function getRecentLaneDialogueForRouter(
+  tenantId: string,
+): RouterLaneHistoryLine[] {
+  const laneKey = `lane:main:${tenantId}`;
+  const events = loadLane(tenantId, laneKey);
+  const lines = events
+    .filter((e) => e.role === "user" || e.role === "assistant")
+    .map((e) => ({
+      atMs: e.timestamp,
+      role: e.role,
+      laneMode: e.laneMode,
+      text: e.content.replace(/\s+/g, " ").trim(),
+    }))
+    .filter((x) => x.text.length > 0);
+  return lines.slice(-ROUTER_RECENT_LANE_EVENT_COUNT);
 }
 
 /**

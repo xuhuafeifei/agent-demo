@@ -1,7 +1,7 @@
 import type { AgentLane } from "../../hook/events.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { selectModelForRuntime } from "../model-selection.js";
-import { getRecentUserInputsForRouter } from "../runtime/run.js";
+import { getRecentLaneDialogueForRouter } from "../runtime/run.js";
 import { readLastRouteMode } from "./route-decision-log.js";
 import { invokeLaneRouterModel } from "./routing-llm.js";
 
@@ -48,13 +48,15 @@ export async function resolveLaneWithRouting(params: {
   try {
     const selected = await selectModelForRuntime();
     if (!selected.model) throw new Error("no model");
-    const recentUserInputs = getRecentUserInputsForRouter(params.tenantId);
+    const recentLaneDialogue = getRecentLaneDialogueForRouter(params.tenantId);
     dispatchRouteAgentLogger.info("selected model: %s", selected.modelRef.model);
     const { parsed, rawText } = await invokeLaneRouterModel(
       selected.model,
       {
         currentUserInput: params.userInput,
-        recentUserInputs,
+        // 当前轮尚未写入 lane jsonl，用发起路由请求时的本地时间（与历史段的 jsonl timestamp 语义区分）
+        currentAtMs: Date.now(),
+        recentLaneDialogue,
       },
       {
         onStreamDelta: (delta) => {

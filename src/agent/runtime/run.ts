@@ -46,10 +46,12 @@ export {
   clearHistory,
   defaultMainSessionKey,
   getHistory,
-  getRecentUserInputsForRouter,
+  getRecentLaneDialogueForRouter,
   invokeAgentHooks,
   logRuntimePaths,
 } from "./run.helper.js";
+
+export type { RouterLaneHistoryLine } from "./run.helper.js";
 
 /** 已选出 provider/model 但 `RuntimeModel` 缺失（如未配置 API Key、模型元数据未加载）时由主链路抛出。 */
 export class ModelUnavailableError extends Error {

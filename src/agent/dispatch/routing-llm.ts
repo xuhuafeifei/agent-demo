@@ -1,4 +1,5 @@
 import type { RuntimeModel } from "../../types.js";
+import type { RouterLaneHistoryLine } from "../runtime/run.helper.js";
 
 /**
  * 路由 LLM：固定走 OpenAI Chat Completions 兼容协议。
@@ -48,60 +49,80 @@ const ROUTER_CURRENT_INPUT_MAX_CHARS = 8000;
 const ROUTER_REQUEST_TIMEOUT_MS = 10_000;
 
 /** 路由系统提示词 - 定义路由 Agent 的行为和输出约束 */
-const ROUTER_SYSTEM_PROMPT = `你是路由 Agent（lane router）。你的任务是结合「最近一段时间内的用户输入」与「当前这一轮用户输入」，判断本次应答应路由到哪条执行 lane（agent 能力档位）。
+const ROUTER_SYSTEM_PROMPT = `You are a routing Agent (lane router). Your task is to determine which execution lane (agent capability level) should be used for the current response, combining both "recent user inputs" and "the current user input".
 
-lane 含义：
-- light：偏日常闲聊、情绪表达、生活琐事、轻量问答；通常不需要复杂工具、长程推理或大规模代码改动。
-- heavy：偏工程实现、代码与调试、复杂多步任务、工具编排、严肃问题分析与方案落地。
+Lane definitions:
+- light: This lane is for casual conversations, emotional expressions, daily life matters, or lightweight Q&A; usually does not require complex tools, long-term reasoning, or large-scale code modifications.
+- heavy: This lane is for engineering implementations, code and debugging, complex multi-step tasks, tool orchestration, rigorous problem analysis, solution implementation, or knowledge/design-related scenarios.
 
-输出约束（必须严格遵守）：
-- 只输出一个 JSON 对象，不要输出任何其它内容（不要 Markdown 代码块、不要解释、不要前后缀）。
-- 必须包含字段 reasoning（字符串）：用 1～5 句中文简要说明「依据历史/当前内容为何选该 lane」；便于排障与优化，随后才是结构化结果。
-- 必须包含字段：lane、emotions、emotionRate；键名与类型如下：
-  {"reasoning":字符串,"lane":"light"|"heavy","emotions":字符串数组,"emotionRate":数字}
-- emotionRate 为 0~1 的浮点数；emotions 为简短中文情绪词（可空数组）。
-- 字符串里不要使用未转义的双引号，避免整段不是合法 JSON。
+Output constraints (must be strictly followed):
+- Output ONLY a single JSON object, and nothing else (no Markdown code blocks, no explanations, no prefixes or suffixes).
+- The JSON must include the field "reasoning" (string): in 1-5 concise sentences, briefly explain in Chinese "why this lane was selected based on the history/current content"; this is for debugging and optimization, and comes before the structured result.
+- Must include the fields: lane, emotions, emotionRate; the key names and types are as follows:
+  {"reasoning":string,"lane":"light"|"heavy","emotions":string[],"emotionRate":number}
+- emotionRate is a floating-point number between 0 and 1; emotions are short Chinese emotion words (can be an empty array).
+- Do NOT use unescaped double quotes in strings, to ensure the entire output is valid JSON.
 
-请综合历史用户输入与当前输入的连续性；若历史为空，仅依据当前输入即可。`;
+Please take into account the continuity between the historic dialogue and the current input; if the history is empty, judge based only on the current input. In the user message, the "Earlier dialogue" block lists lane timeline events in chronological order (oldest first): each line uses the same event timestamp as stored in lane jsonl (the numeric "timestamp" field on each line, shown as ISO-8601 in brackets), then role, lane mode, and body. The "Current turn" line uses the routing request time because this turn is not yet appended to lane when routing runs.`;
 
 /**
- * 构建路由模型的用户输入内容
- * @param input - 包含当前用户输入和最近用户输入历史的对象
- * @returns 格式化后的用户输入内容字符串
+ * 当前轮（尚未写入 lane）：`[ISO-8601] current (pending lane) 正文`。
+ */
+function formatRouterCurrentTurnLine(
+  atMs: number,
+  rawText: string,
+  bodyMaxChars: number,
+): string {
+  const normalized = rawText.replace(/\s+/g, " ").trim();
+  const body =
+    normalized.length > bodyMaxChars
+      ? `${normalized.slice(0, bodyMaxChars)}...`
+      : normalized;
+  const timeLabel = new Date(atMs).toISOString();
+  return `[${timeLabel}] current (pending lane) ${body || "(empty)"}`;
+}
+
+/**
+ * lane 历史一行：时间与 jsonl 中该条 `timestamp` 对齐；`role` / `laneMode` 与落盘字段一致。
+ */
+function formatLaneHistoryLine(
+  line: RouterLaneHistoryLine,
+  bodyMaxChars: number,
+): string {
+  const body =
+    line.text.length > bodyMaxChars
+      ? `${line.text.slice(0, bodyMaxChars)}...`
+      : line.text;
+  const timeLabel = new Date(line.atMs).toISOString();
+  return `[${timeLabel}] ${line.role} (${line.laneMode}) ${body}`;
+}
+
+/**
+ * 组装路由模型的 user 消息：**当前轮在前**，其后为 lane jsonl 对齐的对话时间线（从旧到新）。
  */
 function buildRouterUserContent(input: {
   currentUserInput: string;
-  recentUserInputs: string[];
+  currentAtMs: number;
+  recentLaneDialogue: RouterLaneHistoryLine[];
 }): string {
-  // 处理最近用户输入历史，确保格式统一且长度限制
-  const recent = input.recentUserInputs
-    .map((t) => t.replace(/\s+/g, " ").trim()) // 归一化空白字符
-    .filter(Boolean) // 过滤空字符串
-    .map((t) =>
-      t.length > ROUTER_HISTORY_SNIPPET_MAX_CHARS
-        ? `${t.slice(0, ROUTER_HISTORY_SNIPPET_MAX_CHARS)}…` // 过长内容截断
-        : t,
-    );
+  const currentLine = formatRouterCurrentTurnLine(
+    input.currentAtMs,
+    input.currentUserInput,
+    ROUTER_CURRENT_INPUT_MAX_CHARS,
+  );
 
-  // 构建历史记录块
+  const historyLines = input.recentLaneDialogue.map((item) =>
+    formatLaneHistoryLine(item, ROUTER_HISTORY_SNIPPET_MAX_CHARS),
+  );
   const historyBlock =
-    recent.length === 0
-      ? "（无历史记录：会话中尚无可用的近期用户输入。）"
-      : recent.map((line, i) => `${i + 1}. ${line}`).join("\n");
+    historyLines.length === 0
+      ? "Earlier dialogue (from lane jsonl): (none — no prior events.)"
+      : `Earlier dialogue (from lane jsonl, oldest first; body up to ${ROUTER_HISTORY_SNIPPET_MAX_CHARS} chars per line; bracketed time = event timestamp):\n${historyLines.join("\n")}`;
 
-  // 处理当前用户输入
-  const current = input.currentUserInput
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, ROUTER_CURRENT_INPUT_MAX_CHARS);
+  return `Current turn (route primarily for this message; time is request time, not yet in lane):
+${currentLine}
 
-  // 组合成最终的用户输入内容
-  return `以下为从会话记录中读取的最近若干条用户输入（不含当前这一轮；按时间从旧到新；每条至多 ${ROUTER_HISTORY_SNIPPET_MAX_CHARS} 字）：
-
-${historyBlock}
-
-当前这一轮用户输入：
-${current || "（空）"}`;
+${historyBlock}`;
 }
 
 /**
@@ -206,13 +227,17 @@ export type InvokeLaneRouterModelOptions = {
 /**
  * 调用路由模型并获取路由决策
  * @param model - 运行时模型配置
- * @param input - 用户输入信息（当前输入 + 最近历史输入）
+ * @param input - 用户输入信息：`currentUserInput` / `currentAtMs` 为当前轮；`recentLaneDialogue` 为 lane 活跃 jsonl 尾部片段（`timestamp` / `role` / `laneMode` / `content` 与落盘一致）
  * @param options - 调用选项（支持流式分片回调）
  * @returns 包含解析后的路由结果和原始文本的对象
  */
 export async function invokeLaneRouterModel(
   model: RuntimeModel,
-  input: { currentUserInput: string; recentUserInputs: string[] },
+  input: {
+    currentUserInput: string;
+    currentAtMs: number;
+    recentLaneDialogue: RouterLaneHistoryLine[];
+  },
   options: InvokeLaneRouterModelOptions = {},
 ): Promise<{ parsed: RouterModelOutput; rawText: string }> {
   const { onStreamDelta = () => {} } = options;
@@ -242,7 +267,10 @@ export async function invokeLaneRouterModel(
 
   // 发送请求（10s 超时保护）
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ROUTER_REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    ROUTER_REQUEST_TIMEOUT_MS,
+  );
   let res: Response;
   try {
     res = await fetch(url, {
@@ -253,7 +281,9 @@ export async function invokeLaneRouterModel(
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`router request timeout after ${ROUTER_REQUEST_TIMEOUT_MS}ms`);
+      throw new Error(
+        `router request timeout after ${ROUTER_REQUEST_TIMEOUT_MS}ms`,
+      );
     }
     throw error;
   } finally {
