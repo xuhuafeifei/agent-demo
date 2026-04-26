@@ -34,6 +34,8 @@ export interface ToolHookEvent extends HookEvent {
 
 export interface PromptBuildEvent extends HookEvent {
   kind: typeof PROMPT_BUILD_KIND;
+  /** 当前请求所属模块（main / watch-dog 等） */
+  module: string;
   /** 主流程构建的 stem；各 Hook 自行 append */
   promptText: string;
   /** heavy 时 PromptHook 使用 */

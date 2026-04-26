@@ -244,6 +244,7 @@ export async function getReplyFromAgent(params: {
     lane,
     tenantId,
     channel,
+    module: laneModule,
     promptText,
     heavyPayload,
   };

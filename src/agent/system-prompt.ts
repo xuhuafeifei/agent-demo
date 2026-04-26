@@ -115,6 +115,30 @@ Use **persistKnowledge** with required field **type**:
 For **MEMORY.md** only: use **read** / **write** / **append** on the workspace file path—do not use persistKnowledge for it.`;
 }
 
+export function crossLaneBridgePromptBlock(params: {
+  previousLane: string;
+  currentLane: string;
+  previousTurns: Array<{
+    time: string;
+    role: "user" | "assistant";
+    text: string;
+  }>;
+  turnCount: number;
+}): string {
+  const prevSection =
+    params.previousTurns.length > 0
+      ? params.previousTurns
+          .map((t) => `[${t.time}] ${t.role}: ${t.text}`)
+          .join("\n")
+      : "(none)";
+  return `## Cross-Lane Bridge Context
+Lane switched: ${params.previousLane} -> ${params.currentLane}
+Use this section only for continuity. Prefer current user intent and latest constraints.
+
+From previous lane (${params.previousLane}), latest ${params.turnCount} turns:
+${prevSection}`;
+}
+
 export function currentChatPromptBlock(chatHistory: string): string {
   const text = nonEmptyOrFallback(chatHistory, "N/A");
   return `## Current Chat Information

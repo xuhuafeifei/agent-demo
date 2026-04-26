@@ -277,10 +277,50 @@ export function pruneSessionChat(messages: SessionMessageEntry[]): string {
     // 提取纯文本内容
     const textParts = extractTextPartsFromContent(raw.content);
     if (textParts.length > 0) {
-      selected.push(`${role}: ${textParts.join("\n")}`);
+      const timeText = formatSessionMessageTime(msg);
+      if (timeText) {
+        selected.push(`[${timeText}] ${role}: ${textParts.join("\n")}`);
+      } else {
+        selected.push(`${role}: ${textParts.join("\n")}`);
+      }
     }
   }
 
   // 反转消息顺序（最新的消息在最后）
   return selected.reverse().join("\n\n");
+}
+
+function formatSessionMessageTime(msg: SessionMessageEntry): string {
+  const m = msg as unknown as Record<string, unknown>;
+  const message = (m.message ?? {}) as Record<string, unknown>;
+  const candidates = [
+    m.timestamp,
+    m.createdAt,
+    m.time,
+    message.timestamp,
+    message.createdAt,
+    message.time,
+  ];
+  for (const v of candidates) {
+    const iso = normalizeToIsoTime(v);
+    if (iso) return iso;
+  }
+  return "";
+}
+
+function normalizeToIsoTime(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const ms = value > 1e12 ? value : value * 1000;
+    return new Date(ms).toISOString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) {
+      const ms = n > 1e12 ? n : n * 1000;
+      return new Date(ms).toISOString();
+    }
+    const t = Date.parse(value);
+    if (!Number.isNaN(t)) return new Date(t).toISOString();
+  }
+  return "";
 }
