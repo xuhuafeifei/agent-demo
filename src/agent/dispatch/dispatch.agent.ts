@@ -32,22 +32,17 @@ export async function runDispatchedAgentConversation(
     lane,
   });
 
-  const llmTotalResponse =
-    result.status === "success" ? (result.finalText ?? "") : "";
-
   await appendRouteDecisionLog({
     tenantId: params.tenantId,
     module: params.module,
     record: {
       userInput: params.message,
-      llmTotalResponse,
       emotions: routing.emotions,
       emotionRate: routing.emotionRate,
       consumeTime,
       mode: lane,
       decisionSource: routing.decisionSource,
       routerReasoning: routing.reasoning,
-      routerRawResponse: routing.rawResponse,
     },
   });
 

@@ -21,7 +21,6 @@ export type RoutingDecision = {
   reasoning: string;
   emotions: string[];
   emotionRate: number;
-  rawResponse: string;
   decisionSource: RoutingDecisionSource;
 };
 
@@ -40,7 +39,6 @@ export async function resolveLaneWithRouting(params: {
       reasoning: "",
       emotions: [],
       emotionRate: 0,
-      rawResponse: "",
       decisionSource: "non_main_module",
     };
   }
@@ -71,12 +69,12 @@ export async function resolveLaneWithRouting(params: {
         "router reasoning: (empty — 检查模型是否按提示输出 reasoning 字段)",
       );
     }
+    dispatchRouteAgentLogger.debug("router raw response: %s", rawText);
     return {
       lane: parsed.lane,
       reasoning: parsed.reasoning,
       emotions: parsed.emotions,
       emotionRate: parsed.emotionRate,
-      rawResponse: rawText,
       decisionSource: "router",
     };
   } catch {
@@ -87,7 +85,6 @@ export async function resolveLaneWithRouting(params: {
         reasoning: "",
         emotions: [],
         emotionRate: 0,
-        rawResponse: "",
         decisionSource: "fallback_prev",
       };
     }
@@ -96,7 +93,6 @@ export async function resolveLaneWithRouting(params: {
       reasoning: "",
       emotions: [],
       emotionRate: 0,
-      rawResponse: "",
       decisionSource: "fallback_heavy",
     };
   }
