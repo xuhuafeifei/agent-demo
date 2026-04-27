@@ -36,6 +36,8 @@ export interface PromptBuildEvent extends HookEvent {
   kind: typeof PROMPT_BUILD_KIND;
   /** 当前请求所属模块（main / watch-dog 等） */
   module: string;
+  /** dispatch 路由阶段快照的上一轮 lane，避免后续阶段读取到被改写的新值 */
+  previousLaneFromDispatch?: AgentLane | null;
   /** 主流程构建的 stem；各 Hook 自行 append */
   promptText: string;
   /** heavy 时 PromptHook 使用 */

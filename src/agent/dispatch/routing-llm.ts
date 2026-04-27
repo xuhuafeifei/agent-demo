@@ -55,6 +55,10 @@ Lane definitions:
 - light: This lane is for casual conversations, emotional expressions, daily life matters, or lightweight Q&A; usually does not require complex tools, long-term reasoning, or large-scale code modifications.
 - heavy: This lane is for engineering implementations, code and debugging, complex multi-step tasks, tool orchestration, rigorous problem analysis, solution implementation, or knowledge/design-related scenarios.
 
+Lane capability constraints (must obey):
+- For task scheduling intent, use this strict rule: if the current input asks to create/update/delete/run/schedule reminders or tasks (e.g. 定时、提醒、cron、每周/每天、几点提醒、创建任务), you MUST choose "heavy".
+- "asking how to set up reminders" can be light, but "actually asking to execute scheduling/task actions now" must be heavy.
+
 Output constraints (must be strictly followed):
 - Output ONLY a single JSON object, and nothing else (no Markdown code blocks, no explanations, no prefixes or suffixes).
 - The JSON must include the field "reasoning" (string): in 1-5 concise sentences, briefly explain in Chinese "why this lane was selected based on the history/current content"; this is for debugging and optimization, and comes before the structured result.

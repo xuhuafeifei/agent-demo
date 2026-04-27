@@ -7,7 +7,6 @@ import {
   toolingsPromptBlock,
   workspacePromptBlock,
 } from "../agent/system-prompt.js";
-import { readLastRouteMode } from "../agent/dispatch/route-decision-log.js";
 import { loadLane } from "../lane/lane-store.js";
 import type { AgentLane } from "./events.js";
 import { BaseHook } from "./base-hook.js";
@@ -52,7 +51,8 @@ export class PromptHook extends BaseHook<AgentHookEvent> {
 
   async onEvent(event: AgentHookEvent): Promise<void> {
     if (event.kind !== PROMPT_BUILD_KIND) return;
-    const previousLane = await readLastRouteMode(event.tenantId, event.module);
+    // 使用 dispatch 时刻的快照，不在 hook 阶段读取“最后一条 lane”。
+    const previousLane = event.previousLaneFromDispatch ?? null;
     if (previousLane && previousLane !== event.lane) {
       const previousTurns = buildBridgeLines(
         event.tenantId,

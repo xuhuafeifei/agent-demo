@@ -2,7 +2,6 @@ import type { AgentLane } from "../../hook/events.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 import { selectModelForRuntime } from "../model-selection.js";
 import { getRecentLaneDialogueForRouter } from "../runtime/run.js";
-import { readLastRouteMode } from "./route-decision-log.js";
 import { invokeLaneRouterModel } from "./routing-llm.js";
 
 const dispatchRouteAgentLogger = getSubsystemConsoleLogger(
@@ -32,6 +31,8 @@ export async function resolveLaneWithRouting(params: {
   tenantId: string;
   module: string;
   userInput: string;
+  /** dispatch 阶段采样的上一轮 lane；用于 fallback，避免在此处二次读日志。 */
+  previousLaneFromDispatch?: AgentLane | null;
 }): Promise<RoutingDecision> {
   if (params.module !== "main") {
     return {
@@ -78,7 +79,8 @@ export async function resolveLaneWithRouting(params: {
       decisionSource: "router",
     };
   } catch {
-    const prev = await readLastRouteMode(params.tenantId, params.module);
+    // 失败时只使用 dispatch 透传快照，保证与 PromptHook 的“上一轮”口径一致。
+    const prev = params.previousLaneFromDispatch ?? null;
     if (prev) {
       return {
         lane: prev,

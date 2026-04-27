@@ -108,6 +108,7 @@ export async function getReplyFromAgent(params: {
   sessionKey: string;
   agentId: string;
   lane?: AgentLane;
+  previousLaneFromDispatch?: AgentLane | null;
 }): Promise<string> {
   agentLogger.debug(
     `getReplyFromAgent params=${JSON.stringify(params)}`,
@@ -123,6 +124,7 @@ export async function getReplyFromAgent(params: {
     sessionKey,
     agentId,
     lane = "heavy",
+    previousLaneFromDispatch = null,
   } = params;
 
   // 阶段一：与本次请求绑定的环境（模型、工作目录、session 文件、默认 PromptHook+ToolHook 等）
@@ -245,6 +247,7 @@ export async function getReplyFromAgent(params: {
     tenantId,
     channel,
     module: laneModule,
+    previousLaneFromDispatch,
     promptText,
     heavyPayload,
   };
@@ -367,6 +370,7 @@ export async function runWithSingleFlight(params: {
   watchDogTaskId?: string;
   channel: AgentChannel;
   lane?: AgentLane;
+  previousLaneFromDispatch?: AgentLane | null;
 }): Promise<AgentRunResult> {
   const {
     message,
@@ -376,6 +380,7 @@ export async function runWithSingleFlight(params: {
     module: mod,
     channel,
     lane = "heavy",
+    previousLaneFromDispatch = null,
   } = params;
   const emitEvent = onEvent ?? (() => {});
 
@@ -401,6 +406,7 @@ export async function runWithSingleFlight(params: {
       sessionKey,
       agentId,
       lane,
+      previousLaneFromDispatch,
     });
     return {
       status: "success",
