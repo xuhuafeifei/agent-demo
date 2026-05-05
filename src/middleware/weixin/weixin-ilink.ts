@@ -6,7 +6,7 @@
  */
 import crypto from "node:crypto";
 import { getLogger } from "../../logger/logger.js";
-const logger = getLogger("weixin-ilink");
+const logger = getLogger();
 
 // iLink 应用标识，固定值 "bot"
 const ILINK_APP_ID = "bot";
