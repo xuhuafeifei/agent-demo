@@ -155,6 +155,7 @@ async function ilinkPost(
     ...body,
     base_info: { channel_version: CHANNEL_VERSION },
   });
+  logger.info("weixin-ilink POST request: endpoint=%s, body=%s", endpoint, raw);
   const url = new URL(endpoint, base);
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), timeoutMs);
