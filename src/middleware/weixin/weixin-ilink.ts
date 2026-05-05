@@ -5,6 +5,8 @@
  * 消息发送和接收等核心功能。
  */
 import crypto from "node:crypto";
+import { getLogger } from "../../logger/logger.js";
+const logger = getLogger("weixin-ilink");
 
 // iLink 应用标识，固定值 "bot"
 const ILINK_APP_ID = "bot";
@@ -115,6 +117,7 @@ async function ilinkGet(
       signal: c.signal,
     });
     const text = await res.text();
+    logger.info(`weixin-ilink GET response: path=${pathWithQuery} status=${res.status} body=${text}`);
     if (!res.ok) throw new Error(`GET ${pathWithQuery}: ${res.status} ${text}`);
     return text;
   } finally {
@@ -156,6 +159,7 @@ async function ilinkPost(
       signal: c.signal,
     });
     const text = await res.text();
+    logger.info(`weixin-ilink POST response: endpoint=${endpoint} status=${res.status} body=${text}`);
     if (!res.ok) throw new Error(`POST ${endpoint}: ${res.status} ${text}`);
     return text;
   } finally {
