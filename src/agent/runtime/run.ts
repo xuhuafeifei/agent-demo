@@ -10,8 +10,9 @@ import { createCacheTrace } from "../utils/cache-trace.js";
 import type { RuntimeStreamEvent } from "../utils/events.js";
 import { prepareBeforeGetReply } from "./pre-run.js";
 import {
-  appendCurrentChatSection,
   buildSystemPromptStem,
+  buildSystemPromptStemSections,
+  currentChatPromptSection,
 } from "../system-prompt.js";
 import type { AgentLane } from "../../hook/events.js";
 import { LANE_HOOK_KIND, PROMPT_BUILD_KIND, TOOL_HOOK_KIND } from "../../hook/events.js";
@@ -39,6 +40,12 @@ import {
   invokeAgentHooks,
   pruneSessionChat,
 } from "./run.helper.js";
+import {
+  assemblePromptFromSections,
+  dedupeAndSortPromptSections,
+} from "../prompt/section-pipeline.js";
+import { materializePromptSectionsWithCache } from "../prompt/section-cache.js";
+import { loadSessionIndexEntry } from "../session/index.js";
 
 const agentLogger = getSubsystemConsoleLogger("agent");
 
@@ -240,7 +247,16 @@ export async function getReplyFromAgent(params: {
     workspace: resolveTenantWorkspaceDir(tenantId),
     toolings: toolHookEvent.toolings,
     skillsMeta: getSkillManager(tenantId).getMetaPromptText(),
+    rotationSummary: loadSessionIndexEntry(tenantId, sessionKey)?.rotationSummary,
   };
+  const stemSections = buildSystemPromptStemSections({
+    soul: readWorkspaceSoul(tenantId),
+    user: readWorkspaceUserinfoSummary(tenantId),
+    nowText: formatChinaIso(new Date()),
+    language: process.env.FGBG_PROMPT_LANGUAGE?.trim() || "zh-CN",
+    channel: channel,
+    tenantId: tenantId,
+  });
   const promptBuildEvent = {
     kind: PROMPT_BUILD_KIND,
     lane,
@@ -249,18 +265,43 @@ export async function getReplyFromAgent(params: {
     module: laneModule,
     previousLaneFromDispatch,
     promptText,
+    promptSections: [...stemSections],
     heavyPayload,
   };
   await invokeAgentHooks(prepared.hooks, promptBuildEvent, {
     logErrors: true,
   });
-  const prompt =
-    promptBuildEvent.promptText + appendCurrentChatSection(chatHistoryText);
+  promptBuildEvent.promptSections?.push(currentChatPromptSection(chatHistoryText));
+  const mergedSections = dedupeAndSortPromptSections(
+    promptBuildEvent.promptSections ?? [],
+  );
+  const materializedSections = materializePromptSectionsWithCache(
+    mergedSections.sections,
+    {
+      tenantId,
+      sessionKey,
+      lane,
+    },
+  );
+  const maxTokens = prepared.model!.maxTokens;
+  const tokenRatio = prepared.model!.tokenRatio || 0.75;
+  const assembledPrompt = assemblePromptFromSections(materializedSections, {
+    maxTokens,
+    tokenRatio,
+    userMessageText: message,
+  });
+  const prompt = assembledPrompt.prompt;
+  for (const decision of [...mergedSections.decisions, ...assembledPrompt.decisions]) {
+    agentLogger.debug(
+      `[prompt-section] decision=${decision.kind} section=${decision.sectionId} detail=${decision.detail}`,
+    );
+  }
+  agentLogger.info(
+    `[prompt-section] sections=${assembledPrompt.sections.length} totalTokens=${assembledPrompt.totalTokens} threshold=${assembledPrompt.threshold} trimmed=${assembledPrompt.wasTrimmed}`,
+  );
   agentLogger.trace(`prompt: ${prompt}`);
 
   // 检查提示词总 token 数是否超过模型上下文窗口，决定是否需要压缩
-  const maxTokens = prepared.model!.maxTokens;
-  const tokenRatio = prepared.model!.tokenRatio || 0.75;
   const compressionResult = areTextsOverTokenThreshold(
     [prompt, message],
     maxTokens,

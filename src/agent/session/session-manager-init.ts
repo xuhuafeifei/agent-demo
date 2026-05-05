@@ -10,6 +10,7 @@ import { resolveSessionDir, resolveSessionIndexPath } from "./session-path.js";
 import type { SessionIndex, SessionIndexEntry } from "./types.js";
 import { getFilterContextToolNames } from "../tool/tool-bundle.js";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+import { invalidatePromptSectionCache } from "../prompt/section-cache.js";
 
 // 512 KB：超过此大小的 session 文件触发轮转
 const MAX_SESSION_FILE_SIZE = 512 * 1024;
@@ -20,6 +21,10 @@ const MAX_SESSION_IDLE_MS = 20 * 60 * 1000;
 const sessionLogger = getSubsystemConsoleLogger("session");
 
 type UserOrAssistantMessage = Extract<Message, { role: "user" | "assistant" }>;
+
+type MessageWithText = UserOrAssistantMessage & {
+  content?: Array<{ type?: string; text?: string }>;
+};
 
 function isUserOrAssistantMessage(
   m: AgentMessage,
@@ -63,6 +68,34 @@ function getMessagesToPreserve(oldSessionManager: SessionManager): Message[] {
   }
 
   return messagesToPreserve;
+}
+
+function extractMessageText(message: Message): string {
+  const msg = message as MessageWithText;
+  const text = (msg.content ?? [])
+    .filter((block) => block?.type === "text" && typeof block.text === "string")
+    .map((block) => block.text?.trim() ?? "")
+    .filter(Boolean)
+    .join(" ");
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function buildRotationSummary(messages: Message[]): string {
+  if (messages.length === 0) return "";
+  const lines = messages
+    .map((m) => {
+      const role = m.role === "assistant" ? "assistant" : "user";
+      const text = extractMessageText(m);
+      if (!text) return "";
+      return `- ${role}: ${text}`;
+    })
+    .filter(Boolean)
+    .slice(-8);
+  if (lines.length === 0) return "";
+  return [
+    "Rotation preserved key dialog context from previous session file:",
+    ...lines,
+  ].join("\n");
 }
 
 /**
@@ -137,6 +170,7 @@ function createSessionEntry(params: {
   modelProvider: string;
   model: string;
   contextTokens?: number;
+  rotationSummary?: string;
   previous?: SessionIndexEntry;
 }): SessionIndexEntry {
   const {
@@ -160,6 +194,7 @@ function createSessionEntry(params: {
       typeof contextTokens === "number"
         ? contextTokens
         : (previous?.contextTokens ?? 0),
+    rotationSummary: params.rotationSummary ?? previous?.rotationSummary ?? "",
   };
 }
 
@@ -228,6 +263,7 @@ export function prepareBeforeSessionManager(params: {
       // 3. 更新索引指向新 session
       const oldManager = SessionManager.open(existing.sessionFile, sessionDir);
       const messagesToPreserve = getMessagesToPreserve(oldManager);
+      const rotationSummary = buildRotationSummary(messagesToPreserve);
       const manager = SessionManager.create(params.cwd, sessionDir);
       const sessionFile = ensureSessionFile(manager);
       const rotateReason =
@@ -257,6 +293,7 @@ export function prepareBeforeSessionManager(params: {
         modelProvider: params.modelProvider,
         model: params.model,
         contextTokens: params.contextTokens,
+        rotationSummary,
         previous: existing,
       });
       shouldWrite = true;
@@ -269,6 +306,12 @@ export function prepareBeforeSessionManager(params: {
   if (shouldWrite || !fs.existsSync(resolveSessionIndexPath(tenantId))) {
     index[params.sessionKey] = nextEntry;
     saveSessionIndex(tenantId, index);
+    const lane = params.sessionKey.split(":")[2] ?? "heavy";
+    invalidatePromptSectionCache({
+      tenantId,
+      sessionKey: params.sessionKey,
+      lane,
+    });
   }
 
   return {

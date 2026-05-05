@@ -1,5 +1,6 @@
 import type { AgentChannel } from "../agent/channel-policy.js";
 import type { RuntimeToolDefinition } from "../agent/tool/tool-catalog.js";
+import type { PromptSection } from "../agent/prompt/section-pipeline.js";
 
 export type AgentLane = "light" | "heavy";
 
@@ -40,11 +41,14 @@ export interface PromptBuildEvent extends HookEvent {
   previousLaneFromDispatch?: AgentLane | null;
   /** 主流程构建的 stem；各 Hook 自行 append */
   promptText: string;
+  /** V2 prompt 组装：按段治理（Hook 优先修改该字段） */
+  promptSections?: PromptSection[];
   /** heavy 时 PromptHook 使用 */
   heavyPayload: {
     workspace: string;
     toolings: string[];
     skillsMeta: string;
+    rotationSummary?: string;
   };
 }
 

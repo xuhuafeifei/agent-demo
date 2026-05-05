@@ -12,6 +12,7 @@ export type SessionIndexEntry = {
   modelProvider: string;
   model: string;
   contextTokens: number;
+  rotationSummary?: string;
 };
 
 export type SessionIndex = Record<string, SessionIndexEntry>;

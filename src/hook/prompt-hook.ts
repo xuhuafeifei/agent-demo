@@ -1,12 +1,20 @@
 import {
   crossLaneBridgePromptBlock,
+  crossLaneBridgePromptSection,
   joinPromptBlocks,
   memoryPersistencePromptBlock,
+  memoryPersistencePromptSection,
   memoryRecallPromptBlock,
+  memoryRecallPromptSection,
   skillsPromptBlock,
+  skillsPromptSection,
   toolingsPromptBlock,
+  toolingsPromptSection,
   workspacePromptBlock,
+  workspacePromptSection,
+  createPromptSection,
 } from "../agent/system-prompt.js";
+import { PromptSectionPriority } from "../agent/prompt/section-pipeline.js";
 import { loadLane } from "../lane/lane-store.js";
 import type { AgentLane } from "./events.js";
 import { BaseHook } from "./base-hook.js";
@@ -66,6 +74,16 @@ export class PromptHook extends BaseHook<AgentHookEvent> {
         turnCount: BRIDGE_TURN_COUNT,
       });
       event.promptText += `\n\n${bridgeBlock}`;
+      if (event.promptSections) {
+        event.promptSections.push(
+          crossLaneBridgePromptSection({
+            previousLane,
+            currentLane: event.lane,
+            previousTurns,
+            turnCount: BRIDGE_TURN_COUNT,
+          }),
+        );
+      }
     }
     if (event.lane !== "heavy") return;
     const p = event.heavyPayload;
@@ -77,5 +95,25 @@ export class PromptHook extends BaseHook<AgentHookEvent> {
       memoryPersistencePromptBlock(),
     );
     event.promptText += `\n\n${heavy}`;
+    if (event.promptSections) {
+      event.promptSections.push(
+        toolingsPromptSection(p.toolings),
+        skillsPromptSection(p.skillsMeta),
+        workspacePromptSection(p.workspace),
+        memoryRecallPromptSection(),
+        memoryPersistencePromptSection(),
+      );
+      if (p.rotationSummary?.trim()) {
+        event.promptSections.push(
+          createPromptSection({
+            id: "rotation-summary",
+            content: `## Session Rotation Summary\n${p.rotationSummary.trim()}`,
+            priority: PromptSectionPriority.CONTEXT,
+            source: "hook.prompt",
+            cacheable: true,
+          }),
+        );
+      }
+    }
   }
 }

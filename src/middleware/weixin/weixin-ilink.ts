@@ -5,8 +5,8 @@
  * 消息发送和接收等核心功能。
  */
 import crypto from "node:crypto";
-import { getLogger } from "../../logger/logger.js";
-const logger = getLogger();
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+const logger = getSubsystemConsoleLogger("weixin-ilink");
 
 // iLink 应用标识，固定值 "bot"
 const ILINK_APP_ID = "bot";
@@ -81,7 +81,10 @@ function commonHeaders(): Record<string, string> {
  * @param body - 请求体字符串
  * @returns POST 请求头对象
  */
-function postHeaders(token: string | undefined, body: string): Record<string, string> {
+function postHeaders(
+  token: string | undefined,
+  body: string,
+): Record<string, string> {
   const h: Record<string, string> = {
     "Content-Type": "application/json",
     AuthorizationType: "ilink_bot_token",
@@ -106,7 +109,10 @@ async function ilinkGet(
   pathWithQuery: string,
   timeoutMs: number,
 ): Promise<string> {
-  const url = new URL(pathWithQuery, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  const url = new URL(
+    pathWithQuery,
+    baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`,
+  );
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), timeoutMs);
 
@@ -117,7 +123,9 @@ async function ilinkGet(
       signal: c.signal,
     });
     const text = await res.text();
-    logger.info(`weixin-ilink GET response: path=${pathWithQuery} status=${res.status} body=${text}`);
+    logger.info(
+      `weixin-ilink GET response: path=${pathWithQuery} status=${res.status} body=${text}`,
+    );
     if (!res.ok) throw new Error(`GET ${pathWithQuery}: ${res.status} ${text}`);
     return text;
   } finally {
@@ -159,7 +167,9 @@ async function ilinkPost(
       signal: c.signal,
     });
     const text = await res.text();
-    logger.info(`weixin-ilink POST response: endpoint=${endpoint} status=${res.status} body=${text}`);
+    logger.info(
+      `weixin-ilink POST response: endpoint=${endpoint} status=${res.status} body=${text}`,
+    );
     if (!res.ok) throw new Error(`POST ${endpoint}: ${res.status} ${text}`);
     return text;
   } finally {
@@ -184,7 +194,10 @@ export async function fetchBotQrCode(apiBase = ILINK_FIXED_ORIGIN): Promise<{
     `ilink/bot/get_bot_qrcode?bot_type=${encodeURIComponent(BOT_TYPE)}`,
     15_000,
   );
-  const parsed = JSON.parse(text) as { qrcode: string; qrcode_img_content: string };
+  const parsed = JSON.parse(text) as {
+    qrcode: string;
+    qrcode_img_content: string;
+  };
   return {
     qrcode: parsed.qrcode,
     qrcode_img_content: normalizeQrImageSrc(parsed.qrcode_img_content, apiBase),
