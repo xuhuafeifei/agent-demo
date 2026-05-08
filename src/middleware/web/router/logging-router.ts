@@ -5,6 +5,7 @@ import {
   evictLoggingConfigCache,
   ensureLoggingSetting,
   resolveLogPath,
+  resolveWritableLogPath,
 } from "../../../logger/logger.js";
 import {
   readFgbgUserConfig,
@@ -112,6 +113,12 @@ function sliceFilteredEntries(
   if (endExclusive <= 0) return [];
   const start = Math.max(0, endExclusive - limit);
   return result.slice(start, endExclusive);
+}
+
+/** 与写入端一致：当天当前正在写的分卷（主文件或满卷后的 -1、-2…），tail/分页只读此文件 */
+function resolveActiveLogReadPath(cfg: { file: string }): string {
+  const base = resolveLogPath(cfg.file, new Date());
+  return resolveWritableLogPath(base);
 }
 
 /**
@@ -242,7 +249,7 @@ export function createLoggingRouter() {
         req.query.tail === "yes";
 
       const cfg = ensureLoggingSetting();
-      const logPath = resolveLogPath(cfg.file, new Date());
+      const logPath = resolveActiveLogReadPath(cfg);
 
       const filtered = filterLogEntries(logPath, level);
       const entries = sliceFilteredEntries(filtered, offset, limit, tail);
@@ -281,9 +288,9 @@ export function createLoggingRouter() {
         : 0;
       const maxCount = parseInt(req.query.maxCount as string, 10) || 800;
 
-      // 获取日志文件路径
+      // 与 logger 写入一致：只读当前分卷；轮转后旧 lastLineNum 无法命中 → replaced
       const cfg = ensureLoggingSetting();
-      const logPath = resolveLogPath(cfg.file, new Date());
+      const logPath = resolveActiveLogReadPath(cfg);
 
       const allFiltered = filterLogEntries(logPath, level);
       let resultEntries: LogEntry[] = [];

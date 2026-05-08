@@ -146,6 +146,8 @@ function resolveWritableLogPath(basePath: string): string {
   }
 }
 
+export { resolveWritableLogPath };
+
 function escapeRegExp(raw: string): string {
   return raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
