@@ -123,7 +123,7 @@ async function ilinkGet(
       signal: c.signal,
     });
     const text = await res.text();
-    logger.info(
+    logger.debug(
       `weixin-ilink GET response: path=${pathWithQuery} status=${res.status} body=${text}`,
     );
     if (!res.ok) throw new Error(`GET ${pathWithQuery}: ${res.status} ${text}`);
@@ -155,7 +155,7 @@ async function ilinkPost(
     ...body,
     base_info: { channel_version: CHANNEL_VERSION },
   });
-  logger.info("weixin-ilink POST request: endpoint=%s, body=%s", endpoint, raw);
+  logger.debug("weixin-ilink POST request: endpoint=%s, body=%s", endpoint, raw);
   const url = new URL(endpoint, base);
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), timeoutMs);
@@ -168,7 +168,7 @@ async function ilinkPost(
       signal: c.signal,
     });
     const text = await res.text();
-    logger.info(
+    logger.debug(
       `weixin-ilink POST response: endpoint=${endpoint} status=${res.status} body=${text}`,
     );
     if (!res.ok) throw new Error(`POST ${endpoint}: ${res.status} ${text}`);

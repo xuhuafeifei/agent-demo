@@ -70,7 +70,7 @@ export async function resolveLaneWithRouting(params: {
         "router reasoning: (empty — 检查模型是否按提示输出 reasoning 字段)",
       );
     }
-    dispatchRouteAgentLogger.debug("router raw response: %s", rawText);
+    dispatchRouteAgentLogger.info("router raw response: %s", rawText);
     return {
       lane: parsed.lane,
       reasoning: parsed.reasoning,

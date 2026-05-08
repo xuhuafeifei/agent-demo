@@ -1,5 +1,8 @@
 import type { RuntimeModel } from "../../types.js";
 import type { RouterLaneHistoryLine } from "../runtime/run.helper.js";
+import { getSubsystemConsoleLogger } from "../../logger/logger.js";
+
+const routingLlmLogger = getSubsystemConsoleLogger("routing-llm");
 
 /**
  * 路由 LLM：固定走 OpenAI Chat Completions 兼容协议。
@@ -46,7 +49,7 @@ const ROUTER_HISTORY_SNIPPET_MAX_CHARS = 200;
 /** 当前输入的最大字符数限制 */
 const ROUTER_CURRENT_INPUT_MAX_CHARS = 8000;
 /** 路由模型请求超时时间（毫秒） */
-const ROUTER_REQUEST_TIMEOUT_MS = 10_000;
+const ROUTER_REQUEST_TIMEOUT_MS = 5_000;
 
 /** 路由系统提示词 - 定义路由 Agent 的行为和输出约束 */
 const ROUTER_SYSTEM_PROMPT = `You are a routing Agent (lane router). Your task is to determine which execution lane (agent capability level) should be used for the current response, combining both "recent user inputs" and "the current user input".
@@ -176,6 +179,7 @@ async function readChatCompletionSse(
   res: Response,
   onDelta: (delta: string) => void,
 ): Promise<string> {
+  routingLlmLogger.debug("readChatCompletionSse start");
   const body = res.body;
   if (!body) {
     throw new Error("router stream: empty body");
@@ -217,6 +221,7 @@ async function readChatCompletionSse(
     }
   }
 
+  routingLlmLogger.debug("readChatCompletionSse end");
   return full;
 }
 
@@ -269,13 +274,14 @@ export async function invokeLaneRouterModel(
     ...(model.headers ?? {}),
   };
 
-  // 发送请求（10s 超时保护）
+  // 发送请求
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
     ROUTER_REQUEST_TIMEOUT_MS,
   );
   let res: Response;
+  routingLlmLogger.debug("invokeLaneRouterModel request: url=%s, body=%s", url, JSON.stringify(body));
   try {
     res = await fetch(url, {
       method: "POST",
