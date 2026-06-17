@@ -1,24 +1,87 @@
 /**
- * 微信 iLink HTTP 通信模块（精简自实现，行为对齐公开协议）
+ * 微信 iLink HTTP 通信模块
  *
- * 该模块实现了与微信 iLink 服务的 HTTP 通信，包括二维码获取、状态查询、
- * 消息发送和接收等核心功能。
+ * 实现与微信 iLink 的 HTTP/JSON 通信（二维码登录、长轮询收消息、sendmessage 发消息）。
+ * 请求体/头字段对齐腾讯官方 @tencent-weixin/openclaw-weixin 插件，而非公开协议文档里的示例值。
+ *
+ * 参考：
+ * - https://www.wechatbot.dev/zh/protocol
+ * - https://github.com/Tencent/openclaw-weixin
  */
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getSubsystemConsoleLogger } from "../../logger/logger.js";
 const logger = getSubsystemConsoleLogger("weixin-ilink");
 
-// iLink 应用标识，固定值 "bot"
-const ILINK_APP_ID = "bot";
-// 通道版本号，与 iLink 协议一致（https://www.wechatbot.dev/zh/protocol）
-const CHANNEL_VERSION = "2.0.0";
-// 客户端版本号，以二进制位表示：主版本(1) << 16 | 次版本(0) << 8 | 修订版本(0)
-const CLIENT_VER = ((1 & 0xff) << 16) | ((0 & 0xff) << 8) | (0 & 0xff);
-
 /** iLink 服务的固定基础地址 */
 export const ILINK_FIXED_ORIGIN = "https://ilinkai.weixin.qq.com";
-/** 机器人类型，固定值 "3" */
+/** 机器人类型，扫码登录 query 固定值 */
 export const BOT_TYPE = "3";
+
+/**
+ * 向上查找 agent-demo 根目录 package.json，读取 name/version。
+ * 编译后在 dist/ 下运行，需 walk-up 而非写死相对路径。
+ */
+function readAppPackageJson(): { name?: string; version?: string } {
+  try {
+    let dir = path.dirname(fileURLToPath(import.meta.url));
+    const { root } = path.parse(dir);
+    while (dir && dir !== root) {
+      const candidate = path.join(dir, "package.json");
+      if (fs.existsSync(candidate)) {
+        const parsed = JSON.parse(fs.readFileSync(candidate, "utf-8")) as {
+          name?: string;
+          version?: string;
+        };
+        if (parsed.name === "agent-demo") return parsed;
+      }
+      dir = path.dirname(dir);
+    }
+  } catch {
+    /* ignore */
+  }
+  return { name: "agent-demo", version: "1.0.0" };
+}
+
+const APP_PKG = readAppPackageJson();
+const APP_NAME = APP_PKG.name ?? "agent-demo";
+const APP_VERSION = APP_PKG.version ?? "1.0.0";
+
+/**
+ * base_info.channel_version：客户端 semver（如 "1.0.0"）。
+ * 公开文档示例 "2.0.0" 只是协议说明；服务端实际按插件版本校验，缺/错易 ret:-2。
+ */
+const CHANNEL_VERSION = APP_VERSION;
+
+/** 请求头 iLink-App-Id，与 openclaw-weixin package.json 的 ilink_appid 一致 */
+const ILINK_APP_ID = "bot";
+
+/**
+ * 请求头 iLink-App-ClientVersion：semver 编码为 uint32。
+ * 算法与 openclaw-weixin buildClientVersion 相同：major<<16 | minor<<8 | patch。
+ */
+function buildClientVersion(version: string): number {
+  const parts = version.split(".").map((p) => parseInt(p, 10));
+  const major = parts[0] ?? 0;
+  const minor = parts[1] ?? 0;
+  const patch = parts[2] ?? 0;
+  return ((major & 0xff) << 16) | ((minor & 0xff) << 8) | (patch & 0xff);
+}
+
+const ILINK_APP_CLIENT_VERSION = buildClientVersion(APP_VERSION);
+
+/** base_info.bot_agent：客户端标识，格式 name/version，openclaw 默认为 OpenClaw */
+const BOT_AGENT = `${APP_NAME}/${APP_VERSION}`;
+
+/** 每个业务 POST 请求体末尾附加的 base_info（getupdates / sendmessage 等共用） */
+function buildBaseInfo(): { channel_version: string; bot_agent: string } {
+  return {
+    channel_version: CHANNEL_VERSION,
+    bot_agent: BOT_AGENT,
+  };
+}
 
 /**
  * 规范化二维码图片地址
@@ -63,14 +126,13 @@ function randomUinHeader(): string {
 }
 
 /**
- * 获取 iLink API 的通用请求头
- *
- * @returns 通用请求头对象
+ * GET/POST 共用请求头（iLink-App-Id、iLink-App-ClientVersion）。
+ * POST 另加 AuthorizationType / Bearer token / X-WECHAT-UIN 等，见 postHeaders。
  */
 function commonHeaders(): Record<string, string> {
   return {
     "iLink-App-Id": ILINK_APP_ID,
-    "iLink-App-ClientVersion": String(CLIENT_VER),
+    "iLink-App-ClientVersion": String(ILINK_APP_CLIENT_VERSION),
   };
 }
 
@@ -134,14 +196,8 @@ async function ilinkGet(
 }
 
 /**
- * 发送 iLink API 的 POST 请求
- *
- * @param baseUrl - API 基础地址
- * @param endpoint - API 端点
- * @param body - 请求体对象
- * @param token - 机器人令牌（可选）
- * @param timeoutMs - 请求超时时间（毫秒）
- * @returns 响应文本
+ * 发送 iLink API 的 POST 请求。
+ * 自动合并 buildBaseInfo()；HTTP 200 仅表示传输成功，业务 ret 由调用方解析（sendmessage 在 ilinkSendText 里校验）。
  */
 async function ilinkPost(
   baseUrl: string,
@@ -153,7 +209,7 @@ async function ilinkPost(
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const raw = JSON.stringify({
     ...body,
-    base_info: { channel_version: CHANNEL_VERSION },
+    base_info: buildBaseInfo(),
   });
   logger.debug("weixin-ilink POST request: endpoint=%s, body=%s", endpoint, raw);
   const url = new URL(endpoint, base);
@@ -285,11 +341,10 @@ export async function ilinkGetUpdates(params: {
 }
 
 /**
- * 发送文本消息
+ * 发送文本消息（ilink/bot/sendmessage）。
  *
- * 向指定用户发送文本消息。
- *
- * @param params - 发送参数
+ * msg 字段对齐 openclaw-weixin：from_user_id 空串、message_type=2(BOT)、message_state=2(FINISH)、
+ * context_token 来自入站消息缓存（主动推送也必须带，否则 ret:-2）。
  */
 export async function ilinkSendText(params: {
   baseUrl: string;
@@ -298,17 +353,18 @@ export async function ilinkSendText(params: {
   text: string;
   contextToken?: string;
 }): Promise<string> {
-  // 生成唯一客户端 ID
+  // 生成唯一 client_id，服务端用于去重；每条消息必须不同
   const clientId = `ag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const body = {
     msg: {
-      from_user_id: "",
+      from_user_id: "", // 出站固定空串，由 token 标识 bot
       to_user_id: params.toUserId,
       client_id: clientId,
-      message_type: 2, // 2 表示机器人消息
-      message_state: 2, // 消息状态：已发送
+      message_type: 2, // BOT
+      message_state: 2, // FINISH
       item_list: [{ type: 1, text_item: { text: params.text } }],
-      context_token: params.contextToken,
+      // 无 token 时不写入 JSON；有 token 时必须原样回传
+      context_token: params.contextToken ?? undefined,
     },
   };
   const text = await ilinkPost(
@@ -318,6 +374,7 @@ export async function ilinkSendText(params: {
     params.token,
     15_000,
   );
+  // HTTP 200 时 body 仍可能 ret:-2；getupdates 的 ret/errcode 由 weixin-layer 单独处理
   const endpoint = "ilink/bot/sendmessage";
   const resp = JSON.parse(text) as Record<string, unknown>;
   const ret = resp.ret;
