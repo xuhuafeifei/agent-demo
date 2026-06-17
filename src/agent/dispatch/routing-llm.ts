@@ -209,6 +209,7 @@ async function readChatCompletionSse(
     }
 
     if (done) {
+      routingLlmLogger.debug("readChatCompletionSse done, break");
       break;
     }
   }
@@ -281,7 +282,11 @@ export async function invokeLaneRouterModel(
     ROUTER_REQUEST_TIMEOUT_MS,
   );
   let res: Response;
-  routingLlmLogger.debug("invokeLaneRouterModel request: url=%s, body=%s", url, JSON.stringify(body));
+  routingLlmLogger.debug(
+    "invokeLaneRouterModel request: url=%s, body=%s",
+    url,
+    JSON.stringify(body),
+  );
   try {
     res = await fetch(url, {
       method: "POST",

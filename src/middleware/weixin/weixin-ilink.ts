@@ -10,8 +10,8 @@ const logger = getSubsystemConsoleLogger("weixin-ilink");
 
 // iLink 应用标识，固定值 "bot"
 const ILINK_APP_ID = "bot";
-// 通道版本号，固定值 "1.0.0"
-const CHANNEL_VERSION = "1.0.0";
+// 通道版本号，与 iLink 协议一致（https://www.wechatbot.dev/zh/protocol）
+const CHANNEL_VERSION = "2.0.0";
 // 客户端版本号，以二进制位表示：主版本(1) << 16 | 次版本(0) << 8 | 修订版本(0)
 const CLIENT_VER = ((1 & 0xff) << 16) | ((0 & 0xff) << 8) | (0 & 0xff);
 
@@ -311,11 +311,27 @@ export async function ilinkSendText(params: {
       context_token: params.contextToken,
     },
   };
-  return ilinkPost(
+  const text = await ilinkPost(
     params.baseUrl,
     "ilink/bot/sendmessage",
     body,
     params.token,
     15_000,
   );
+  const endpoint = "ilink/bot/sendmessage";
+  const resp = JSON.parse(text) as Record<string, unknown>;
+  const ret = resp.ret;
+  const errcode = resp.errcode;
+  const errmsg = typeof resp.errmsg === "string" ? resp.errmsg : "";
+  if (typeof ret === "number" && ret !== 0) {
+    throw new Error(
+      `POST ${endpoint} ret=${ret}${errmsg ? `: ${errmsg}` : ""}`,
+    );
+  }
+  if (typeof errcode === "number" && errcode !== 0) {
+    throw new Error(
+      `POST ${endpoint} errcode=${errcode}${errmsg ? `: ${errmsg}` : ""}`,
+    );
+  }
+  return text;
 }
